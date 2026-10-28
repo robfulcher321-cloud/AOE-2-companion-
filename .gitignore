@@ -1,2 +1,4 @@
-*.aoe2pack
 __pycache__/
+node_modules/
+www/
+android/

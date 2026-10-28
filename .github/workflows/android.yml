@@ -1,0 +1,61 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install tools
+        run: npm ci
+
+      - name: Test combat maths
+        run: npm test
+
+      - name: Prepare web app
+        run: npm run build:web
+
+      - name: Create Android project
+        run: |
+          npx cap add android
+          npx capacitor-assets generate --android --assetPath resources \
+            --iconBackgroundColor '#16233a' --splashBackgroundColor '#16233a'
+          npx cap sync android
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk AoE2-Companion.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AoE2-Companion-apk
+          path: AoE2-Companion.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: AoE2 Companion build ${{ github.run_number }}
+          body: Install AoE2-Companion.apk on your Android phone.
+          files: AoE2-Companion.apk
+          make_latest: true

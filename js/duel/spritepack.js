@@ -1,12 +1,13 @@
-// Optional sprite pack: real unit animations and grass made from the player's
-// own copy of AoE2 DE by tools/make_sprite_pack.py. It's imported once and kept
-// only on this device; the app never uploads it anywhere.
+// Sprite pack: real unit animations and grass made from AoE2 DE's files by
+// tools/make_sprite_pack.py. The app ships with one (assets/), and a different
+// pack can be imported on the Duel screen; imports are kept only on the device.
 //
 // File layout: "AOE2PACK" | uint32 version | uint32 header length | JSON header | blobs
 
 const CACHE = 'aoe2-sprite-pack';
 const KEY = new URL('sprite-pack.aoe2pack', location.href).href;
 const MAGIC = 'AOE2PACK';
+const BUNDLED = 'assets/AoE2-sprites.aoe2pack';
 
 class SpritePack {
   constructor(buffer) {
@@ -45,13 +46,22 @@ class SpritePack {
 
 let current;
 
+/** A pack the user imported takes priority; otherwise the one bundled with the app. */
 export async function loadPack() {
   if (current !== undefined) return current;
   current = null;
   try {
-    if (typeof caches === 'undefined') return null;
-    const res = await (await caches.open(CACHE)).match(KEY);
-    if (res) current = new SpritePack(await res.arrayBuffer());
+    if (typeof caches !== 'undefined') {
+      const res = await (await caches.open(CACHE)).match(KEY);
+      if (res) current = new SpritePack(await res.arrayBuffer());
+    }
+    if (!current) {
+      const res = await fetch(BUNDLED);
+      if (res.ok) {
+        current = new SpritePack(await res.arrayBuffer());
+        current.bundled = true;
+      }
+    }
   } catch (err) {
     console.warn('Sprite pack unavailable:', err);
   }
@@ -69,7 +79,9 @@ export async function importPack(file) {
   return pack;
 }
 
+/** Removes an imported pack; the app goes back to the bundled one. */
 export async function removePack() {
-  current = null;
+  current = undefined;
   if (typeof caches !== 'undefined') await caches.delete(CACHE);
+  return loadPack();
 }

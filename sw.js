@@ -2,7 +2,7 @@
 // Unit/tech icons and fonts: cache forever once downloaded.
 // Game data JSON is cached by the app itself (js/data.js), so it's left alone here.
 
-const SHELL = 'shell-v2';
+const SHELL = 'shell-v3';
 const ASSETS = 'assets-v1';
 const SHELL_FILES = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
@@ -35,6 +35,18 @@ self.addEventListener('fetch', (e) => {
       if (hit) return hit;
       const res = await fetch(request);
       if (res.ok || res.type === 'opaque') cache.put(request, res.clone());
+      return res;
+    }));
+    return;
+  }
+
+  // The bundled sprite pack is large: download it once, then always use the cached copy.
+  if (url.origin === self.location.origin && url.pathname.endsWith('.aoe2pack')) {
+    e.respondWith(caches.open(ASSETS).then(async (cache) => {
+      const hit = await cache.match(request);
+      if (hit) return hit;
+      const res = await fetch(request);
+      if (res.ok) cache.put(request, res.clone());
       return res;
     }));
     return;

@@ -9,7 +9,11 @@ A personal Age of Empires II: Definitive Edition companion app for Android (and 
 
 All game data comes live from the open-source [aoe2techtree](https://github.com/SiegeEngineers/aoe2techtree) project (MIT licence), the same data behind aoe2techtree.net. The app caches it for offline use and checks GitHub for new data every few hours, so when aoe2techtree updates for a game patch, the app follows.
 
-## Install it on your phone
+## Android app (APK)
+
+Every push to `main` builds an Android APK on GitHub (see `.github/workflows/android.yml`). Download it from the repo's **Releases** page on your phone and open it to install (allow installing from your browser when Android asks).
+
+## Install it on your phone as a web app
 
 1. On GitHub, open **Settings → Pages**, set the source to **Deploy from a branch**, pick `main` and `/ (root)`, then save.
 2. After a minute the app is live at `https://robfulcher321-cloud.github.io/AOE-2-companion-/`.
@@ -27,16 +31,16 @@ python3 -m http.server 8000
 
 Then open http://localhost:8000.
 
-## In-game graphics (optional)
+## In-game graphics
 
-By default the duel shows unit icons. For the real look, with the game's own unit animations on the game's grass, make a sprite pack from your copy of AoE2 DE and import it on the Duel screen.
+The duel shows the game's own unit animations on the game's grass, from the sprite pack in `assets/`. To rebuild it after a game update, run the pack tool against an AoE2 DE install and replace `assets/AoE2-sprites.aoe2pack`. A different pack can also be imported on the Duel screen.
 
 ```
 pip install genieutils-py numpy pillow
 python tools/make_sprite_pack.py --game "D:/Steam/steamapps/common/AoE2DE" --out AoE2-sprites.aoe2pack
 ```
 
-It takes about 20 minutes and makes a file of roughly 50 MB covering every melee unit. The pack contains Microsoft's game art, so it is never committed to this repo (`.gitignore` blocks it) and the app stores it only on your device.
+It takes about 20 minutes and makes a file of roughly 50 MB covering every melee unit.
 
 The sprite decoder (`tools/sld.py`) is written from the format notes in the [openage](https://github.com/SFTtech/openage) project's documentation.
 

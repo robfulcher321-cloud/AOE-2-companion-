@@ -166,11 +166,13 @@ export async function initDuel() {
   const packFile = document.getElementById('pack-file');
   const packLabel = document.getElementById('pack-import-label');
   const showPack = (message) => {
-    packText.textContent = message || (pack
-      ? `In-game graphics on: ${pack.unitCount} units from your sprite pack.`
-      : 'Units show as icons. For the in-game look, import a sprite pack made from your copy of AoE2.');
-    packRemove.hidden = !pack;
-    packLabel.textContent = pack ? 'Replace pack' : 'Import sprite pack';
+    packText.textContent = message || (!pack
+      ? 'Units show as icons. For the in-game look, import a sprite pack made from your copy of AoE2.'
+      : pack.bundled
+        ? `In-game graphics on: ${pack.unitCount} units.`
+        : `In-game graphics on: ${pack.unitCount} units from your imported pack.`);
+    packRemove.hidden = !pack || pack.bundled;
+    packLabel.textContent = pack ? 'Use a different pack' : 'Import sprite pack';
   };
   showPack();
   packFile.addEventListener('change', async () => {
@@ -185,7 +187,7 @@ export async function initDuel() {
       showPack(err.message || 'Couldn\'t import that file.');
     }
   });
-  packRemove.addEventListener('click', async () => { await removePack(); pack = null; showPack(); });
+  packRemove.addEventListener('click', async () => { pack = await removePack(); showPack(); });
 
   const spritesFor = async (fa, fb) => {
     if (!pack || !pack.has(fa.stats.unitId) || !pack.has(fb.stats.unitId)) return null;

@@ -1,0 +1,8 @@
+{
+  "appId": "com.robfulcher.aoe2companion",
+  "appName": "AoE2 Companion",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#16233a"
+  }
+}
