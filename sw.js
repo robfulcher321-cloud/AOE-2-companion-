@@ -2,7 +2,7 @@
 // Unit/tech icons and fonts: cache forever once downloaded.
 // Game data JSON is cached by the app itself (js/data.js), so it's left alone here.
 
-const SHELL = 'shell-v5';
+const SHELL = 'shell-v6';
 const ASSETS = 'assets-v1';
 const SHELL_FILES = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
@@ -10,6 +10,8 @@ const SHELL_FILES = [
   'js/duel/combat.js', 'js/duel/sim.js', 'js/duel/render.js', 'js/duel/ui.js',
   'js/duel/radii.js', 'js/duel/spritepack.js', 'js/duel/effects.js',
   'icons/icon-192.png', 'icons/icon-512.png',
+  'img/paper.jpg', 'img/cross.png', 'img/ages/dark.png', 'img/ages/feudal.png', 'img/ages/castle.png', 'img/ages/imperial.png',
+  'fonts/merriweather-latin-400-normal.woff2', 'fonts/merriweather-latin-700-normal.woff2', 'fonts/merriweather-latin-400-italic.woff2',
 ];
 
 self.addEventListener('install', (e) => {

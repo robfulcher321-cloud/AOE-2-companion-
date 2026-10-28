@@ -1,6 +1,6 @@
 import { loadCore, loadTree, imageUrl, civIconUrl, cleanText, className, nameText } from './data.js';
 
-const AGE_MARKS = ['I', 'II', 'III', 'IV'];
+const AGE_ICONS = ['dark', 'feudal', 'castle', 'imperial'].map((a) => `img/ages/${a}.png`);
 const AGE_STRING_IDS = [4201, 4202, 4203, 4204];
 const ABSENT = 'NotAvailable';
 
@@ -46,8 +46,8 @@ export async function renderTree(civKey, { body, blurb, openSheet }) {
         .flat().filter(Boolean).map((id) => nodes.get(id)).filter(Boolean);
       if (!rowNodes.length) continue;
       const items = el('div', { className: 'items' }, ...rowNodes.map((n) => itemButton(n, strings, openSheet, data)));
-      section.append(el('div', { className: 'age-row' },
-        el('span', { className: 'age-mark', title: strings[AGE_STRING_IDS[age]], textContent: AGE_MARKS[age] }),
+      section.append(el('div', { className: `age-row age-${age + 1}` },
+        el('img', { className: 'age-mark', src: AGE_ICONS[age], alt: strings[AGE_STRING_IDS[age]] || `Age ${age + 1}`, title: strings[AGE_STRING_IDS[age]], width: 34, height: 42 }),
         items));
     }
     frag.append(section);
@@ -69,13 +69,21 @@ function itemButton(node, strings, openSheet, data) {
   const absent = node.node_status === ABSENT;
   const type = node.use_type; // Unit | Tech | Building
   const name = nameText(strings[node.name_string_id] || node.name);
+  // Tile colours follow the in-game tech tree: units blue, techs green,
+  // buildings orange, unique units purple, regional variants lighter.
+  const kind = {
+    Unit: 'unit', UnitUpgrade: 'unit', RegionalUnit: 'regional-unit', UniqueUnit: 'unique-unit',
+    Research: 'tech', RegionalTech: 'regional-tech', UniqueTech: 'unique-tech',
+  }[node.node_type] || (type === 'Building' ? 'building' : type.toLowerCase());
   const btn = el('button', {
     type: 'button',
-    className: `item ${type.toLowerCase()}${absent ? ' absent' : ''}`,
+    className: `item ${kind}${absent ? ' absent' : ''}`,
     title: absent ? `${name} (not available)` : name,
   },
-  el('img', { src: imageUrl(type, node.picture_index), alt: '', loading: 'lazy', width: 48, height: 48 }),
-  el('span', { textContent: name }));
+  el('span', { className: 'item-icon' },
+    el('img', { src: imageUrl(type, node.picture_index), alt: '', loading: 'lazy', width: 48, height: 48 }),
+    absent ? el('img', { className: 'item-cross', src: 'img/cross.png', alt: '' }) : null),
+  el('span', { className: 'item-name', textContent: name }));
   btn.addEventListener('click', () => openSheet(detailView(node, name, absent, strings, data)));
   return btn;
 }

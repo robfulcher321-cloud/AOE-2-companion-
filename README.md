@@ -68,4 +68,6 @@ Downloads the live data file and checks the damage maths and simulation against 
 
 ---
 
+The paper texture, age shields and cross in `img/` come from the [aoe2techtree](https://github.com/SiegeEngineers/aoe2techtree) project, and the Merriweather font (SIL Open Font License) in `fonts/` too.
+
 Age of Empires II © Microsoft Corporation. This app uses data and images from aoe2techtree under Microsoft's Game Content Usage Rules. It is a non-commercial fan project, not endorsed by or affiliated with Microsoft.

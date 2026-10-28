@@ -140,7 +140,7 @@ export class ArenaPlayer {
     }
 
     // Damage numbers (not in the real game, but useful here)
-    ctx.font = `800 ${Math.round(13 + 3 * zoom)}px "Alegreya", serif`;
+    ctx.font = `700 ${Math.round(13 + 3 * zoom)}px "Merriweather", Georgia, serif`;
     ctx.textAlign = 'center';
     for (const hit of this.result.hits) {
       const age = t - hit.t;
@@ -159,11 +159,12 @@ export class ArenaPlayer {
   drawClock(t) {
     const { ctx } = this;
     ctx.textAlign = 'left';
-    ctx.font = '600 15px "Alegreya Sans", sans-serif';
+    ctx.font = '700 13px "Merriweather", Georgia, serif';
     ctx.fillStyle = 'rgb(0 0 0 / .45)';
-    ctx.fillRect(8, 8, 118, 26);
+    const label = `${t.toFixed(1)} s game time`;
+    ctx.fillRect(8, 8, ctx.measureText(label).width + 14, 26);
     ctx.fillStyle = COLORS.ink;
-    ctx.fillText(`${t.toFixed(1)} s game time`, 14, 26);
+    ctx.fillText(label, 15, 26);
   }
 
   // ---------- Fallback: icon tokens on a plain field ----------
@@ -232,13 +233,13 @@ export class ArenaPlayer {
       ctx.fillStyle = f.hp[i] / maxHp > 0.33 ? '#58c35a' : '#e2b13c';
       ctx.fillRect(bx, by, bw * (f.hp[i] / maxHp), bh);
       ctx.fillStyle = COLORS.ink;
-      ctx.font = '600 13px "Alegreya Sans", sans-serif';
+      ctx.font = '700 12px "Merriweather", Georgia, serif';
       ctx.textAlign = 'center';
       ctx.fillText(`${Math.ceil(f.hp[i])}`, x, by - 5);
     }
 
     // Floating damage numbers (last 0.9 game seconds)
-    ctx.font = '800 18px "Alegreya", serif';
+    ctx.font = '700 18px "Merriweather", Georgia, serif';
     ctx.textAlign = 'center';
     for (const hit of this.result.hits) {
       const age = t - hit.t;

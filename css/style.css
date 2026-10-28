@@ -1,28 +1,33 @@
+@font-face { font-family: 'Merriweather'; font-weight: 400; font-style: normal; font-display: swap; src: url('../fonts/merriweather-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Merriweather'; font-weight: 700; font-style: normal; font-display: swap; src: url('../fonts/merriweather-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Merriweather'; font-weight: 400; font-style: italic; font-display: swap; src: url('../fonts/merriweather-latin-400-italic.woff2') format('woff2'); }
+
 :root {
   /* Scroll palette: dark wood behind, parchment in front, ink text */
   --wood: #23170d;
   --wood-2: #3a2614;
   --woad: var(--wood);    /* page */
-  --stone: #ecdcb2;       /* parchment panels */
-  --stone-2: #f5ebcf;     /* fields and raised parchment */
-  --line: #a3814b;        /* ink-brown rules */
-  --bone: #2b1c0e;        /* ink text */
-  --muted: #6a5230;
-  --gold: #9a6a12;        /* accents on parchment */
+  --stone: #cfa96f;       /* paper (fallback colour under the texture) */
+  --stone-2: rgb(255 244 214 / .38);  /* fields: lighter wash over the paper */
+  --line: #6e5226;        /* ink-brown rules */
+  --bone: #23170b;        /* ink text */
+  --muted: #4d3617;
+  --gold: #7a4f0c;        /* accents on paper */
   --gold-bright: #e6be5c; /* accents on wood */
   --p1: #2457b8;          /* AoE player 1 blue, ink strength */
   --p2: #b3281d;          /* AoE player 2 red */
   --absent: #9b8a6c;
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35 0 0 0 0 .25 0 0 0 0 .1 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  --parchment: var(--grain), radial-gradient(120% 90% at 50% 40%, #f4e6c0 0%, #ead7a8 62%, #d9bd84 100%);
+  /* The tech tree's paper texture (from aoe2techtree / the game), with darkened edges */
+  --parchment: radial-gradient(130% 100% at 50% 35%, transparent 55%, rgb(70 40 10 / .28) 100%), url('../img/paper.jpg') repeat #cfa96f;
   --rod: radial-gradient(circle at 9px 50%, #f0cd73 0 4px, #8a5d1c 5px, transparent 6px),
          radial-gradient(circle at calc(100% - 9px) 50%, #f0cd73 0 4px, #8a5d1c 5px, transparent 6px),
          linear-gradient(#8a5a2b, #5a3616 40%, #3a220d 75%, #2a180a);
   --radius-sm: 6px;
   --radius-lg: 14px;
   --tabs-h: 64px;
-  --serif: "Alegreya", Georgia, serif;
-  --sans: "Alegreya Sans", system-ui, sans-serif;
+  --serif: "Merriweather", Georgia, "Times New Roman", serif;
+  --sans: "Merriweather", Georgia, "Times New Roman", serif;
 }
 
 * { box-sizing: border-box; }
@@ -35,14 +40,14 @@ body {
     linear-gradient(#2c1d10, var(--wood));
   background-attachment: fixed;
   color: var(--bone);
-  font: 400 17px/1.45 var(--sans);
+  font: 400 15.5px/1.55 var(--sans);
   padding-bottom: calc(var(--tabs-h) + 40px + env(safe-area-inset-bottom));
 }
 button, select, input { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
 h1, h2, h3 { font-family: var(--serif); margin: 0; line-height: 1.15; }
-h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.01em; }
+h1 { font-size: 1.85rem; font-weight: 700; letter-spacing: 0; }
 h2 { font-size: 1.3rem; font-weight: 700; }
 h3 { font-size: 1.05rem; font-weight: 700; }
 .subtle { color: var(--muted); margin: .25rem 0 0; }
@@ -61,8 +66,9 @@ h3 { font-size: 1.05rem; font-weight: 700; }
 .view::after { bottom: -10px; }
 .view-head {
   display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 20px;
-  margin-bottom: 14px; padding-bottom: 12px;
-  border-bottom: 3px double var(--line);
+  margin-bottom: 14px; padding-bottom: 16px;
+  /* The swept ink rule from the tech tree's civ panel */
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 16' preserveAspectRatio='none'%3E%3Cpath d='M0 14 Q8 4 30 4 H370 Q392 4 400 14' fill='none' stroke='%2323170b' stroke-width='1.6' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") bottom / 100% 16px no-repeat;
 }
 h1 { color: #3b230e; }
 .view-head > p { flex-basis: 100%; }
@@ -87,29 +93,40 @@ select { min-width: 12rem; }
 /* ---------- Tech tree ---------- */
 .tree-body { display: grid; gap: 14px; }
 .building, .side, .arena-wrap {
-  background: rgb(255 248 226 / .45);
-  border: 1px solid var(--line); border-radius: 4px;
-  box-shadow: inset 0 0 0 3px rgb(255 248 226 / .5), inset 0 0 0 4px rgb(154 106 18 / .35);
+  background: rgb(255 240 200 / .12);
+  border: 1px solid var(--line); border-radius: 2px;
+  box-shadow: inset 0 0 0 3px rgb(255 236 190 / .18), inset 0 0 0 4px rgb(77 54 23 / .35);
 }
 .building { padding: 12px 12px 6px; }
 .building-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .building-head img { width: 36px; height: 36px; border-radius: var(--radius-sm); }
-.age-row { display: grid; grid-template-columns: 2.2rem 1fr; align-items: start; border-top: 1px solid var(--line); padding: 8px 0; }
-.age-mark { font-family: var(--serif); font-weight: 700; color: var(--muted); font-size: 1.1rem; padding-top: 14px; }
+.age-row {
+  display: grid; grid-template-columns: 40px 1fr; gap: 6px; align-items: start;
+  margin: 0 -12px; padding: 10px 12px; border-top: 1px solid rgb(77 54 23 / .35);
+}
+/* Alternate ages are shaded, like the bands on the in-game tech tree */
+.age-row.age-1, .age-row.age-3 { background: rgb(77 54 23 / .2); }
+.age-mark { width: 34px; height: auto; margin-top: 8px; filter: drop-shadow(0 1px 1px rgb(0 0 0 / .45)); }
 .items { display: flex; flex-wrap: wrap; gap: 8px; }
 .item {
-  width: 76px; display: grid; justify-items: center; gap: 3px;
-  background: none; border: 0; padding: 4px 2px; border-radius: var(--radius-sm); cursor: pointer;
-  font-size: .78rem; line-height: 1.15; text-align: center;
+  width: 80px; min-height: 86px; display: grid; grid-template-rows: auto 1fr; justify-items: center; align-items: center; gap: 2px;
+  border: 0; padding: 5px 2px 6px; border-radius: 0; cursor: pointer;
+  background: #00739c; color: #fff; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .35), 0 1px 2px rgb(40 25 5 / .45);
+  font: 700 .7rem/1.15 var(--serif); text-align: center; text-shadow: 0 1px 2px rgb(0 0 0 / .85);
 }
-.item:hover { background: rgb(120 80 30 / .1); }
-.item img { width: 48px; height: 48px; border-radius: 4px; border: 2px solid transparent; }
-.item img { box-shadow: 0 1px 2px rgb(60 35 10 / .4); }
-.item.unit img { border-color: #3d5f97; }
-.item.tech img { border-color: #9a6a12; }
-.item.absent { color: var(--absent); }
-.item.absent img { filter: grayscale(1) sepia(.35) brightness(.8) contrast(.8); opacity: .6; border-color: #b9a47f; }
-.item.absent span { text-decoration: line-through; }
+.item.unit { background: #00739c; }
+.item.regional-unit { background: #515ae3; }
+.item.unique-unit { background: #703b7a; }
+.item.tech { background: #397139; }
+.item.regional-tech { background: #059945; }
+.item.unique-tech { background: #009700; }
+.item.building { background: #b54e18; }
+.item:hover { box-shadow: inset 0 0 0 2px #fff, 0 1px 2px rgb(40 25 5 / .45); }
+.item-icon { position: relative; width: 48px; height: 48px; background: #000; }
+.item-icon img { width: 48px; height: 48px; display: block; }
+.item-cross { position: absolute; inset: -3px; width: 54px !important; height: 54px !important; }
+.item.absent { filter: saturate(.7) brightness(.82); }
+.item.absent .item-name { opacity: .85; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* ---------- Detail sheet ---------- */
@@ -158,6 +175,7 @@ select { min-width: 12rem; }
 .toggle { display: flex; align-items: center; gap: 8px; min-height: 44px; }
 .toggle input { width: 22px; height: 22px; accent-color: var(--gold); }
 details.extra summary, .civ-blurb summary { list-style: none; }
+.civ-blurb summary { color: var(--muted); font-weight: 700; }
 details.extra summary { cursor: pointer; color: var(--muted); min-height: 44px; display: flex; align-items: center; gap: 8px; }
 details summary::-webkit-details-marker { display: none; }
 details summary::before { content: '+'; display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid currentColor; border-radius: 4px; font-weight: 700; margin-right: 8px; }
