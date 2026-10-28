@@ -198,3 +198,15 @@ details[open] > summary::before { content: '−'; }
 .toggle small { color: var(--muted); font-size: .82rem; }
 .bonus-note { color: var(--muted); font-size: .88rem; margin: 0; }
 .view-head .field { min-width: 14rem; }
+
+/* ---------- App update banner ---------- */
+.update-banner {
+  position: sticky; top: 0; z-index: 25; display: grid; gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 12px; background: var(--stone-2); border-bottom: 2px solid var(--gold);
+}
+.update-banner p { margin: 0; }
+.update-banner progress { width: 100%; height: 8px; accent-color: var(--gold); }
+.update-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.update-actions button { min-height: 44px; padding: 0 16px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--stone); cursor: pointer; }
+.update-actions .update-go { background: var(--gold); color: #1d1606; border-color: var(--gold); font-weight: 700; }
+.update-actions button:disabled { opacity: .6; }

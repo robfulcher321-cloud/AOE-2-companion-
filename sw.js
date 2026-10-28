@@ -2,11 +2,11 @@
 // Unit/tech icons and fonts: cache forever once downloaded.
 // Game data JSON is cached by the app itself (js/data.js), so it's left alone here.
 
-const SHELL = 'shell-v4';
+const SHELL = 'shell-v5';
 const ASSETS = 'assets-v1';
 const SHELL_FILES = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
-  'js/app.js', 'js/data.js', 'js/techtree.js', 'js/picker.js',
+  'js/app.js', 'js/data.js', 'js/techtree.js', 'js/picker.js', 'js/updater.js',
   'js/duel/combat.js', 'js/duel/sim.js', 'js/duel/render.js', 'js/duel/ui.js',
   'js/duel/radii.js', 'js/duel/spritepack.js', 'js/duel/effects.js',
   'icons/icon-192.png', 'icons/icon-512.png',

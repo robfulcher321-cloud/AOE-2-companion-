@@ -32,9 +32,8 @@ jobs:
       - name: Prepare web app
         run: npm run build:web
 
-      - name: Create Android project
+      - name: Update Android project
         run: |
-          npx cap add android
           npx capacitor-assets generate --android --assetPath resources \
             --iconBackgroundColor '#16233a' --splashBackgroundColor '#16233a'
           npx cap sync android
@@ -44,7 +43,7 @@ jobs:
 
       - name: Build APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon -PbuildNumber=${{ github.run_number }}
 
       - name: Name the APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk AoE2-Companion.apk

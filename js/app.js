@@ -2,6 +2,7 @@ import { loadCore, checkForUpdate, lastDataDate } from './data.js';
 import { civOptions, renderTree } from './techtree.js';
 import { Picker } from './picker.js';
 import { initDuel } from './duel/ui.js';
+import { checkForAppUpdate } from './updater.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -98,7 +99,14 @@ async function boot() {
 }
 
 boot();
+checkForAppUpdate();
 
+const isNativeApp = Boolean(window.Capacitor?.isNativePlatform?.());
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  if (isNativeApp) {
+    // The Android app ships its files inside the APK; a service worker would keep serving old ones after an update.
+    navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister())).catch(() => {});
+  } else {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
 }

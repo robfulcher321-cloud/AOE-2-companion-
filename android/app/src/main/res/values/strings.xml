@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AoE2 Companion</string>
+    <string name="title_activity_main">AoE2 Companion</string>
+    <string name="package_name">com.robfulcher.aoe2companion</string>
+    <string name="custom_url_scheme">com.robfulcher.aoe2companion</string>
+</resources>
