@@ -39,6 +39,9 @@ jobs:
             --iconBackgroundColor '#16233a' --splashBackgroundColor '#16233a'
           npx cap sync android
 
+      - name: Use the repo's signing key so updates install over older builds
+        run: mkdir -p ~/.android && cp signing/debug.keystore ~/.android/debug.keystore
+
       - name: Build APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
