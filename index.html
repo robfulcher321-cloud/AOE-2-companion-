@@ -40,6 +40,13 @@
         <fieldset class="side side-red" id="side-b"></fieldset>
       </div>
       <button id="fight" class="fight" type="button">Fight</button>
+      <div class="pack" id="pack">
+        <p id="pack-text">Loading…</p>
+        <div class="pack-actions">
+          <label class="pack-btn"><input type="file" id="pack-file" accept=".aoe2pack" hidden><span id="pack-import-label">Import sprite pack</span></label>
+          <button type="button" id="pack-remove" hidden>Remove</button>
+        </div>
+      </div>
       <div id="arena-wrap" class="arena-wrap" hidden>
         <canvas id="arena" aria-label="Duel playback"></canvas>
         <div class="arena-controls">

@@ -5,6 +5,8 @@
 // Only classes the defender has an armour entry for count. Melee is class 4,
 // pierce is class 3; everything else is a bonus class (e.g. 27 Spearmen).
 
+import { RADII } from './radii.js';
+
 export const CLASS = { INFANTRY: 1, PIERCE: 3, MELEE: 4, ELEPHANT: 5, CAVALRY: 8, SHIP: 16, RAM: 17, SIEGE: 20 };
 
 // Blacksmith steps: index = number of upgrades researched.
@@ -27,12 +29,12 @@ export function isDuelEligible(u) {
   return c.has(CLASS.INFANTRY) || c.has(CLASS.CAVALRY) || c.has(CLASS.ELEPHANT);
 }
 
-// Collision radius in tiles. The tech-tree data doesn't include it, so these
-// are approximations by unit type. They only affect when the first blow lands.
+// Collision radius in tiles, from the game data file where known; otherwise
+// a fallback by unit type. It only affects when the first blow lands.
 export function radiusOf(u) {
+  if (RADII[u.ID] !== undefined) return RADII[u.ID];
   const c = armourClasses(u);
-  if (c.has(CLASS.ELEPHANT)) return 0.6;
-  if (c.has(CLASS.CAVALRY)) return 0.4;
+  if (c.has(CLASS.ELEPHANT) || c.has(CLASS.CAVALRY)) return 0.25;
   return 0.2;
 }
 

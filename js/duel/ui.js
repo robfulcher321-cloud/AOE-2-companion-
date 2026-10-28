@@ -3,6 +3,7 @@ import { civKeys } from '../techtree.js';
 import { BLACKSMITH, buildFighter, isDuelEligible, isCavalry, isInfantry, damagePerHit, hitsToKill, CLASS } from './combat.js';
 import { simulate } from './sim.js';
 import { ArenaPlayer } from './render.js';
+import { loadPack, importPack, removePack } from './spritepack.js';
 
 const LEVEL_NAMES = {
   attack: ['None', 'Forging', 'Iron Casting', 'Blast Furnace'],
@@ -159,12 +160,52 @@ export async function initDuel() {
   const player = new ArenaPlayer(document.getElementById('arena'));
   const resultBox = document.getElementById('result');
   let current = null;
+  let pack = await loadPack();
+  const packText = document.getElementById('pack-text');
+  const packRemove = document.getElementById('pack-remove');
+  const packFile = document.getElementById('pack-file');
+  const packLabel = document.getElementById('pack-import-label');
+  const showPack = (message) => {
+    packText.textContent = message || (pack
+      ? `In-game graphics on: ${pack.unitCount} units from your sprite pack.`
+      : 'Units show as icons. For the in-game look, import a sprite pack made from your copy of AoE2.');
+    packRemove.hidden = !pack;
+    packLabel.textContent = pack ? 'Replace pack' : 'Import sprite pack';
+  };
+  showPack();
+  packFile.addEventListener('change', async () => {
+    const file = packFile.files[0];
+    packFile.value = '';
+    if (!file) return;
+    packText.textContent = 'Importing…';
+    try {
+      pack = await importPack(file);
+      showPack();
+    } catch (err) {
+      showPack(err.message || 'Couldn\'t import that file.');
+    }
+  });
+  packRemove.addEventListener('click', async () => { await removePack(); pack = null; showPack(); });
+
+  const spritesFor = async (fa, fb) => {
+    if (!pack || !pack.has(fa.stats.unitId) || !pack.has(fb.stats.unitId)) return null;
+    try {
+      const [grass, ua, ub] = await Promise.all([pack.grass(), pack.unit(fa.stats.unitId), pack.unit(fb.stats.unitId)]);
+      return { grass, units: [ua, ub] };
+    } catch (err) {
+      console.warn(err);
+      return null;
+    }
+  };
 
   const run = async () => {
     const fa = a.fighter();
     const fb = b.fighter();
     if (!fa || !fb) return;
     const result = simulate(fa.stats, fb.stats);
+    const sprites = await spritesFor(fa, fb);
+    if (pack && !sprites) showPack('This matchup isn\'t in your sprite pack, so it\'s shown with icons.');
+    else showPack();
     const icons = await Promise.all([fa.icon, fb.icon].map((src) => new Promise((res) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -175,7 +216,7 @@ export async function initDuel() {
     wrap.hidden = false;
     resultBox.replaceChildren();
     player.resize();
-    player.load(result, icons);
+    player.load(result, icons, sprites);
     player.onDone = () => showResult(resultBox, current);
     player.play();
     wrap.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });

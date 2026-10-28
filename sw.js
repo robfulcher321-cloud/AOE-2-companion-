@@ -2,12 +2,13 @@
 // Unit/tech icons and fonts: cache forever once downloaded.
 // Game data JSON is cached by the app itself (js/data.js), so it's left alone here.
 
-const SHELL = 'shell-v1';
+const SHELL = 'shell-v2';
 const ASSETS = 'assets-v1';
 const SHELL_FILES = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
   'js/app.js', 'js/data.js', 'js/techtree.js',
   'js/duel/combat.js', 'js/duel/sim.js', 'js/duel/render.js', 'js/duel/ui.js',
+  'js/duel/radii.js', 'js/duel/spritepack.js',
   'icons/icon-192.png', 'icons/icon-512.png',
 ];
 
@@ -17,7 +18,7 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys()
-    .then((keys) => Promise.all(keys.filter((k) => ![SHELL, ASSETS, 'aoe2-data'].includes(k)).map((k) => caches.delete(k))))
+    .then((keys) => Promise.all(keys.filter((k) => ![SHELL, ASSETS, 'aoe2-data', 'aoe2-sprite-pack'].includes(k)).map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 

@@ -9,7 +9,7 @@ export const DT = 1 / 60;          // simulation step, game seconds
 const MAX_TIME = 600;
 
 export function simulate(a, b, { startGap = 5 } = {}) {
-  const sides = [a, b].map((f) => ({ f, hp: f.hp, ready: 0, pending: null, hits: 0, dealt: 0, contactAt: null }));
+  const sides = [a, b].map((f) => ({ f, hp: f.hp, ready: 0, pending: null, hits: 0, dealt: 0, contactAt: null, attackStart: null, diedAt: null }));
   const reach = (s) => s.f.range + a.radius + b.radius;
   // positions in tiles along one axis; gap is edge-to-edge
   const pos = [0, a.radius + b.radius + startGap];
@@ -32,6 +32,7 @@ export function simulate(a, b, { startGap = 5 } = {}) {
       } else if (!me.pending && t >= me.ready) {
         if (me.contactAt === null) me.contactAt = t;
         me.pending = { at: t + me.f.attackDelay, started: t };
+        me.attackStart = t;
         me.ready = t + me.f.reload;
       }
     }
@@ -54,11 +55,14 @@ export function simulate(a, b, { startGap = 5 } = {}) {
       hits.push({ t, by: i, dmg: dmg[i], hpAfter: Math.max(0, sides[j].hp) });
       sides[i].pending = null;
     }
+    for (const s of sides) if (s.hp <= 0 && s.diedAt === null) s.diedAt = t;
     frames.push({
       t,
       x: [pos[0], pos[1]],
       hp: [Math.max(0, sides[0].hp), Math.max(0, sides[1].hp)],
       swing: sides.map((s) => (s.pending ? (t - s.pending.started) / Math.max(s.pending.at - s.pending.started, 0.15) : 0)),
+      moving: [steps[0] > 0, steps[1] > 0],
+      attackStart: [sides[0].attackStart, sides[1].attackStart],
     });
     t += DT;
   }
@@ -72,6 +76,6 @@ export function simulate(a, b, { startGap = 5 } = {}) {
     winner,                 // 0, 1, or null for a draw / timeout
     timedOut: !dead[0] && !dead[1],
     damage: dmg,
-    sides: sides.map((s) => ({ hpLeft: Math.max(0, s.hp), hits: s.hits, dealt: s.dealt })),
+    sides: sides.map((s) => ({ hpLeft: Math.max(0, s.hp), hits: s.hits, dealt: s.dealt, diedAt: s.diedAt })),
   };
 }

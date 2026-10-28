@@ -27,6 +27,19 @@ python3 -m http.server 8000
 
 Then open http://localhost:8000.
 
+## In-game graphics (optional)
+
+By default the duel shows unit icons. For the real look, with the game's own unit animations on the game's grass, make a sprite pack from your copy of AoE2 DE and import it on the Duel screen.
+
+```
+pip install genieutils-py numpy pillow
+python tools/make_sprite_pack.py --game "D:/Steam/steamapps/common/AoE2DE" --out AoE2-sprites.aoe2pack
+```
+
+It takes about 20 minutes and makes a file of roughly 50 MB covering every melee unit. The pack contains Microsoft's game art, so it is never committed to this repo (`.gitignore` blocks it) and the app stores it only on your device.
+
+The sprite decoder (`tools/sld.py`) is written from the format notes in the [openage](https://github.com/SFTtech/openage) project's documentation.
+
 ## How the duel works
 
 `js/duel/combat.js` holds the rules, `js/duel/sim.js` runs the fight in steps of 1/60 of a game second, and `js/duel/render.js` plays it back. Damage per hit is
@@ -35,9 +48,9 @@ Then open http://localhost:8000.
 max(1, Σ max(0, attack[class] − armour[class]))
 ```
 
-over every attack class the defender has an armour entry for. Each blow lands `AttackDelaySeconds` into the unit's attack cycle, and attacks repeat every `ReloadTime`. A blow is cancelled if the attacker dies before it lands.
+over every attack class the defender has an armour entry for. Each blow lands `AttackDelaySeconds` into the unit's attack cycle, and attacks repeat every `ReloadTime`. A blow is cancelled if the attacker dies before it lands. Collision sizes come from the game's data file (`js/duel/radii.js`).
 
-Not modelled yet: civ bonuses, unique techs (use the manual "extra" fields for now), charge attacks, trample, regeneration, ranged units, and elevation. Unit collision sizes are approximate.
+Not modelled yet: civ bonuses, unique techs (use the manual "extra" fields for now), charge attacks, trample, regeneration, ranged units, and elevation.
 
 **Results haven't been checked against the real game yet.** The plan is to recreate a few benchmark duels in the Scenario Editor, record time-to-kill and HP left, and compare.
 

@@ -132,6 +132,11 @@ details[open] > summary::before { content: '−'; }
 }
 .fight:active { transform: translateY(1px); }
 
+.pack { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: -4px 0 16px; color: var(--muted); font-size: .92rem; }
+.pack p { margin: 0; flex: 1 1 16rem; }
+.pack-actions { display: flex; gap: 8px; }
+.pack-btn, .pack-actions button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--stone-2); color: var(--bone); cursor: pointer; font: inherit; }
+.pack-btn:focus-within { outline: 2px solid var(--gold); outline-offset: 2px; }
 .arena-wrap { background: var(--stone); border-radius: var(--radius-lg); border: 1px solid var(--line); overflow: hidden; }
 #arena { display: block; width: 100%; height: 300px; touch-action: manipulation; }
 .arena-controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--line); }
