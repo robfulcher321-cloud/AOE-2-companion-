@@ -10,7 +10,7 @@ Usage:
   python tools/make_sprite_pack.py --game "D:/Steam/steamapps/common/AoE2DE" --out sprites.aoe2pack
 
 Options:
-  --units 554,569      only these unit IDs (default: every melee unit the duel supports)
+  --units 554,569      only these unit IDs (default: every unit the duel supports)
   --techtree data.json aoe2techtree's data.json (default: downloaded)
 """
 import argparse
@@ -40,13 +40,44 @@ SHADOW_ALPHA = 0.55
 MAGIC = b'AOE2PACK'
 
 
+# Projectiles whose frames are tilt steps along the flight (rising -> falling);
+# the rest (axes, chakrams, bolas...) spin, so their frames loop.
+PITCHED = ('arrow', 'dart', 'spear', 'bolt')
+
+
 def duel_eligible(u):
+    """Land units that fight, melee or ranged; no siege, rams or ships."""
     classes = {a['Class'] for a in u['Armours']}
-    if not u['Attack'] > 0 or u['Range'] >= 1:
+    if not u['Attack'] > 0:
         return False
     if classes & {16, 17, 20}:
         return False
-    return bool(classes & {1, 5, 8})
+    return bool(classes & {1, 5, 8, 15})
+
+
+def projectile_entry(g, sld):
+    """Frames of a projectile graphic flying right (angle 0) and left (half way round)."""
+    per_angle = max(1, g.frame_count)
+    mode = 'pitch' if any(k in g.file_name for k in PITCHED) and per_angle > 1 else 'spin'
+    images, frames = [], {}
+    for side, angle16 in (('right', 0), ('left', 8)):
+        angle_idx = angle16 * g.angle_count // 16 if g.angle_count > 1 else 0
+        seq = []
+        for f in range(per_angle):
+            fi = angle_idx * per_angle + f
+            if fi >= len(sld.frames):
+                continue
+            try:
+                comp = compose(sld.frame(fi), (200, 200, 200))
+            except KeyError:
+                comp = None
+            if comp is None:
+                continue
+            img, ax, ay = comp
+            seq.append([len(images), ax, ay])
+            images.append(img)
+        frames[side] = seq
+    return mode, images, frames
 
 
 def compose(frame, colour):
@@ -187,6 +218,34 @@ def main():
             'anims': entries,
         }
         print(f'[{n}/{len(units)}] {u.name}: {len(images)} frames, {len(buf.getvalue()) // 1024} KB')
+
+    # Projectile sprites used by the ranged units in the pack
+    meta['projectiles'] = {}
+    names = set()
+    for uid in units:
+        pid = dat.civs[1].units[uid].type_50.projectile_unit_id
+        if pid >= 0:
+            gid = dat.civs[1].units[pid].standing_graphic[0]
+            if gid >= 0:
+                names.add(gid)
+    for gid in sorted(names):
+        g = dat.graphics[gid]
+        path = os.path.join(gfx_dir, g.file_name + '.sld')
+        if not os.path.exists(path):
+            print(f'  missing {g.file_name}.sld, skipped')
+            continue
+        mode, images, frames = projectile_entry(g, SLD(path))
+        if not images:
+            print(f'  {g.file_name}: no visible frames (drawn as a tracer in the app)')
+            continue
+        atlas, rects = pack_atlas(images, width=512)
+        for side, seq in frames.items():
+            frames[side] = [list(rects[i]) + [ax, ay] for i, ax, ay in seq]
+        buf = io.BytesIO()
+        atlas.save(buf, 'WEBP', lossless=True)
+        meta['projectiles'][g.file_name] = {'mode': mode, 'fdur': g.frame_duration or 0.05,
+                                            'atlas': add_blob(buf.getvalue()), 'frames': frames}
+        print(f'Projectile {g.file_name}: {len(images)} frames ({mode})')
 
     header = json.dumps(meta, separators=(',', ':')).encode()
     with open(args.out, 'wb') as fh:

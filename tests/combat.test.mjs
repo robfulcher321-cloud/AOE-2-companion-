@@ -2,8 +2,8 @@
 // Without a path it downloads the live data file.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildFighter, damagePerHit, hitsToKill, isDuelEligible } from '../js/duel/combat.js';
-import { simulate } from '../js/duel/sim.js';
+import { buildFighter, damagePerHit, hitsToKill, isDuelEligible, trackFor, otherTechsFor } from '../js/duel/combat.js';
+import { simulate, simulateMany } from '../js/duel/sim.js';
 
 const src = process.argv[2];
 const data = src
@@ -33,9 +33,10 @@ const militia = buildFighter(U[74], 'Militia');
 const tank = buildFighter(U[554], 'ETK', { armourLevel: 3, extra: { meleeArmour: 50 } });
 assert.equal(damagePerHit(militia, tank), 1);
 
-// Eligibility: melee land units in, archers/siege/ships out
+// Eligibility: melee and ranged land units in; siege, rams and ships out
 assert.ok(isDuelEligible(U[554]) && isDuelEligible(U[569]) && isDuelEligible(U[359]));
-assert.ok(!isDuelEligible(U[4]) && !isDuelEligible(U[1258]) && !isDuelEligible(U[539]));
+assert.ok(isDuelEligible(U[4]) && isDuelEligible(U[5]) && isDuelEligible(U[39]) && isDuelEligible(U[879]));
+assert.ok(!isDuelEligible(U[1258]) && !isDuelEligible(U[539]) && !isDuelEligible(U[279]) && !isDuelEligible(U[36]));
 
 // Simulation: winner, hit counts consistent with the formula
 for (const [x, y] of [[etk, pal], [champ, halb], [halb, pal]]) {
@@ -60,6 +61,45 @@ assert.equal(vikingChamp.hp, U[567].HP * 1.2, 'Vikings: infantry +20% HP');
 const celtChamp = buildFighter(U[567], 'Champion', { ...full, civ: 'Celts' });
 assert.ok(Math.abs(celtChamp.speed - U[567].Speed * 1.2) < 0.01, 'Celts: infantry +20% speed by Imperial');
 console.log('Civ bonus checks passed.');
+
+// Ranged units: the right Blacksmith lines, range and accuracy upgrades
+assert.equal(trackFor(U[492], 'attack').key, 'archer');
+assert.equal(trackFor(U[492], 'armour').key, 'archer');
+assert.equal(trackFor(U[474], 'armour').key, 'archer', 'cavalry archers use archer armour');
+assert.equal(trackFor(U[281], 'attack').key, 'melee', 'throwing axemen use Forging');
+assert.equal(trackFor(U[569], 'armour').key, 'cavalry');
+assert.ok(otherTechsFor(U[492]).some((t) => t.name === 'Thumb Ring'));
+assert.ok(!otherTechsFor(U[569]).some((t) => t.name === 'Thumb Ring'));
+const allTechs = { attackLevel: 3, armourLevel: 3, techs: [435, 437, 436, 47, 215, 39] };
+const arb = buildFighter(U[492], 'Arbalester', allTechs);
+assert.equal(arb.attacks.get(3), U[492].Attack + 3 + 1, 'Fletching line +3 pierce, Chemistry +1');
+assert.equal(arb.range, U[492].Range + 3, 'Fletching line +3 range');
+assert.equal(arb.projectile.accuracy, 100, 'Thumb Ring: 100% accuracy');
+assert.equal(arb.armours.get(3), U[492].PierceArmor + 4);
+const arbNoUps = buildFighter(U[492], 'Arbalester');
+assert.equal(arbNoUps.projectile.accuracy, U[492].AccuracyPercent);
+const eckn = buildFighter(U[559], 'Elite Chu Ko Nu', allTechs);
+assert.equal(eckn.projectile.count, 5);
+assert.equal(eckn.projectile.secondary.attacks.get(3), 3, 'extra arrows keep their own 3 pierce');
+const kama = buildFighter(U[879], 'Kamayuk', allTechs);
+assert.equal(kama.projectile, null, 'Kamayuk has reach, not projectiles');
+// Without Thumb Ring the arbalester misses sometimes, so win rates are sampled
+const palF = buildFighter(U[569], 'Paladin', full);
+const many = simulateMany(buildFighter(U[492], 'Arbalester', { attackLevel: 3, armourLevel: 3 }), palF, { runs: 100 });
+assert.equal(many.runs, 100);
+assert.ok(many.rates[1] > 0.9, 'a fully upgraded Paladin beats an Arbalester');
+console.log(`Arbalester vs Paladin: Paladin wins ${Math.round(many.rates[1] * 100)}%`);
+// Arbalester vs Champion: shots land at range before the champion arrives
+const arbVsChamp = simulate(arb, champ);
+assert.ok(arbVsChamp.shots.length > 0 && arbVsChamp.shots[0].t0 < arbVsChamp.hits.find((h) => h.by === 1)?.t);
+// Archer mirror with perfect accuracy: both die together
+const pair = simulate(arb, buildFighter(U[492], 'B', allTechs));
+assert.equal(pair.winner, null);
+const ecknVsArb = simulateMany(eckn, arb, { runs: 50 });
+console.log(`Elite Chu Ko Nu vs Arbalester: ${ecknVsArb.rates.map((r) => Math.round(r * 100) + '%').join(' / ')}`);
+const hcVsChamp = simulateMany(buildFighter(U[5], 'Hand Cannoneer', allTechs), champ, { runs: 100 });
+console.log(`Hand Cannoneer vs Champion: ${hcVsChamp.rates.map((r) => Math.round(r * 100) + '%').join(' / ')}`);
+console.log('Ranged checks passed.');
 
 // Mirror match is symmetric: equal units die together
 const r = simulate(buildFighter(U[567], 'A', full), buildFighter(U[567], 'B', full));

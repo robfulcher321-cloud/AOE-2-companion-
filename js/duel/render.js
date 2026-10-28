@@ -96,7 +96,8 @@ export class ArenaPlayer {
     const TILE = 96 / Math.SQRT2;       // screen pixels per tile along the horizontal at 100% zoom
     // Camera follows the action: frame both units, zooming in as they close.
     const span = Math.max(3.4, Math.abs(f.x[1] - f.x[0]) + 2.2);
-    const target = { zoom: Math.min(1.5, Math.max(0.6, w / (span * TILE))), mid: (f.x[0] + f.x[1]) / 2 };
+    // Long-range matchups zoom further out so both units stay in view.
+    const target = { zoom: Math.min(1.5, Math.max(0.3, w / (span * TILE))), mid: (f.x[0] + f.x[1]) / 2 };
     if (!this.cam || t < (this.camT ?? 0)) this.cam = { ...target };
     const k = this.reduceMotion ? 1 : 0.08;
     this.cam.zoom += (target.zoom - this.cam.zoom) * k;
@@ -126,6 +127,8 @@ export class ArenaPlayer {
       ctx.drawImage(units[d.i].atlas, sx, sy, sw, sh, d.x - ax * zoom, groundY - ay * zoom, sw * zoom, sh * zoom);
     }
 
+    this.drawProjectiles(t, toPx, groundY, ppt, zoom);
+
     // Health bars, like the in-game ones, above each living unit.
     for (const d of draws) {
       if (d.dead || !d.fr) continue;
@@ -154,6 +157,62 @@ export class ArenaPlayer {
       ctx.globalAlpha = 1;
     }
     this.drawClock(Math.min(t, this.result.duration));
+  }
+
+  /**
+   * Arrows, bolts, axes and shots in flight, on a shallow arc from the shooter's
+   * chest to the target. Missed arrows stay stuck in the ground for a moment.
+   */
+  drawProjectiles(t, toPx, groundY, ppt, zoom) {
+    const { ctx } = this;
+    const shots = this.result.shots || [];
+    for (const s of shots) {
+      if (t < s.t0) continue;
+      const end = s.landed ?? Infinity;
+      const flight = Math.max(end - s.t0, 1e-3);
+      const stuck = t > end;
+      if (stuck && (s.hit || t - end > 0.8)) continue;
+      const k = stuck ? 1 : (t - s.t0) / flight;
+      const dist = Math.abs(s.x1 - s.x0);
+      const startH = 0.55, endH = s.hit ? 0.4 : 0;
+      const peak = Math.min(1.6, 0.1 + dist * 0.08 + Math.max(0, s.arc) * dist); // tiles
+      const height = (q) => startH + (endH - startH) * q + 4 * peak * q * (1 - q);
+      const depth = (q) => (s.off?.[1] || 0) * q * ppt * 0.5;
+      const px = toPx(s.x0 + (s.x1 - s.x0) * k);
+      const py = groundY - height(k) * ppt * 0.82 + depth(k);
+      // Direction of travel on screen, for tilting the sprite
+      const q2 = Math.min(1, k + 0.02);
+      const dx = toPx(s.x0 + (s.x1 - s.x0) * q2) - px;
+      const dy = (groundY - height(q2) * ppt * 0.82 + depth(q2)) - py;
+      const sprite = this.sprites?.projectiles?.[s.by];
+      const goingRight = s.x1 >= s.x0;
+      const seq = sprite?.frames?.[goingRight ? 'right' : 'left'];
+      if (seq?.length && sprite.atlas) {
+        let n;
+        if (sprite.mode === 'pitch') {
+          // Frame 0 points steeply up, the middle one level, the last steeply down.
+          const ang = Math.atan2(dy, Math.abs(dx) || 1e-6); // + = falling
+          const frac = (ang + Math.PI / 2.4) / (Math.PI / 1.2);
+          n = Math.round(Math.min(1, Math.max(0, frac)) * (seq.length - 1));
+        } else {
+          n = stuck ? 0 : Math.floor((t - s.t0) / sprite.fdur) % seq.length;
+        }
+        const [sx, sy, sw, sh, ax, ay] = seq[n];
+        const z = Math.max(zoom, 0.75); // keep tiny arrows visible when zoomed out
+        ctx.drawImage(sprite.atlas, sx, sy, sw, sh, px - ax * z, py - ay * z, sw * z, sh * z);
+      }
+      if (!seq?.length || /shot|grenad/.test(s.sprite || '')) {
+        // Gunpowder: a bright tracer, since the game's shot is barely visible.
+        if (stuck) continue;
+        const len = Math.hypot(dx, dy) || 1;
+        ctx.strokeStyle = 'rgb(255 236 170 / .9)';
+        ctx.lineWidth = Math.max(1.5, 2 * zoom);
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px - (dx / len) * 14 * zoom, py - (dy / len) * 14 * zoom);
+        ctx.stroke();
+      }
+    }
   }
 
   drawClock(t) {
@@ -236,6 +295,18 @@ export class ArenaPlayer {
       ctx.font = '700 12px "Merriweather", Georgia, serif';
       ctx.textAlign = 'center';
       ctx.fillText(`${Math.ceil(f.hp[i])}`, x, by - 5);
+    }
+
+    // Projectiles in flight
+    ctx.strokeStyle = '#f3e7c0';
+    ctx.lineWidth = 2;
+    for (const s of this.result.shots || []) {
+      if (t < s.t0 || t > (s.landed ?? Infinity)) continue;
+      const k = (t - s.t0) / Math.max((s.landed ?? t) - s.t0, 1e-3);
+      const x = toPx(s.x0 + (s.x1 - s.x0) * k);
+      const y = cy - 10 - Math.sin(k * Math.PI) * 26;
+      const dir = s.x1 >= s.x0 ? 1 : -1;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - dir * 12, y + Math.cos(k * Math.PI) * 4); ctx.stroke();
     }
 
     // Floating damage numbers (last 0.9 game seconds)

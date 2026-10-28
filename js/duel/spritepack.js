@@ -36,6 +36,13 @@ class SpritePack {
 
   grass() { return this.bitmap('grass', this.meta.grass); }
 
+  /** Projectile sprite by graphic name: { mode, fdur, frames: { right, left }, atlas } or null */
+  async projectile(name) {
+    const p = name && this.meta.projectiles?.[name];
+    if (!p) return null;
+    return { ...p, atlas: await this.bitmap(`p${name}`, p.atlas) };
+  }
+
   /** { radius, anims, atlas: ImageBitmap } or null */
   async unit(unitId) {
     const u = this.meta.units[unitId];

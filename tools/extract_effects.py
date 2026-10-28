@@ -17,18 +17,47 @@ import urllib.request
 TECHTREE_URL = 'https://raw.githubusercontent.com/SiegeEngineers/aoe2techtree/master/data/data.json'
 # dat civ names that differ from aoe2techtree's civ keys
 CIV_ALIASES = {'British': 'Britons', 'French': 'Franks', 'Byzantine': 'Byzantines', 'Mayan': 'Mayans'}
-ATTRS = {0: 'hp', 5: 'speed', 8: 'armour', 9: 'attack', 10: 'reload'}
+ATTRS = {0: 'hp', 5: 'speed', 8: 'armour', 9: 'attack', 10: 'reload', 11: 'accuracy', 12: 'range', 102: 'projectiles'}
 CASTLE = 82
 AGE_OF = {101: 2, 102: 3, 103: 4}   # Feudal, Castle, Imperial age techs
-# Techs the duel lets the player choose: Blacksmith lines and Bloodlines
-PLAYER_TECHS = [67, 68, 75, 74, 76, 77, 81, 82, 80, 435]
+# Techs the duel lets the player choose: Blacksmith lines (melee and archer),
+# Bloodlines, Thumb Ring, Parthian Tactics, Chemistry, Squires, Husbandry
+PLAYER_TECHS = [67, 68, 75, 74, 76, 77, 81, 82, 80, 199, 200, 201, 211, 212, 219,
+                435, 437, 436, 47, 215, 39]
+PROJECTILE_CLASS = 11
 
 
 def duel_eligible(u):
+    """Land units that fight: infantry, cavalry, elephants and archers; no siege, rams or ships."""
     classes = {a['Class'] for a in u['Armours']}
-    if not u['Attack'] > 0 or u['Range'] >= 1 or classes & {16, 17, 20}:
+    if not u['Attack'] > 0 or classes & {16, 17, 20}:
         return False
-    return bool(classes & {1, 5, 8})
+    return bool(classes & {1, 5, 8, 15})
+
+
+def ranged_record(dat, uid):
+    """How a ranged unit's projectiles fly: speed (tiles/s), sprite, count, spread and the
+    extra projectiles' own attacks (e.g. the Chu Ko Nu's extra arrows)."""
+    u = dat.civs[1].units[uid]
+    t50 = u.type_50
+    pid = t50.projectile_unit_id
+    if pid < 0:
+        return None
+    p = dat.civs[1].units[pid]
+    gid = p.standing_graphic[0]
+    rec = {
+        'speed': round(float(p.speed), 3),
+        'arc': round(float(p.projectile.projectile_arc), 3),
+        'sprite': dat.graphics[gid].file_name if gid >= 0 else None,
+        'count': int(u.creatable.total_projectiles),
+        'spread': round(float(t50.accuracy_dispersion), 3),
+        'blast': round(float(t50.blast_width), 3),
+    }
+    sec = u.creatable.secondary_projectile_unit
+    if rec['count'] > 1 and sec >= 0:
+        s = dat.civs[1].units[sec]
+        rec['secondary'] = {'id': sec, 'attacks': [[a.class_, a.amount] for a in s.type_50.attacks]}
+    return rec
 
 
 def commands(dat, effect_id):
@@ -66,6 +95,7 @@ def main():
     tt = json.load(open(args.techtree)) if args.techtree else json.load(urllib.request.urlopen(TECHTREE_URL))
     unit_ids = sorted(int(k) for k, u in tt['data']['Unit'].items() if duel_eligible(u))
 
+    ranged = {uid: r for uid in unit_ids if (r := ranged_record(dat, uid))}
     units = {uid: {'class': dat.civs[1].units[uid].class_, 'radius': round(float(dat.civs[1].units[uid].collision_size_x), 3)}
              for uid in unit_ids}
 
@@ -103,7 +133,12 @@ def main():
         fh.write('// Collision radius in tiles per unit ID, read from the game data file (empires2_x2_p1.dat)\n')
         fh.write('// by tools/extract_effects.py.\n')
         fh.write('export const RADII = ' + json.dumps({k: v['radius'] for k, v in units.items()}, separators=(',', ':')) + ';\n')
-    print(f'{len(civs)} civs, {len(units)} units written')
+    with open(os.path.join(args.out, 'ranged.js'), 'w') as fh:
+        fh.write('// Projectile data per ranged unit ID, read from the game data file by tools/extract_effects.py.\n')
+        fh.write('// speed in tiles per second; spread = miss distance per tile of range; count = projectiles per shot.\n')
+        fh.write(f'export const PROJECTILE_CLASS = {PROJECTILE_CLASS};\n')
+        fh.write('export const RANGED = ' + json.dumps(ranged, separators=(',', ':')) + ';\n')
+    print(f'{len(civs)} civs, {len(units)} units ({len(ranged)} ranged) written')
 
 
 if __name__ == '__main__':

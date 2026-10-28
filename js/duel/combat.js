@@ -1,20 +1,44 @@
 // Pure combat rules. No DOM, so it can be tested with Node.
 //
-// Damage per hit (melee, flat ground):
+// Damage per hit (flat ground, melee or projectile):
 //   max(1, sum over attack classes of max(0, attack[c] - armour[c]))
 // Only classes the defender has an armour entry for count. Melee is class 4,
 // pierce is class 3; everything else is a bonus class (e.g. 27 Spearmen).
 
 import { RADII } from './radii.js';
 import { UNIT_CLASS, CIV_EFFECTS, PLAYER_TECHS } from './effects.js';
+import { RANGED, PROJECTILE_CLASS } from './ranged.js';
 
-export const CLASS = { INFANTRY: 1, PIERCE: 3, MELEE: 4, ELEPHANT: 5, CAVALRY: 8, SHIP: 16, RAM: 17, SIEGE: 20 };
+export const CLASS = { INFANTRY: 1, PIERCE: 3, MELEE: 4, ELEPHANT: 5, CAVALRY: 8, ARCHER: 15, SHIP: 16, RAM: 17, SIEGE: 20 };
 
-// Blacksmith steps: index = number of upgrades researched.
+// Blacksmith lines: index = number of upgrades researched. Which line applies to
+// a unit is read from the techs' own effects (e.g. Fletching for archers and
+// cavalry archers, Forging for throwing-axe infantry).
+export const TRACKS = {
+  attack: [
+    { key: 'melee', techs: [67, 68, 75], names: ['Forging', 'Iron Casting', 'Blast Furnace'] },
+    { key: 'archer', techs: [199, 200, 201], names: ['Fletching', 'Bodkin Arrow', 'Bracer'] },
+  ],
+  armour: [
+    { key: 'archer', techs: [211, 212, 219], names: ['Padded Archer Armor', 'Leather Archer Armor', 'Ring Archer Armor'] },
+    { key: 'cavalry', techs: [81, 82, 80], names: ['Scale Barding Armor', 'Chain Barding Armor', 'Plate Barding Armor'] },
+    { key: 'infantry', techs: [74, 76, 77], names: ['Scale Mail Armor', 'Chain Mail Armor', 'Plate Mail Armor'] },
+  ],
+};
+// Single upgrades offered as switches when they change the unit.
+export const OTHER_TECHS = [
+  { id: 435, name: 'Bloodlines' },
+  { id: 437, name: 'Thumb Ring' },
+  { id: 436, name: 'Parthian Tactics' },
+  { id: 47, name: 'Chemistry' },
+  { id: 215, name: 'Squires' },
+  { id: 39, name: 'Husbandry' },
+];
+// Kept for older callers and tests
 export const BLACKSMITH = {
-  attack: { techs: [67, 68, 75], melee: [0, 1, 2, 4] },          // Forging, Iron Casting, Blast Furnace
-  infantryArmour: { techs: [74, 76, 77], melee: [0, 1, 2, 3], pierce: [0, 1, 2, 4] }, // Scale/Chain/Plate Mail
-  cavalryArmour: { techs: [81, 82, 80], melee: [0, 1, 2, 3], pierce: [0, 1, 2, 4] },  // Scale/Chain/Plate Barding
+  attack: { techs: TRACKS.attack[0].techs },
+  infantryArmour: { techs: TRACKS.armour[2].techs },
+  cavalryArmour: { techs: TRACKS.armour[1].techs },
   bloodlines: { tech: 435, hp: 20 },
 };
 
@@ -22,13 +46,15 @@ const armourClasses = (u) => new Set((u.Armours || []).map((a) => a.Class));
 export const isInfantry = (u) => armourClasses(u).has(CLASS.INFANTRY);
 export const isCavalry = (u) => armourClasses(u).has(CLASS.CAVALRY);
 
-/** Units this first version can duel: melee land units. */
+/** Units the duel supports: land units that fight, melee or ranged; no siege, rams or ships. */
 export function isDuelEligible(u) {
-  if (!u || !(u.Attack > 0) || u.Range >= 1) return false;
+  if (!u || !(u.Attack > 0)) return false;
   const c = armourClasses(u);
   if (c.has(CLASS.SHIP) || c.has(CLASS.SIEGE) || c.has(CLASS.RAM)) return false;
-  return c.has(CLASS.INFANTRY) || c.has(CLASS.CAVALRY) || c.has(CLASS.ELEPHANT);
+  return c.has(CLASS.INFANTRY) || c.has(CLASS.CAVALRY) || c.has(CLASS.ELEPHANT) || c.has(CLASS.ARCHER);
 }
+
+export const isRanged = (u) => Boolean(RANGED[u?.ID]);
 
 // Collision radius in tiles, from the game data file where known; otherwise
 // a fallback by unit type. It only affects when the first blow lands.
@@ -39,7 +65,7 @@ export function radiusOf(u) {
   return 0.2;
 }
 
-const ATTR = { HP: 0, SPEED: 5, ARMOUR: 8, ATTACK: 9, RELOAD: 10 };
+const ATTR = { HP: 0, SPEED: 5, ARMOUR: 8, ATTACK: 9, RELOAD: 10, ACCURACY: 11, RANGE: 12, PROJECTILES: 102 };
 
 /** Armour/attack effect values pack class * 256 + amount (amount may be negative). */
 function unpack(value) {
@@ -58,6 +84,9 @@ function applyCommand(stats, [type, unit, unitClass, attr, value], me) {
     case ATTR.HP: stats.hp = op(stats.hp); break;
     case ATTR.SPEED: stats.speed = op(stats.speed); break;
     case ATTR.RELOAD: stats.reload = op(stats.reload); break;
+    case ATTR.ACCURACY: if (stats.accuracy === undefined) return false; stats.accuracy = op(stats.accuracy); break;
+    case ATTR.RANGE: if (stats.range === undefined) return false; stats.range = op(stats.range); break;
+    case ATTR.PROJECTILES: if (stats.projectiles === undefined) return false; stats.projectiles = op(stats.projectiles); break;
     case ATTR.ARMOUR:
     case ATTR.ATTACK: {
       const map = attr === ATTR.ARMOUR ? stats.armours : stats.attacks;
@@ -72,15 +101,34 @@ function applyCommand(stats, [type, unit, unitClass, attr, value], me) {
   return true;
 }
 
-/** Tech IDs for the chosen Blacksmith levels and Bloodlines. */
-export function playerTechIds(unit, { attackLevel = 0, armourLevel = 0, bloodlines = false } = {}) {
+const meOf = (unit) => ({ id: unit.ID, cls: UNIT_CLASS[unit.ID] });
+const touches = (techId, me) => Boolean(PLAYER_TECHS[techId]) && affectsUnit(PLAYER_TECHS[techId], me);
+
+/** The Blacksmith line ('attack' or 'armour') that upgrades this unit, or null. */
+export function trackFor(unit, kind) {
+  const me = meOf(unit);
+  return TRACKS[kind].find((t) => touches(t.techs[0], me)) || null;
+}
+
+/** The single-tech switches (Bloodlines, Thumb Ring, ...) that change this unit. */
+export function otherTechsFor(unit) {
+  const me = meOf(unit);
+  return OTHER_TECHS.filter((t) => touches(t.id, me));
+}
+
+/**
+ * Tech IDs for the chosen upgrade levels and switches.
+ * techs: ids of the switches turned on; bloodlines: legacy flag for Bloodlines.
+ */
+export function playerTechIds(unit, { attackLevel = 0, armourLevel = 0, bloodlines = false, techs = [] } = {}) {
   const ids = [];
-  const inf = isInfantry(unit);
-  const cav = isCavalry(unit);
-  if (inf || cav) ids.push(...BLACKSMITH.attack.techs.slice(0, attackLevel));
-  const track = cav ? BLACKSMITH.cavalryArmour : inf ? BLACKSMITH.infantryArmour : null;
-  if (track) ids.push(...track.techs.slice(0, armourLevel));
-  if (cav && bloodlines) ids.push(BLACKSMITH.bloodlines.tech);
+  const atk = trackFor(unit, 'attack');
+  if (atk) ids.push(...atk.techs.slice(0, attackLevel));
+  const arm = trackFor(unit, 'armour');
+  if (arm) ids.push(...arm.techs.slice(0, armourLevel));
+  const others = new Set(otherTechsFor(unit).map((t) => t.id));
+  if (bloodlines && others.has(435)) ids.push(435);
+  for (const id of techs) if (others.has(id) && !ids.includes(id)) ids.push(id);
   return ids;
 }
 
@@ -137,24 +185,39 @@ export function affectsUnit(rec, me) {
  */
 export function buildFighter(unit, name, opts = {}) {
   const { civ, uts = [], extra = {} } = opts;
+  const ranged = RANGED[unit.ID] || null;
   const stats = {
     hp: unit.HP,
     speed: unit.Speed,
     reload: unit.ReloadTime,
+    range: unit.Range || 0,
+    accuracy: ranged ? unit.AccuracyPercent ?? 100 : undefined,
+    projectiles: ranged ? ranged.count : undefined,
     attacks: new Map((unit.Attacks || []).map((a) => [a.Class, a.Amount])),
     armours: new Map((unit.Armours || []).map((a) => [a.Class, a.Amount])),
   };
-  const me = { id: unit.ID, cls: UNIT_CLASS[unit.ID] };
+  const me = meOf(unit);
   const civEffects = civ ? CIV_EFFECTS[civ] : null;
   const utRecs = Object.fromEntries((civEffects?.uts || []).map((u) => [u.id, u]));
-  const bonuses = applyEffects(stats, me, {
+  const effectOpts = {
     civEffects,
     playerTechs: { ...PLAYER_TECHS, ...utRecs },
     chosen: [...playerTechIds(unit, opts), ...uts],
-  });
+  };
+  const bonuses = applyEffects(stats, me, effectOpts);
+
+  // Extra projectiles (Chu Ko Nu, Kipchak) carry their own attack, which techs
+  // can change separately from the unit's.
+  let secondary = null;
+  if (ranged?.secondary) {
+    const sec = { attacks: new Map(ranged.secondary.attacks), armours: new Map(), hp: 0, speed: 0, reload: 0 };
+    applyEffects(sec, { id: ranged.secondary.id, cls: PROJECTILE_CLASS }, effectOpts);
+    secondary = { attacks: sec.attacks };
+  }
 
   const bump = (map, cls, by) => { if (by) map.set(cls, (map.get(cls) ?? 0) + by); };
-  bump(stats.attacks, CLASS.MELEE, Number(extra.attack) || 0);
+  const mainAttack = ranged ? CLASS.PIERCE : CLASS.MELEE;
+  bump(stats.attacks, mainAttack, Number(extra.attack) || 0);
   bump(stats.armours, CLASS.MELEE, Number(extra.meleeArmour) || 0);
   bump(stats.armours, CLASS.PIERCE, Number(extra.pierceArmour) || 0);
   stats.hp += Number(extra.hp) || 0;
@@ -168,15 +231,27 @@ export function buildFighter(unit, name, opts = {}) {
     reload: stats.reload,
     attackDelay: unit.AttackDelaySeconds || 0,
     speed: stats.speed,
-    range: unit.Range || 0,
+    range: stats.range,
+    minRange: unit.MinRange || 0,
     radius: radiusOf(unit),
     bonuses,
+    projectile: ranged && {
+      speed: ranged.speed,
+      arc: ranged.arc,
+      sprite: ranged.sprite,
+      spread: ranged.spread,
+      blast: ranged.blast,
+      count: Math.max(1, Math.round(stats.projectiles)),
+      accuracy: Math.min(100, Math.max(0, stats.accuracy)),
+      secondary,
+    },
   };
 }
 
-export function damagePerHit(attacker, defender) {
+/** Damage of one blow or projectile. `attacks` defaults to the attacker's own. */
+export function damagePerHit(attacker, defender, attacks = attacker.attacks) {
   let sum = 0;
-  for (const [cls, amount] of attacker.attacks) {
+  for (const [cls, amount] of attacks) {
     if (defender.armours.has(cls)) sum += Math.max(0, amount - defender.armours.get(cls));
   }
   return Math.max(1, sum);

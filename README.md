@@ -3,7 +3,7 @@
 A personal Age of Empires II: Definitive Edition companion app for Android (and anything with a modern browser).
 
 - **Tech tree:** every civilisation's units, techs and buildings, with stats and descriptions. Greyed-out entries aren't available to that civ.
-- **Duel:** pick two melee units, their civs and Blacksmith upgrades, then watch them fight and see who wins, how fast, and with how much HP left.
+- **Duel:** pick two units (melee or ranged, no siege yet), their civs and upgrades, then watch them fight and see who wins, how fast, and with how much HP left. Matchups with missed shots are run 200 times to give a win rate.
 
 ## Game data stays up to date
 
@@ -40,7 +40,7 @@ pip install genieutils-py numpy pillow
 python tools/make_sprite_pack.py --game "D:/Steam/steamapps/common/AoE2DE" --out AoE2-sprites.aoe2pack
 ```
 
-It takes about 20 minutes and makes a file of roughly 50 MB covering every melee unit.
+It takes about 20 minutes and makes a file of roughly 80 MB covering every melee and ranged unit plus their projectiles.
 
 The sprite decoder (`tools/sld.py`) is written from the format notes in the [openage](https://github.com/SFTtech/openage) project's documentation.
 
