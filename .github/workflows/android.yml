@@ -47,18 +47,6 @@ jobs:
           set -o pipefail
           ./gradlew assembleDebug --no-daemon -PbuildNumber=${{ github.run_number }} 2>&1 | tee ../build.log
 
-      - name: Save build log to the ci-log branch (readable without GitHub login)
-        if: always()
-        run: |
-          echo "run ${{ github.run_number }} ${{ job.status }} $(git rev-parse --short HEAD)" > /tmp/status.txt
-          cp build.log /tmp/build.log 2>/dev/null || echo "no build log" > /tmp/build.log
-          git config user.name ci && git config user.email ci@users.noreply.github.com
-          git checkout --orphan ci-log
-          git rm -rfq . && git clean -fdxq
-          cp /tmp/status.txt /tmp/build.log .
-          git add status.txt build.log && git commit -qm "CI log for run ${{ github.run_number }}"
-          git push -f origin ci-log
-
       - name: Name the APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk AoE2-Companion.apk
 
@@ -75,3 +63,15 @@ jobs:
           body: Install AoE2-Companion.apk on your Android phone.
           files: AoE2-Companion.apk
           make_latest: true
+
+      - name: Save build log to the ci-log branch (readable without GitHub login)
+        if: always()
+        run: |
+          echo "run ${{ github.run_number }} ${{ job.status }} $(git rev-parse --short HEAD)" > /tmp/status.txt
+          cp build.log /tmp/build.log 2>/dev/null || echo "no build log" > /tmp/build.log
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git checkout --orphan ci-log
+          git rm -rfq . && git clean -fdxq
+          cp /tmp/status.txt /tmp/build.log .
+          git add status.txt build.log && git commit -qm "CI log for run ${{ github.run_number }}"
+          git push -f origin ci-log
