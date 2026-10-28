@@ -8,7 +8,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // CI passes the GitHub build number, so each release is newer than the last
-        versionCode (project.findProperty("buildNumber") ?: "1") as Integer
+        versionCode Integer.parseInt((project.findProperty("buildNumber") ?: "1").toString())
         versionName "build " + (project.findProperty("buildNumber") ?: "1")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
