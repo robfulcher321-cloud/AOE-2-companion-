@@ -1,6 +1,8 @@
-import { loadCore, loadTree, imageUrl, nameText } from '../data.js';
+import { loadCore, loadTree, imageUrl, civIconUrl, nameText } from '../data.js';
+import { Picker } from '../picker.js';
+import { UNIT_CLASS, CIV_EFFECTS } from './effects.js';
 import { civKeys } from '../techtree.js';
-import { BLACKSMITH, buildFighter, isDuelEligible, isCavalry, isInfantry, damagePerHit, hitsToKill, CLASS } from './combat.js';
+import { BLACKSMITH, buildFighter, isDuelEligible, isCavalry, isInfantry, damagePerHit, hitsToKill, affectsUnit, CLASS } from './combat.js';
 import { simulate } from './sim.js';
 import { ArenaPlayer } from './render.js';
 import { loadPack, importPack, removePack } from './spritepack.js';
@@ -27,15 +29,18 @@ class SidePanel {
 
   async init(data, strings) {
     this.data = data; this.strings = strings;
-    const civSelect = el('select', { 'aria-label': `${this.label} civilisation` });
-    for (const k of civKeys(data, strings)) civSelect.append(el('option', { value: k, textContent: nameText(strings[data.civs[k].name_string_id] || k) }));
-    civSelect.value = this.defaults.civ;
-    this.unitImg = el('img', { alt: '', width: 52, height: 52 });
-    this.unitSelect = el('select', { 'aria-label': `${this.label} unit` });
+    const civName = (k) => nameText(strings[data.civs[k].name_string_id] || k);
+    this.civName = civName;
+    this.civPicker = new Picker({ label: 'Civilisation', onChange: (civ) => this.setCiv(civ) });
+    this.civPicker.setOptions(civKeys(data, strings).map((k) => ({ value: k, label: civName(k), icon: civIconUrl(k) })), this.defaults.civ);
+    this.unitPicker = new Picker({ label: 'Unit', onChange: () => this.refreshUnit() });
     this.attackSelect = el('select');
     this.armourSelect = el('select');
     this.bloodlines = el('input', { type: 'checkbox', checked: true });
-    this.bloodlinesRow = el('label', { className: 'toggle' }, this.bloodlines, 'Bloodlines (+20 HP)');
+    this.bloodlinesNote = el('small');
+    this.bloodlinesRow = el('label', { className: 'toggle' }, this.bloodlines, el('span', {}, 'Bloodlines ', this.bloodlinesNote));
+    this.utBox = el('div', { className: 'ut-list' });
+    this.bonusNote = el('p', { className: 'bonus-note' });
     this.extras = {};
     const num = (key, text) => {
       const input = el('input', { type: 'number', step: 1, value: 0, inputMode: 'numeric' });
@@ -46,24 +51,23 @@ class SidePanel {
 
     this.root.replaceChildren(
       el('legend', { textContent: this.label }),
-      el('label', { className: 'field' }, el('span', { textContent: 'Civilisation' }), civSelect),
-      el('div', { className: 'pick-unit' }, this.unitImg,
-        el('label', { className: 'field' }, el('span', { textContent: 'Unit' }), this.unitSelect)),
+      el('div', { className: 'field' }, el('span', { textContent: 'Civilisation' }), this.civPicker.button),
+      el('div', { className: 'field' }, el('span', { textContent: 'Unit' }), this.unitPicker.button),
       el('div', { className: 'upgrade-grid' },
         el('label', { className: 'field' }, el('span', { textContent: 'Attack upgrades' }), this.attackSelect),
         el('label', { className: 'field' }, el('span', { textContent: 'Armour upgrades' }), this.armourSelect)),
       this.bloodlinesRow,
+      this.utBox,
+      this.bonusNote,
       el('details', { className: 'extra' },
-        el('summary', { textContent: 'Unique techs and civ bonuses' }),
+        el('summary', { textContent: 'Manual adjustments' }),
         el('div', { className: 'extra-grid' },
-          el('p', { className: 'extra-note', textContent: 'Not applied automatically yet. Add their effect by hand, for example +2 attack for a civ bonus.' }),
+          el('p', { className: 'extra-note', textContent: 'For effects the simulator doesn\'t model yet. Added on top of everything else.' }),
           num('attack', 'Extra attack'), num('hp', 'Extra HP'),
           num('meleeArmour', 'Extra melee armour'), num('pierceArmour', 'Extra pierce armour'))),
       this.statline,
     );
 
-    civSelect.addEventListener('change', () => this.setCiv(civSelect.value));
-    this.unitSelect.addEventListener('change', () => this.refreshUnit());
     for (const n of [this.attackSelect, this.armourSelect, this.bloodlines, ...Object.values(this.extras)]) {
       n.addEventListener('input', () => this.update());
     }
@@ -73,24 +77,21 @@ class SidePanel {
   async setCiv(civ, preferredUnit) {
     this.civ = civ;
     const tree = await loadTree(civ);
-    this.tree = tree;
     const available = (n) => n.node_status !== 'NotAvailable';
-    this.techOk = new Set(tree.units_techs.filter((n) => n.use_type === 'Tech' && available(n)).map((n) => n.node_id));
-    const prev = preferredUnit ?? Number(this.unitSelect.value);
-    const units = tree.units_techs
-      .filter((n) => n.use_type === 'Unit' && available(n))
-      .map((n) => ({ node: n, unit: this.data.data.Unit[n.node_id] }))
-      .filter(({ unit }) => isDuelEligible(unit));
-    const seen = new Set();
+    this.techNodes = new Map(tree.units_techs.filter((n) => n.use_type === 'Tech').map((n) => [n.node_id, n]));
+    this.techOk = new Set([...this.techNodes.values()].filter(available).map((n) => n.node_id));
+    const prev = preferredUnit ?? this.unitPicker.value;
     this.units = new Map();
-    this.unitSelect.replaceChildren();
-    for (const { node, unit } of units) {
-      if (seen.has(node.node_id)) continue;
-      seen.add(node.node_id);
+    for (const node of tree.units_techs) {
+      const unit = this.data.data.Unit[node.node_id];
+      if (node.use_type !== 'Unit' || !available(node) || !isDuelEligible(unit) || this.units.has(node.node_id)) continue;
       this.units.set(node.node_id, { node, unit });
-      this.unitSelect.append(el('option', { value: node.node_id, textContent: nameText(this.strings[node.name_string_id] || node.name) }));
     }
-    if (this.units.has(prev)) this.unitSelect.value = String(prev);
+    this.unitPicker.setOptions([...this.units.values()].map(({ node }) => ({
+      value: node.node_id,
+      label: nameText(this.strings[node.name_string_id] || node.name),
+      icon: imageUrl('Unit', node.picture_index),
+    })), this.units.has(prev) ? prev : undefined);
     this.refreshUnit();
   }
 
@@ -101,39 +102,70 @@ class SidePanel {
   }
 
   refreshUnit() {
-    const pick = this.units.get(Number(this.unitSelect.value));
+    const pick = this.units.get(this.unitPicker.value);
     if (!pick) return;
-    const { node, unit } = pick;
-    this.unitImg.src = imageUrl('Unit', node.picture_index);
+    const { unit } = pick;
     const cav = isCavalry(unit);
     const inf = isInfantry(unit);
-    const fill = (select, names, max) => {
+    const civ = this.civName(this.civ);
+    // Every level is listed; ones this civ can't research are shown but disabled.
+    const fill = (select, names, applies, max) => {
       const keep = select.value;
-      select.replaceChildren(...names.slice(0, max + 1).map((t, i) => el('option', { value: i, textContent: t })));
-      select.value = keep && Number(keep) <= max ? keep : String(max);
-      select.disabled = max === 0;
+      select.replaceChildren(...names.map((t, i) => el('option', {
+        value: i,
+        textContent: i > max ? `${t} (not available)` : t,
+        disabled: i > max,
+      })));
+      select.value = keep !== '' && Number(keep) <= max ? keep : String(max);
+      select.disabled = !applies;
     };
-    fill(this.attackSelect, LEVEL_NAMES.attack, (cav || inf) ? this.levelsAvailable(BLACKSMITH.attack.techs) : 0);
+    fill(this.attackSelect, LEVEL_NAMES.attack, cav || inf, (cav || inf) ? this.levelsAvailable(BLACKSMITH.attack.techs) : 0);
     const armourTrack = cav ? BLACKSMITH.cavalryArmour : inf ? BLACKSMITH.infantryArmour : null;
-    fill(this.armourSelect, cav ? LEVEL_NAMES.cav : LEVEL_NAMES.inf, armourTrack ? this.levelsAvailable(armourTrack.techs) : 0);
-    const hasBloodlines = cav && this.techOk.has(BLACKSMITH.bloodlines.tech);
-    this.bloodlinesRow.hidden = !hasBloodlines;
+    fill(this.armourSelect, cav ? LEVEL_NAMES.cav : LEVEL_NAMES.inf, Boolean(armourTrack), armourTrack ? this.levelsAvailable(armourTrack.techs) : 0);
+
+    const hasBloodlines = this.techOk.has(BLACKSMITH.bloodlines.tech);
+    this.bloodlinesRow.hidden = !cav;
+    this.bloodlinesRow.classList.toggle('unavailable', !hasBloodlines);
+    this.bloodlines.disabled = !hasBloodlines;
+    this.bloodlinesNote.textContent = hasBloodlines ? '(+20 HP)' : `(not available to ${civ})`;
     if (!hasBloodlines) this.bloodlines.checked = false;
     else if (this.lastUnit !== unit.ID) this.bloodlines.checked = true;
+
+    // Unique techs: the civ's Castle techs, each switchable; ones that don't
+    // change this unit's stats are shown greyed out.
+    const me = { id: unit.ID, cls: UNIT_CLASS[unit.ID] };
+    const uts = (CIV_EFFECTS[this.civ]?.uts || []).filter((u) => this.techNodes.has(u.id) && this.techOk.has(u.id));
+    const prevOn = new Set(this.utInputs?.filter((i) => i.checked).map((i) => Number(i.value)) || []);
+    this.utInputs = [];
+    this.utBox.replaceChildren(el('h3', { textContent: 'Unique techs' }), ...uts.map((u) => {
+      const node = this.techNodes.get(u.id);
+      const relevant = affectsUnit(u, me);
+      const input = el('input', { type: 'checkbox', value: u.id, disabled: !relevant,
+        checked: relevant && (this.lastUnit === unit.ID && this.lastCiv === this.civ ? prevOn.has(u.id) : true) });
+      input.addEventListener('input', () => this.update());
+      this.utInputs.push(input);
+      return el('label', { className: `toggle${relevant ? '' : ' unavailable'}` }, input,
+        el('span', {}, nameText(this.strings[node.name_string_id] || node.name), ' ',
+          el('small', { textContent: relevant ? '' : '(doesn\'t change this unit)' })));
+    }));
+    this.utBox.hidden = uts.length === 0;
     this.lastUnit = unit.ID;
+    this.lastCiv = this.civ;
     this.update();
   }
 
   fighter() {
-    const pick = this.units.get(Number(this.unitSelect.value));
+    const pick = this.units.get(this.unitPicker.value);
     if (!pick) return null;
     const name = nameText(this.strings[pick.node.name_string_id] || pick.node.name);
     return {
       icon: imageUrl('Unit', pick.node.picture_index),
       stats: buildFighter(pick.unit, name, {
+        civ: this.civ,
         attackLevel: Number(this.attackSelect.value) || 0,
         armourLevel: Number(this.armourSelect.value) || 0,
         bloodlines: this.bloodlines.checked,
+        uts: this.utInputs.filter((i) => i.checked).map((i) => Number(i.value)),
         extra: Object.fromEntries(Object.entries(this.extras).map(([k, v]) => [k, Number(v.value) || 0])),
       }),
     };
@@ -143,9 +175,21 @@ class SidePanel {
     const f = this.fighter();
     if (!f) return;
     const s = f.stats;
+    const r = (v) => Math.round(v * 100) / 100;
+    // Game data names age steps separately ("... Age3", "... Age4"); show each bonus once.
+    const counts = new Map();
+    for (const b of s.bonuses) {
+      const name = b.replace(/\s*\+\s*BL$/, '').replace(/\s+Age\s*\d$/i, '').replace(/\binf cav\b/gi, 'Infantry & Cavalry').replace(/\binf\b/gi, 'Infantry').replace(/\bcav\b/gi, 'Cavalry');
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    const names = [...counts].map(([n, c]) => (c > 1 && /Age/.test(s.bonuses.join()) ? `${n} (×${c}, by Imperial)` : n));
+    this.bonusNote.textContent = names.length
+      ? `Civ bonuses applied: ${names.join('; ')}.`
+      : 'No civ bonuses change this unit.';
     this.statline.textContent =
-      `${s.hp} HP, ${s.attacks.get(CLASS.MELEE) ?? 0} attack, ` +
-      `${s.armours.get(CLASS.MELEE) ?? 0}/${s.armours.get(CLASS.PIERCE) ?? 0} armour, ${s.reload}s reload`;
+      `${Math.floor(s.hp)} HP, ${r(s.attacks.get(CLASS.MELEE) ?? 0)} attack, ` +
+      `${r(s.armours.get(CLASS.MELEE) ?? 0)}/${r(s.armours.get(CLASS.PIERCE) ?? 0)} armour, ` +
+      `${r(s.reload)}s reload, ${r(s.speed)} speed`;
     this.onChange?.();
   }
 }
@@ -246,8 +290,8 @@ function showResult(box, { result, fa, fb }) {
   const table = el('table', { className: 'result-table' },
     el('thead', {}, el('tr', {}, el('th', {}), el('th', { textContent: `Blue: ${names[0]}` }), el('th', { textContent: `Red: ${names[1]}` }))),
     el('tbody', {},
-      row('HP left', (i) => `${Math.ceil(result.sides[i].hpLeft)} / ${fighters[i].hp}`),
-      row('Damage per hit', (i) => damagePerHit(fighters[i], fighters[1 - i])),
+      row('HP left', (i) => `${Math.ceil(result.sides[i].hpLeft)} / ${Math.floor(fighters[i].hp)}`),
+      row('Damage per hit', (i) => Math.round(damagePerHit(fighters[i], fighters[1 - i]) * 100) / 100),
       row('Hits to kill', (i) => hitsToKill(fighters[i], fighters[1 - i])),
       row('Hits landed', (i) => result.sides[i].hits),
     ));
@@ -255,6 +299,6 @@ function showResult(box, { result, fa, fb }) {
     el('h2', { textContent: heading }),
     el('p', { className: 'subtle', textContent: `Fight lasted ${result.duration.toFixed(1)} game seconds (${(result.duration / 1.7).toFixed(1)} real seconds at Normal speed).` }),
     table,
-    el('p', { className: 'caveat', textContent: 'Uses base stats and Blacksmith upgrades on flat ground. Civ bonuses, unique techs, charge attacks and trample are not included yet, and results haven\'t been checked against the real game.' }),
+    el('p', { className: 'caveat', textContent: 'Imperial Age, flat ground. Includes Blacksmith upgrades, Bloodlines, civ bonuses and unique techs that change unit stats. Special abilities (charge attacks, trample, regeneration) aren\'t simulated yet.' }),
   );
 }

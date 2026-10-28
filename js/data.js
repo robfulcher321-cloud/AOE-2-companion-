@@ -31,6 +31,7 @@ async function getJson(path) {
 }
 
 export const imageUrl = (type, pictureIndex) => `${RAW}img/${type}/${pictureIndex}.png`;
+export const civIconUrl = (civKey) => `${RAW}img/Civs/${civKey.toLowerCase()}.png`;
 
 let core = null;
 const trees = new Map();

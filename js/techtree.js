@@ -1,4 +1,4 @@
-import { loadCore, loadTree, imageUrl, cleanText, className, nameText } from './data.js';
+import { loadCore, loadTree, imageUrl, civIconUrl, cleanText, className, nameText } from './data.js';
 
 const AGE_MARKS = ['I', 'II', 'III', 'IV'];
 const AGE_STRING_IDS = [4201, 4202, 4203, 4204];
@@ -17,9 +17,8 @@ export function civKeys(data, strings) {
       .localeCompare(strings[data.civs[b].name_string_id] || b));
 }
 
-export function fillCivSelect(select, data, strings, selected) {
-  select.replaceChildren(...civKeys(data, strings).map((k) =>
-    el('option', { value: k, textContent: nameText(strings[data.civs[k].name_string_id] || k), selected: k === selected })));
+export function civOptions(data, strings) {
+  return civKeys(data, strings).map((k) => ({ value: k, label: nameText(strings[data.civs[k].name_string_id] || k), icon: civIconUrl(k) }));
 }
 
 export async function renderTree(civKey, { body, blurb, openSheet }) {
@@ -81,6 +80,19 @@ function itemButton(node, strings, openSheet, data) {
   return btn;
 }
 
+/**
+ * The game's description for a unit, tech or building. The tree data points at
+ * the tooltip string; the full description sits 79000 IDs below it.
+ */
+function helpText(strings, helpStringId) {
+  let raw = strings[helpStringId - 79000] ?? '';
+  raw = raw.replace(/\n/g, '').replace(/‹[^›]*›/g, '');
+  raw = raw.replace(/^.*?\([^)]*\)\s*<br>/, '');            // "Research <b>X</b> (cost)" heading
+  let upgrades = '';
+  raw = raw.replace(/<i>([\s\S]*?)<\/i>/, (_, inner) => { upgrades = cleanText(inner); return ''; });
+  return { description: cleanText(raw), upgrades };
+}
+
 function costText(cost) {
   if (!cost) return '—';
   const parts = Object.entries(cost).filter(([, v]) => v).map(([k, v]) => `${v} ${k.toLowerCase()}`);
@@ -127,7 +139,8 @@ function detailView(node, name, absent, strings, data) {
     }
   }
 
-  const help = cleanText(strings[node.help_string_id]);
-  if (help) wrap.append(el('p', { className: 'help', textContent: help }));
+  const { description, upgrades } = helpText(strings, node.help_string_id);
+  if (description) wrap.append(el('p', { className: 'help', textContent: description }));
+  if (upgrades) wrap.append(el('p', { className: 'help subtle', textContent: upgrades }));
   return wrap;
 }

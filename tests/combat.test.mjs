@@ -48,6 +48,19 @@ for (const [x, y] of [[etk, pal], [champ, halb], [halb, pal]]) {
     `dmg/hit ${r.damage.join(' / ')}, HP left ${r.sides.map((s) => Math.ceil(s.hpLeft)).join(' / ')}`);
 }
 
+// Civ bonuses and unique techs come from the game data, applied in game order
+const teutonEtk = buildFighter(U[554], 'ETK', { ...full, civ: 'Teutons' });
+assert.equal(teutonEtk.armours.get(4), U[554].MeleeArmor + 3 + 2, 'Teutons: +1 melee armour in Castle and Imperial');
+const frankPal = buildFighter(U[569], 'Paladin', { ...full, bloodlines: false, civ: 'Franks' });
+assert.equal(frankPal.hp, U[569].HP * 1.2, 'Franks: cavalry +20% HP');
+const mongolHussar = buildFighter(U[441], 'Hussar', { ...full, civ: 'Mongols' });
+assert.ok(Math.abs(mongolHussar.hp - (U[441].HP * 1.3 + 20)) < 0.1, 'Mongols: +30% on base HP, Bloodlines on top');
+const vikingChamp = buildFighter(U[567], 'Champion', { ...full, civ: 'Vikings' });
+assert.equal(vikingChamp.hp, U[567].HP * 1.2, 'Vikings: infantry +20% HP');
+const celtChamp = buildFighter(U[567], 'Champion', { ...full, civ: 'Celts' });
+assert.ok(Math.abs(celtChamp.speed - U[567].Speed * 1.2) < 0.01, 'Celts: infantry +20% speed by Imperial');
+console.log('Civ bonus checks passed.');
+
 // Mirror match is symmetric: equal units die together
 const r = simulate(buildFighter(U[567], 'A', full), buildFighter(U[567], 'B', full));
 assert.equal(r.winner, null);

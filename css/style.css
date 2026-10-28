@@ -166,3 +166,35 @@ details[open] > summary::before { content: '−'; }
   position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--tabs-h) + 12px + env(safe-area-inset-bottom));
   background: var(--bone); color: var(--woad); padding: 10px 16px; border-radius: var(--radius-sm); z-index: 40; max-width: 90vw; font-weight: 500;
 }
+
+/* ---------- Icon picker ---------- */
+.picker {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 10px;
+  background: var(--stone-2); border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; text-align: left;
+}
+.picker img { width: 32px; height: 32px; border-radius: 4px; flex: none; }
+.picker-text { flex: 1; }
+.picker-caret { color: var(--muted); }
+.picker-overlay { position: fixed; inset: 0; z-index: 35; display: grid; align-items: end; }
+.picker-panel {
+  position: relative; background: var(--stone); border-top: 2px solid var(--gold); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  width: 100%; max-width: 640px; margin: 0 auto; max-height: 80vh; display: flex; flex-direction: column;
+  padding: 14px 12px calc(12px + env(safe-area-inset-bottom)); animation: rise .18s ease-out;
+}
+.picker-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 8px; }
+.picker-head .sheet-close { position: static; }
+.picker-search { width: 100%; min-height: 44px; margin-bottom: 8px; padding: 8px 10px; background: var(--stone-2); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--bone); }
+.picker-list { list-style: none; margin: 0; padding: 0; overflow: auto; }
+.picker-option { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 6px 8px; background: none; border: 0; border-radius: var(--radius-sm); cursor: pointer; text-align: left; }
+.picker-option img { width: 40px; height: 40px; border-radius: 4px; }
+.picker-option:hover { background: var(--stone-2); }
+.picker-option[aria-selected=true] { background: var(--stone-2); outline: 1px solid var(--gold); }
+@media (prefers-reduced-motion: reduce) { .picker-panel { animation: none; } }
+
+.side .field > .picker { margin-top: 0; }
+.ut-list { display: grid; gap: 2px; }
+.ut-list h3 { font-family: var(--sans); font-size: .9rem; font-weight: 500; color: var(--muted); margin: 0 0 2px; }
+.toggle.unavailable { color: var(--absent); }
+.toggle small { color: var(--muted); font-size: .82rem; }
+.bonus-note { color: var(--muted); font-size: .88rem; margin: 0; }
+.view-head .field { min-width: 14rem; }

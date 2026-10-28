@@ -1,5 +1,6 @@
 import { loadCore, checkForUpdate, lastDataDate } from './data.js';
-import { fillCivSelect, renderTree } from './techtree.js';
+import { civOptions, renderTree } from './techtree.js';
+import { Picker } from './picker.js';
 import { initDuel } from './duel/ui.js';
 
 const $ = (id) => document.getElementById(id);
@@ -69,13 +70,15 @@ function updateFooter() {
 // ---------- Tech tree ----------
 async function startTree() {
   const { data, strings } = await loadCore();
-  const select = $('tree-civ');
   const saved = store.get('civ');
   const civ = saved && data.civs[saved] ? saved : 'Britons';
-  fillCivSelect(select, data, strings, civ);
   const ctx = { body: $('tree-body'), blurb: $('civ-blurb'), openSheet };
   const draw = (c) => renderTree(c, ctx).catch(showError(ctx.body));
-  select.onchange = () => { store.set('civ', select.value); draw(select.value); };
+  if (!startTree.picker) {
+    startTree.picker = new Picker({ label: 'Civilisation', onChange: (c) => { store.set('civ', c); draw(c); } });
+    $('tree-civ').append(startTree.picker.button);
+  }
+  startTree.picker.setOptions(civOptions(data, strings), civ);
   await draw(civ);
 }
 
