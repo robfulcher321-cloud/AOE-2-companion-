@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16233a">
+  <meta name="color-scheme" content="dark">
+  <title>AoE2 Companion</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700;800&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main id="app">
+    <section id="view-tree" class="view" aria-labelledby="tree-title">
+      <header class="view-head">
+        <h1 id="tree-title">Tech tree</h1>
+        <label class="field">
+          <span>Civilisation</span>
+          <select id="tree-civ" aria-label="Civilisation"></select>
+        </label>
+      </header>
+      <details class="civ-blurb"><summary>Civilisation bonuses</summary><p id="civ-blurb"></p></details>
+      <div id="tree-body" class="tree-body">
+        <p class="status">Loading game data…</p>
+      </div>
+    </section>
+
+    <section id="view-duel" class="view" aria-labelledby="duel-title" hidden>
+      <header class="view-head">
+        <h1 id="duel-title">Duel</h1>
+        <p class="subtle">Pick two melee units and their upgrades, then watch them fight.</p>
+      </header>
+      <div class="duel-setup">
+        <fieldset class="side side-blue" id="side-a"></fieldset>
+        <fieldset class="side side-red" id="side-b"></fieldset>
+      </div>
+      <button id="fight" class="fight" type="button">Fight</button>
+      <div id="arena-wrap" class="arena-wrap" hidden>
+        <canvas id="arena" aria-label="Duel playback"></canvas>
+        <div class="arena-controls">
+          <button id="replay" type="button">Replay</button>
+          <div class="speed" role="radiogroup" aria-label="Playback speed">
+            <button type="button" data-speed="1" aria-pressed="true">1×</button>
+            <button type="button" data-speed="2" aria-pressed="false">2×</button>
+            <button type="button" data-speed="4" aria-pressed="false">4×</button>
+          </div>
+        </div>
+        <div id="result" class="result" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <article class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <button class="sheet-close" type="button" data-close aria-label="Close">×</button>
+      <div id="sheet-content"></div>
+    </article>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <nav class="tabs" aria-label="Sections">
+    <button type="button" data-view="tree" aria-current="page">Tech tree</button>
+    <button type="button" data-view="duel">Duel</button>
+  </nav>
+  <footer class="data-note" id="data-note"></footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
