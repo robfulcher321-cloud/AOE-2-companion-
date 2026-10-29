@@ -6,7 +6,7 @@
 // pierce is class 3; everything else is a bonus class (e.g. 27 Spearmen).
 
 import { RADII } from './radii.js';
-import { UNIT_CLASS, CIV_EFFECTS, PLAYER_TECHS } from './effects.js';
+import { UNIT_CLASS, CIV_EFFECTS, PLAYER_TECHS, UNIT_UPGRADES } from './effects.js';
 import { RANGED, PROJECTILE_CLASS } from './ranged.js';
 import { SPECIALS } from './specials.js';
 
@@ -209,10 +209,12 @@ export function buildFighter(unit, name, opts = {}) {
   const me = meOf(unit);
   const civEffects = civ ? CIV_EFFECTS[civ] : null;
   const utRecs = Object.fromEntries((civEffects?.uts || []).map((u) => [u.id, u]));
+  // The unit's own upgrade tech (e.g. Elite Fire Lancer) can also change its projectiles.
+  const upgrade = UNIT_UPGRADES[unit.ID];
   const effectOpts = {
     civEffects,
-    playerTechs: { ...PLAYER_TECHS, ...utRecs },
-    chosen: [...playerTechIds(unit, opts), ...uts],
+    playerTechs: { ...PLAYER_TECHS, ...utRecs, ...(upgrade ? { [upgrade.id]: upgrade } : {}) },
+    chosen: [...playerTechIds(unit, opts), ...uts, ...(upgrade ? [upgrade.id] : [])],
   };
   const bonuses = applyEffects(stats, me, effectOpts);
   const hasBallistics = effectOpts.chosen.includes(93) && Boolean(ranged?.ballistics);

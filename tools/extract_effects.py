@@ -201,6 +201,18 @@ def main():
         civs[key] = {'bonuses': bonuses, 'team': team, 'uts': uts}
 
     player = {t: tech_record(dat, t) for t in PLAYER_TECHS}
+    # Upgrade techs (e.g. Elite Fire Lancer) can also change the new unit's
+    # projectiles; keep their stat changes, keyed by the unit they upgrade to.
+    upgrades = {}
+    for ti, tech in enumerate(dat.techs):
+        if not (0 <= tech.effect_id < len(dat.effects)):
+            continue
+        cmds = dat.effects[tech.effect_id].effect_commands
+        targets = {c.b for c in cmds if c.type == 3 and c.b in units}
+        rec = tech_record(dat, ti)
+        if targets and rec['cmds']:
+            for uid in targets:
+                upgrades[uid] = rec
 
     with open(os.path.join(args.out, 'effects.js'), 'w') as fh:
         fh.write('// Civ bonuses, team bonuses and unique-tech stat effects, extracted from the\n')
@@ -208,6 +220,7 @@ def main():
         fh.write('// type 0 = set, 4 = add, 5 = multiply; attribute 0 HP, 5 speed, 8 armour, 9 attack, 10 reload.\n')
         fh.write('export const UNIT_CLASS = ' + json.dumps({k: v['class'] for k, v in units.items()}, separators=(',', ':')) + ';\n')
         fh.write('export const PLAYER_TECHS = ' + json.dumps(player, separators=(',', ':')) + ';\n')
+        fh.write('export const UNIT_UPGRADES = ' + json.dumps(upgrades, separators=(',', ':')) + ';\n')
         fh.write('export const CIV_EFFECTS = ' + json.dumps(civs, separators=(',', ':')) + ';\n')
     with open(os.path.join(args.out, 'radii.js'), 'w') as fh:
         fh.write('// Collision radius in tiles per unit ID, read from the game data file (empires2_x2_p1.dat)\n')
