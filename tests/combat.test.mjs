@@ -101,6 +101,27 @@ const hcVsChamp = simulateMany(buildFighter(U[5], 'Hand Cannoneer', allTechs), c
 console.log(`Hand Cannoneer vs Champion: ${hcVsChamp.rates.map((r) => Math.round(r * 100) + '%').join(' / ')}`);
 console.log('Ranged checks passed.');
 
+// Several units a side
+const five = simulate(champ, palF, { counts: [5, 1] });
+assert.equal(five.winner, 0, 'five Champions beat one Paladin');
+assert.equal(five.sides[0].count, 5);
+assert.equal(five.sides[0].survivors, 5);
+const units = five.frames[0].u;
+assert.equal(units.length, 6);
+// no two living units overlap by more than a sliver at the end
+const last = five.frames[five.frames.length - 1].u;
+for (let i = 0; i < 5; i++) for (let j = i + 1; j < 5; j++) {
+  assert.ok(Math.hypot(last[i][0] - last[j][0], last[i][1] - last[j][1]) >= 2 * champ.radius - 0.05, 'units keep apart');
+}
+const arbs = simulateMany(buildFighter(U[492], 'Arbalester', { ...allTechs, techs: [...allTechs.techs, 93] }), palF, { counts: [5, 1], runs: 100 });
+assert.ok(arbs.rates[0] > 0.9, 'five Arbalesters beat one Paladin');
+const t0 = performance.now();
+const big = simulateMany(eckn, buildFighter(U[1233], 'Elite Kipchak', allTechs), { counts: [5, 5], runs: 200 });
+const ms = performance.now() - t0;
+console.log(`5 Elite Chu Ko Nu vs 5 Elite Kipchak: ${big.rates.map((r) => Math.round(r * 100) + '%').join(' / ')} (${Math.round(ms)} ms for 200 runs)`);
+assert.ok(ms < 8000, 'sampling stays fast enough for a phone');
+console.log('Multi-unit checks passed.');
+
 // Mirror match is symmetric: equal units die together
 const r = simulate(buildFighter(U[567], 'A', full), buildFighter(U[567], 'B', full));
 assert.equal(r.winner, null);

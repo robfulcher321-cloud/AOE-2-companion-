@@ -33,6 +33,8 @@ export const OTHER_TECHS = [
   { id: 47, name: 'Chemistry' },
   { id: 215, name: 'Squires' },
   { id: 39, name: 'Husbandry' },
+  // Ballistics changes the projectile, not the unit, so it's matched by the unit's projectile data.
+  { id: 93, name: 'Ballistics', applies: (unit) => Boolean(RANGED[unit.ID]?.ballistics) },
 ];
 // Kept for older callers and tests
 export const BLACKSMITH = {
@@ -113,7 +115,7 @@ export function trackFor(unit, kind) {
 /** The single-tech switches (Bloodlines, Thumb Ring, ...) that change this unit. */
 export function otherTechsFor(unit) {
   const me = meOf(unit);
-  return OTHER_TECHS.filter((t) => touches(t.id, me));
+  return OTHER_TECHS.filter((t) => (t.applies ? t.applies(unit) : touches(t.id, me)));
 }
 
 /**
@@ -205,6 +207,7 @@ export function buildFighter(unit, name, opts = {}) {
     chosen: [...playerTechIds(unit, opts), ...uts],
   };
   const bonuses = applyEffects(stats, me, effectOpts);
+  const hasBallistics = effectOpts.chosen.includes(93) && Boolean(ranged?.ballistics);
 
   // Extra projectiles (Chu Ko Nu, Kipchak) carry their own attack, which techs
   // can change separately from the unit's.
@@ -241,6 +244,9 @@ export function buildFighter(unit, name, opts = {}) {
       sprite: ranged.sprite,
       spread: ranged.spread,
       blast: ranged.blast,
+      ballistics: hasBallistics,
+      fullStray: Boolean(ranged.fullStray),
+      pierces: Boolean(ranged.pierces),
       count: Math.max(1, Math.round(stats.projectiles)),
       accuracy: Math.min(100, Math.max(0, stats.accuracy)),
       secondary,

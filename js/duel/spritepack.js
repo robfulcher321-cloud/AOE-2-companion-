@@ -1,11 +1,9 @@
-// Sprite pack: real unit animations and grass made from AoE2 DE's files by
-// tools/make_sprite_pack.py. The app ships with one (assets/), and a different
-// pack can be imported on the Duel screen; imports are kept only on the device.
+// Sprite pack: real unit animations, projectiles and grass made from AoE2 DE's
+// files by tools/make_sprite_pack.py. The app ships with one (assets/).
 //
 // File layout: "AOE2PACK" | uint32 version | uint32 header length | JSON header | blobs
 
 const CACHE = 'aoe2-sprite-pack';
-const KEY = new URL('sprite-pack.aoe2pack', location.href).href;
 const MAGIC = 'AOE2PACK';
 const BUNDLED = 'assets/AoE2-sprites.aoe2pack';
 
@@ -53,42 +51,16 @@ class SpritePack {
 
 let current;
 
-/** A pack the user imported takes priority; otherwise the one bundled with the app. */
+/** The pack bundled with the app. Packs imported by older versions are cleared. */
 export async function loadPack() {
   if (current !== undefined) return current;
   current = null;
   try {
-    if (typeof caches !== 'undefined') {
-      const res = await (await caches.open(CACHE)).match(KEY);
-      if (res) current = new SpritePack(await res.arrayBuffer());
-    }
-    if (!current) {
-      const res = await fetch(BUNDLED);
-      if (res.ok) {
-        current = new SpritePack(await res.arrayBuffer());
-        current.bundled = true;
-      }
-    }
+    if (typeof caches !== 'undefined') caches.delete(CACHE).catch(() => {});
+    const res = await fetch(BUNDLED);
+    if (res.ok) current = new SpritePack(await res.arrayBuffer());
   } catch (err) {
     console.warn('Sprite pack unavailable:', err);
   }
   return current;
-}
-
-export async function importPack(file) {
-  const buffer = await file.arrayBuffer();
-  const pack = new SpritePack(buffer); // validates before saving
-  if (typeof caches !== 'undefined') {
-    const cache = await caches.open(CACHE);
-    await cache.put(KEY, new Response(buffer, { headers: { 'content-type': 'application/octet-stream' } }));
-  }
-  current = pack;
-  return pack;
-}
-
-/** Removes an imported pack; the app goes back to the bundled one. */
-export async function removePack() {
-  current = undefined;
-  if (typeof caches !== 'undefined') await caches.delete(CACHE);
-  return loadPack();
 }

@@ -42,7 +42,13 @@ export class Picker {
     const last = document.activeElement;
     const search = el('input', { type: 'search', className: 'picker-search', placeholder: `Search ${this.label.toLowerCase()}`, 'aria-label': `Search ${this.label.toLowerCase()}` });
     const list = el('ul', { className: 'picker-list', role: 'listbox', 'aria-label': this.label });
-    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); last?.focus(); };
+    const close = () => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      vv?.removeEventListener('resize', fit);
+      vv?.removeEventListener('scroll', fit);
+      last?.focus();
+    };
     const choose = (v) => { close(); if (v !== this.value) this.set(v); };
     const render = (q = '') => {
       const needle = q.trim().toLowerCase();
@@ -58,6 +64,9 @@ export class Picker {
         }));
     };
     search.addEventListener('input', () => render(search.value));
+    // While typing, pin the panel to the top of the screen so the matches stay
+    // at the top, clear of the keyboard, even if the screen isn't resized.
+    search.addEventListener('focus', () => overlay.classList.add('typing'));
     const onKey = (e) => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', onKey);
     const panel = el('div', { className: 'picker-panel', role: 'dialog', 'aria-label': `Choose ${this.label.toLowerCase()}` },
@@ -67,6 +76,19 @@ export class Picker {
       this.options.length > 8 ? search : null,
       list);
     const overlay = el('div', { className: 'picker-overlay' }, el('div', { className: 'sheet-backdrop', onclick: close }), panel);
+    // Keep the list above the on-screen keyboard: size the overlay to the part
+    // of the screen that is actually visible, so the panel's bottom edge sits on
+    // top of the keyboard and the list scrolls inside what's left.
+    const vv = window.visualViewport;
+    const fit = () => {
+      if (!vv) return;
+      overlay.style.top = `${vv.offsetTop}px`;
+      overlay.style.height = `${vv.height}px`;
+      overlay.style.bottom = 'auto';
+    };
+    vv?.addEventListener('resize', fit);
+    vv?.addEventListener('scroll', fit);
+    fit();
     render();
     document.body.append(overlay);
     (list.querySelector('[aria-selected=true]') || list.querySelector('button'))?.scrollIntoView({ block: 'center' });

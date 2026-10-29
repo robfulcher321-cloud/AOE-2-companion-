@@ -1,19 +1,33 @@
-// 1v1 simulation in game seconds.
-// Units start apart and walk until the enemy is within range (measured edge to
-// edge, as in the game), then attack on their reload timer. A blow or shot is
-// released `attackDelay` seconds into each attack and is cancelled if the
-// attacker dies first. Projectiles then fly at their own speed and still land
-// if the shooter has died meanwhile.
+// Battle simulation in game seconds: 1 to 5 units a side on open, flat ground.
 //
-// Ranged shots roll against accuracy. A missed shot lands somewhere within
-// `spread` × distance of the target and can still hit it if it lands on the
-// unit (or within the blast radius). Ranged units stand and shoot; they don't
-// retreat from melee units (no micro), and minimum range isn't modelled.
+// Movement and targeting: each unit goes for the nearest living enemy and keeps
+// that target until it dies. Units walk until the target is within range
+// (measured edge to edge, as in the game), then attack on their reload timer.
+// Units can't overlap; they push past each other, so melee units spread round
+// a target. No micro: ranged units don't run from melee units.
+//
+// Attacks: a blow or shot is released `attackDelay` seconds into each attack
+// and is cancelled if the attacker dies first. What follows is how the game
+// handles projectiles (AoE II DE infosheet, Jineapple's work; UGC guide):
+//   - Each shot rolls against the unit's accuracy. A hit is aimed at the
+//     target; a miss is aimed at a random point near it, within
+//     dispersion × distance ÷ 2 tiles (a square area, as in the game).
+//   - Projectiles fly at their own speed and hit the target if it is in their
+//     path. A target that stepped out of the path is missed, unless Ballistics
+//     made the shot lead it. Shots still land if the shooter has died.
+//   - A miss that still meets the target does full damage; one that comes down
+//     on another enemy does half (full for Arambai, chakrams and fire archers).
+//   - Extra arrows (Chu Ko Nu, Kipchak) leave in bursts, each burst taking an
+//     attack delay, and the reload starts after the last one.
+//   - Units with a minimum range (skirmishers, slingers...) switch to another
+//     enemy in range when theirs is too close, or step back to shoot.
 
 import { damagePerHit } from './combat.js';
 
 export const DT = 1 / 60;          // simulation step, game seconds
 const MAX_TIME = 600;
+const PROJECTILE_SIZE = 0.05;      // half-size of a projectile's own hitbox, tiles
+const BURST_GAP = 0.06;            // seconds between arrows in one burst
 
 /** Small, fast seeded random generator so each run can be replayed exactly. */
 export function mulberry32(seed) {
@@ -27,124 +41,262 @@ export function mulberry32(seed) {
   };
 }
 
-export const hasRandomness = (a, b) => [a, b].some((f) => f.projectile && (f.projectile.accuracy < 100));
+export const hasRandomness = (a, b) => [a, b].some((f) => f.projectile && (f.projectile.accuracy < 100 || f.projectile.count > 1));
 
-export function simulate(a, b, { startGap, seed = 1 } = {}) {
+/**
+ * a, b: fighter stats from buildFighter. opts.counts: [blue count, red count].
+ * opts.record: keep per-step frames for playback (off when sampling win rates).
+ */
+export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = true } = {}) {
   const rand = mulberry32(seed);
   const fighters = [a, b];
-  const sides = fighters.map((f) => ({ f, hp: f.hp, ready: 0, pending: null, hits: 0, shots: 0, dealt: 0, attackStart: null, diedAt: null }));
-  const reach = (s) => s.f.range + a.radius + b.radius;
-  // Start just outside the longer reach so ranged units walk into range too.
+  const maxR = Math.max(a.radius, b.radius);
   const gap = startGap ?? Math.max(5, Math.max(a.range, b.range) + 2);
-  const pos = [0, a.radius + b.radius + gap];
+  const spacing = Math.max(2 * maxR + 0.3, 0.8);
+  const units = [];
+  for (let side = 0; side < 2; side++) {
+    const n = Math.max(1, Math.min(5, counts[side] | 0));
+    for (let k = 0; k < n; k++) {
+      units.push({
+        id: units.length, side, f: fighters[side], r: fighters[side].radius,
+        x: side === 0 ? 0 : a.radius + b.radius + gap,
+        y: (k - (n - 1) / 2) * spacing,
+        vx: 0, vy: 0, hp: fighters[side].hp, target: null, ready: 0, pending: null,
+        attackStart: null, diedAt: null, face: side === 0 ? 1 : -1, moving: false,
+        hits: 0, shots: 0, dealt: 0,
+      });
+    }
+  }
+  // Damage of each side's blow/shot and of its extra arrows, against the other side
   const dmg = [damagePerHit(a, b), damagePerHit(b, a)];
   const secDmg = fighters.map((f, i) => (f.projectile?.secondary ? damagePerHit(f, fighters[1 - i], f.projectile.secondary.attacks) : 0));
+
   const frames = [];
   const hits = [];
-  const shots = [];          // every projectile, for drawing
-  const flying = [];         // projectiles still in the air
+  const shots = [];
+  const flying = [];
   let t = 0;
 
-  const alive = (i) => sides[i].hp > 0;
-  const deal = (i, amount, at) => {
-    const j = 1 - i;
-    if (sides[j].hp <= 0) return;
-    sides[j].hp -= amount;
-    sides[i].hits += 1;
-    sides[i].dealt += amount;
-    hits.push({ t: at, by: i, dmg: Math.round(amount * 100) / 100, hpAfter: Math.max(0, sides[j].hp) });
+  const alive = (u) => u.hp > 0;
+  const enemies = (u) => units.filter((e) => e.side !== u.side && alive(e));
+  const centre = (u, v) => Math.hypot(v.x - u.x, v.y - u.y);
+  const edge = (u, v) => centre(u, v) - u.r - v.r;
+  const sideAlive = (s) => units.some((u) => u.side === s && alive(u));
+
+  const deal = (by, victim, amount, at) => {
+    if (!alive(victim)) return;
+    victim.hp -= amount;
+    by.hits += 1;
+    by.dealt += amount;
+    hits.push({ t: at, by: by.id, side: by.side, victim: victim.id, dmg: Math.round(amount * 100) / 100 });
+    if (victim.hp <= 0 && victim.diedAt === null) victim.diedAt = at;
   };
 
-  const release = (i) => {
-    const s = sides[i];
-    const p = s.f.projectile;
-    if (!p) { deal(i, dmg[i], t); return; }
-    const j = 1 - i;
-    const dist = Math.abs(pos[j] - pos[i]);
-    const targetR = fighters[j].radius;
-    for (let n = 0; n < p.count; n++) {
-      const extra = n > 0 && p.secondary;
-      // Where it comes down relative to the target, in tiles (along, across).
-      let off = [0, 0];
-      let hit = rand() * 100 < p.accuracy;
-      if (!hit) {
-        const r = Math.sqrt(rand()) * p.spread * Math.max(dist, 1);
-        const ang = rand() * Math.PI * 2;
-        off = [Math.cos(ang) * r, Math.sin(ang) * r];
-        hit = Math.hypot(off[0], off[1]) <= targetR + (p.blast || 0);
-      } else if (p.count > 1) {
-        const ang = rand() * Math.PI * 2;
-        off = [Math.cos(ang) * targetR * 0.6, Math.sin(ang) * targetR * 0.6];
+  // Which enemy (if any) a landing projectile comes down on: the target if its
+  // hitbox covers the spot, otherwise (for misses) the first other enemy there.
+  const inBox = (u, x, y, pad = 0) => Math.abs(u.x - x) <= u.r + PROJECTILE_SIZE + pad && Math.abs(u.y - y) <= u.r + PROJECTILE_SIZE + pad;
+
+  const launch = (u, target, extra, releaseAt) => {
+    const p = u.f.projectile;
+    const dist = Math.max(centre(u, target), 0.01);
+    let aimX = target.x;
+    let aimY = target.y;
+    if (p.ballistics) {
+      // Lead the target by where it will be when the shot arrives.
+      const flight = dist / p.speed;
+      aimX += target.vx * flight;
+      aimY += target.vy * flight;
+    }
+    const accurate = rand() * 100 < p.accuracy;
+    if (!accurate) {
+      const d = (p.spread * dist) / 2;
+      aimX += (rand() * 2 - 1) * d;
+      aimY += (rand() * 2 - 1) * d;
+    }
+    const shot = {
+      by: u.id, side: u.side, target: target.id, accurate, extra,
+      t0: releaseAt, x0: u.x, y0: u.y, x1: aimX, y1: aimY,
+      landed: releaseAt + Math.hypot(aimX - u.x, aimY - u.y) / p.speed,
+      hit: null, sprite: p.sprite, arc: p.arc,
+      dmg: extra ? secDmg[u.side] : dmg[u.side],
+    };
+    u.shots += 1;
+    shots.push(shot);
+    flying.push(shot);
+  };
+
+  // Where a projectile is along its flight at time `at` (ground position).
+  const posAt = (s, at) => {
+    const k = Math.max(0, Math.min(1, (at - s.t0) / Math.max(s.landed - s.t0, 1e-6)));
+    return [s.x0 + (s.x1 - s.x0) * k, s.y0 + (s.y1 - s.y0) * k, k];
+  };
+
+  // Checked every step while the projectile flies. It hits its target if the
+  // target is in its path (so units walking straight at the shooter are still
+  // hit, while ones that step aside are missed). A missed shot can also come
+  // down on another enemy near the end of its flight, for half damage.
+  const fly = (s) => {
+    const shooter = units[s.by];
+    const p = shooter.f.projectile;
+    const target = units[s.target];
+    const [px, py, k] = posAt(s, t);
+    const done = t >= s.landed - 1e-9;
+    const foes = units.filter((e) => e.side !== s.side && alive(e));
+    if (p.blast > 0) {
+      if (!done) return false;
+      // Area shot (grenadier): everything in the blast takes the damage.
+      for (const e of foes) {
+        if (Math.hypot(e.x - px, e.y - py) <= p.blast + e.r) { deal(shooter, e, s.dmg, t); s.hit = s.hit ?? e.id; }
       }
-      const shot = { by: i, t0: t, x0: pos[i], x: pos[i], off, hit, dmg: extra ? secDmg[i] : dmg[i], landed: null, x1: null, speed: p.speed, sprite: p.sprite, arc: p.arc };
-      s.shots += 1;
-      shots.push(shot);
-      flying.push(shot);
+      return true;
+    }
+    if (p.pierces) {
+      // Chakram: hits each enemy it passes through, once.
+      s.struck = s.struck || new Set();
+      for (const e of foes) {
+        if (!s.struck.has(e.id) && inBox(e, px, py)) { s.struck.add(e.id); deal(shooter, e, s.dmg, t); s.hit = s.hit ?? e.id; }
+      }
+      return done;
+    }
+    if (alive(target) && inBox(target, px, py)) {
+      deal(shooter, target, s.dmg, t);
+      s.hit = target.id; s.landed = t; s.x1 = px; s.y1 = py;
+      return true;
+    }
+    if (!s.accurate && k > 0.7) {
+      const stray = foes.find((e) => e.id !== s.target && inBox(e, px, py));
+      if (stray) {
+        deal(shooter, stray, p.fullStray ? s.dmg : s.dmg / 2, t);
+        s.hit = stray.id; s.landed = t; s.x1 = px; s.y1 = py;
+        return true;
+      }
+    }
+    return done;
+  };
+
+  const release = (u) => {
+    const target = units[u.pending.target];
+    const p = u.f.projectile;
+    if (!p) {
+      // Melee (and reach weapons): lands if the target is still close enough.
+      if (alive(target) && edge(u, target) <= u.f.range + 0.5) deal(u, target, dmg[u.side], t);
+      return;
+    }
+    // Extra arrows go in bursts; the first burst carries the main arrow.
+    const bursts = u.pending.bursts;
+    let n = 0;
+    for (let b = 0; b < bursts.length; b++) {
+      for (let k = 0; k < bursts[b]; k++, n++) {
+        launch(u, target, n > 0 && Boolean(p.secondary), t + b * u.f.attackDelay + k * BURST_GAP);
+      }
     }
   };
 
-  while (t < MAX_TIME && alive(0) && alive(1)) {
-    // Both units decide from the same snapshot, so neither gets a head start
+  const pickTarget = (u) => {
+    if (u.target !== null && alive(units[u.target])) return units[u.target];
+    let best = null;
+    for (const e of enemies(u)) if (!best || centre(u, e) < centre(u, best)) best = e;
+    u.target = best ? best.id : null;
+    return best;
+  };
+
+  while (t < MAX_TIME && sideAlive(0) && sideAlive(1)) {
+    // Everyone decides from the same snapshot, so nobody gets a head start
     // from being processed first.
-    const dist = Math.abs(pos[1] - pos[0]);
-    const steps = [0, 0];
-    for (let i = 0; i < 2; i++) {
-      const me = sides[i];
-      if (dist > reach(me) + 1e-9 && !me.pending) {
-        steps[i] = Math.min(me.f.speed * DT, dist - reach(me));
-      } else if (!me.pending && t >= me.ready) {
-        me.pending = { at: t + me.f.attackDelay, started: t };
-        me.attackStart = t;
-        me.ready = t + me.f.reload;
+    const moves = units.map(() => null);
+    for (const u of units) {
+      u.moving = false;
+      if (!alive(u)) continue;
+      let target = pickTarget(u);
+      if (!target) continue;
+      if (u.pending) continue;
+      const minR = u.f.projectile ? u.f.minRange || 0 : 0;
+      if (minR > 0 && edge(u, target) < minR) {
+        // Too close to shoot: switch to an enemy that is in range, or step back.
+        const alt = enemies(u).find((e) => edge(u, e) >= minR && edge(u, e) <= u.f.range);
+        if (alt) { u.target = alt.id; target = alt; } else {
+          const d = centre(u, target) || 1;
+          moves[u.id] = [((u.x - target.x) / d) * u.f.speed * DT, ((u.y - target.y) / d) * u.f.speed * DT];
+          continue;
+        }
+      }
+      const reach = u.f.range;
+      const gapNow = edge(u, target);
+      if (gapNow > reach + 1e-9) {
+        const step = Math.min(u.f.speed * DT, gapNow - reach);
+        const d = centre(u, target) || 1;
+        moves[u.id] = [((target.x - u.x) / d) * step, ((target.y - u.y) / d) * step];
+      } else if (t >= u.ready) {
+        const p = u.f.projectile;
+        let bursts = [1];
+        if (p) {
+          const n = p.count;
+          if (n > 1) {
+            // Elite Chu Ko Nu: 5 arrows in 3 to 5 bursts (infosheet)
+            const nb = Math.min(n, 3 + Math.floor(rand() * (n - 2)));
+            bursts = Array.from({ length: nb }, (_, i) => Math.floor(n / nb) + (i < n % nb ? 1 : 0));
+          }
+        }
+        u.pending = { at: t + u.f.attackDelay, started: t, target: target.id, bursts };
+        u.attackStart = t;
+        // Reload counts from the last burst for multi-arrow units (≈ infosheet's 3.6–4.1 s for Elite Chu Ko Nu).
+        u.ready = t + u.f.reload + (bursts.length > 1 ? (bursts.length - 1) * u.f.attackDelay + 0.13 : 0);
+        u.face = Math.sign(target.x - u.x) || u.face;
       }
     }
-    // Don't let two approaching units overshoot each other's reach.
-    const movers = [0, 1].filter((i) => steps[i] > 0);
-    if (movers.length) {
-      const room = dist - Math.max(...movers.map((i) => reach(sides[i])));
-      const total = steps[0] + steps[1];
-      const k = total > room ? Math.max(0, room) / total : 1;
-      pos[0] += steps[0] * k;
-      pos[1] -= steps[1] * k;
+    // Apply moves, then push overlapping units apart.
+    for (const u of units) {
+      const m = moves[u.id];
+      u.vx = 0; u.vy = 0;
+      if (!m) continue;
+      u.x += m[0]; u.y += m[1];
+      u.vx = m[0] / DT; u.vy = m[1] / DT;
+      u.moving = true;
+      if (Math.abs(m[0]) > 1e-6) u.face = Math.sign(m[0]);
+      const tg = u.target !== null ? units[u.target] : null;
+      if (tg && Math.sign(tg.x - u.x)) u.face = Math.sign(tg.x - u.x) || u.face;
+    }
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (!alive(u)) continue;
+      for (let j = i + 1; j < units.length; j++) {
+        const v = units[j];
+        if (!alive(v)) continue;
+        const d = centre(u, v);
+        const need = u.r + v.r;
+        if (d >= need - 1e-6) continue;
+        const nx = d > 1e-6 ? (v.x - u.x) / d : 0;
+        const ny = d > 1e-6 ? (v.y - u.y) / d : (i % 2 ? 1 : -1);
+        const push = (need - d);
+        // The unit that is standing still (e.g. attacking) gives way less.
+        const wu = u.moving ? (v.moving ? 0.5 : 0.8) : (v.moving ? 0.2 : 0.5);
+        u.x -= nx * push * wu; u.y -= ny * push * wu;
+        v.x += nx * push * (1 - wu); v.y += ny * push * (1 - wu);
+      }
     }
     // Blows and shots due this step are released together, so mutual kills are possible.
-    const due = [0, 1].filter((i) => sides[i].pending && t >= sides[i].pending.at - 1e-9);
-    for (const i of due) { release(i); sides[i].pending = null; }
-    // Projectiles fly toward where the target is now (straight line, so no
-    // leading is needed) and land when they reach it.
+    const due = units.filter((u) => u.pending && alive(u) && t >= u.pending.at - 1e-9);
+    for (const u of due) { release(u); u.pending = null; }
+    for (const u of units) if (!alive(u) && u.pending) u.pending = null;
+    // Projectiles in the air
     for (let k = flying.length - 1; k >= 0; k--) {
-      const p = flying[k];
-      const tx = pos[1 - p.by] + p.off[0] * (p.by === 0 ? 1 : -1);
-      const dir = Math.sign(tx - p.x) || 0;
-      const step = p.speed * DT;
-      if (Math.abs(tx - p.x) <= step) {
-        p.x = tx; p.x1 = tx; p.landed = t;
-        if (p.hit) deal(p.by, p.dmg, t);
-        flying.splice(k, 1);
-      } else {
-        p.x += dir * step;
-      }
+      if (t >= flying[k].t0 && fly(flying[k])) flying.splice(k, 1);
     }
-    for (const s of sides) if (s.hp <= 0 && s.diedAt === null) s.diedAt = t;
-    frames.push({
-      t,
-      x: [pos[0], pos[1]],
-      hp: [Math.max(0, sides[0].hp), Math.max(0, sides[1].hp)],
-      swing: sides.map((s) => (s.pending ? (t - s.pending.started) / Math.max(s.pending.at - s.pending.started, 0.15) : 0)),
-      moving: [steps[0] > 0, steps[1] > 0],
-      attackStart: [sides[0].attackStart, sides[1].attackStart],
-    });
+    if (record) {
+      frames.push({
+        t,
+        u: units.map((u) => [u.x, u.y, Math.max(0, u.hp), u.moving ? 1 : 0, u.face, u.attackStart]),
+      });
+    }
     t += DT;
   }
-  // Arrows already in the air when the fight ends still finish their flight (for drawing).
-  for (const p of flying) {
-    const tx = pos[1 - p.by] + p.off[0] * (p.by === 0 ? 1 : -1);
-    p.x1 = tx;
-    p.landed = t + Math.abs(tx - p.x) / p.speed;
-  }
+  // Shots still in the air when the fight ends finish their flight (for drawing).
+  for (const s of flying) s.hit = null;
 
-  const dead = [!alive(0), !alive(1)];
+  const survivors = [0, 1].map((s) => units.filter((u) => u.side === s && alive(u)).length);
+  const dead = [survivors[0] === 0, survivors[1] === 0];
   const winner = dead[0] && dead[1] ? null : dead[1] ? 0 : dead[0] ? 1 : null;
+  const sum = (s, key) => units.filter((u) => u.side === s).reduce((acc, u) => acc + Math.max(0, u[key]), 0);
   return {
     frames,
     hits,
@@ -155,14 +307,24 @@ export function simulate(a, b, { startGap, seed = 1 } = {}) {
     damage: dmg,
     secondaryDamage: secDmg,
     seed,
-    sides: sides.map((s) => ({ hpLeft: Math.max(0, s.hp), hits: s.hits, shots: s.shots, dealt: s.dealt, diedAt: s.diedAt })),
+    units: units.map((u) => ({ id: u.id, side: u.side, maxHp: u.f.hp, hpLeft: Math.max(0, u.hp), diedAt: u.diedAt, hits: u.hits, shots: u.shots })),
+    sides: [0, 1].map((s) => ({
+      count: units.filter((u) => u.side === s).length,
+      survivors: survivors[s],
+      hpLeft: sum(s, 'hp'),
+      hpTotal: fighters[s].hp * units.filter((u) => u.side === s).length,
+      hits: units.filter((u) => u.side === s).reduce((acc, u) => acc + u.hits, 0),
+      shots: units.filter((u) => u.side === s).reduce((acc, u) => acc + u.shots, 0),
+      dealt: units.filter((u) => u.side === s).reduce((acc, u) => acc + u.dealt, 0),
+      diedAt: survivors[s] === 0 ? Math.max(...units.filter((u) => u.side === s).map((u) => u.diedAt ?? 0)) : null,
+    })),
   };
 }
 
 /**
- * Runs the matchup many times with different random seeds (only when there is
+ * Runs the battle many times with different random seeds (only when there is
  * randomness) and returns win rates plus one representative fight to show:
- * one won by the most common winner, with a typical length.
+ * one won by the most common winner, with a typical margin.
  */
 export function simulateMany(a, b, { runs = 200, ...opts } = {}) {
   if (!hasRandomness(a, b)) {
@@ -174,14 +336,13 @@ export function simulateMany(a, b, { runs = 200, ...opts } = {}) {
   const outcomes = [];
   const wins = [0, 0, 0];
   for (let s = 1; s <= runs; s++) {
-    const r = simulate(a, b, { ...opts, seed: s });
+    const r = simulate(a, b, { ...opts, seed: s, record: false });
     wins[r.winner === null ? 2 : r.winner] += 1;
-    outcomes.push({ seed: s, winner: r.winner, duration: r.duration, hpLeft: r.winner === null ? 0 : r.sides[r.winner].hpLeft });
+    outcomes.push({ seed: s, winner: r.winner, hpLeft: r.winner === null ? 0 : r.sides[r.winner].hpLeft });
   }
   const top = wins[0] >= wins[1] && wins[0] >= wins[2] ? 0 : wins[1] >= wins[2] ? 1 : null;
-  const pool = outcomes.filter((o) => o.winner === top);
-  const byHp = [...pool].sort((x, y) => x.hpLeft - y.hpLeft);
-  const pick = byHp[Math.floor(byHp.length / 2)] || outcomes[0];
+  const pool = outcomes.filter((o) => o.winner === top).sort((x, y) => x.hpLeft - y.hpLeft);
+  const pick = pool[Math.floor(pool.length / 2)] || outcomes[0];
   const result = simulate(a, b, { ...opts, seed: pick.seed });
   return { result, runs, wins, rates: wins.map((w) => w / runs) };
 }

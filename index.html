@@ -28,20 +28,14 @@
     <section id="view-duel" class="view" aria-labelledby="duel-title" hidden>
       <header class="view-head">
         <h1 id="duel-title">Duel</h1>
-        <p class="subtle">Pick two units, melee or ranged, and their upgrades, then watch them fight.</p>
+        <p class="subtle">Pick up to five units a side, melee or ranged, and their upgrades, then watch them fight.</p>
       </header>
       <div class="duel-setup">
         <fieldset class="side side-blue" id="side-a"></fieldset>
         <fieldset class="side side-red" id="side-b"></fieldset>
       </div>
       <button id="fight" class="fight" type="button">Fight</button>
-      <div class="pack" id="pack">
-        <p id="pack-text">Loading…</p>
-        <div class="pack-actions">
-          <label class="pack-btn"><input type="file" id="pack-file" accept=".aoe2pack" hidden><span id="pack-import-label">Import sprite pack</span></label>
-          <button type="button" id="pack-remove" hidden>Remove</button>
-        </div>
-      </div>
+      <p class="pack-note" id="pack-text" hidden></p>
       <div id="arena-wrap" class="arena-wrap" hidden>
         <canvas id="arena" aria-label="Duel playback"></canvas>
         <div class="arena-controls">

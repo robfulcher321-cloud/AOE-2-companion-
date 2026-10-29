@@ -5,9 +5,9 @@ import { civKeys } from '../techtree.js';
 import { buildFighter, isDuelEligible, damagePerHit, hitsToKill, affectsUnit, trackFor, otherTechsFor, CLASS } from './combat.js';
 import { simulateMany } from './sim.js';
 import { ArenaPlayer } from './render.js';
-import { loadPack, importPack, removePack } from './spritepack.js';
+import { loadPack } from './spritepack.js';
 
-const OTHER_NOTES = { 435: '+20 HP', 437: 'accuracy, fire rate', 436: 'armour, bonus damage', 47: '+1 attack', 215: '+10% speed', 39: '+10% speed' };
+const OTHER_NOTES = { 435: '+20 HP', 437: 'accuracy, fire rate', 436: 'armour, bonus damage', 47: '+1 attack', 215: '+10% speed', 39: '+10% speed', 93: 'arrows lead moving targets' };
 
 const el = (tag, props = {}, ...children) => {
   const n = Object.assign(document.createElement(tag), props);
@@ -47,6 +47,7 @@ class SidePanel {
       el('legend', { textContent: this.label }),
       el('div', { className: 'field' }, el('span', { textContent: 'Civilisation' }), this.civPicker.button),
       el('div', { className: 'field' }, el('span', { textContent: 'Unit' }), this.unitPicker.button),
+      this.countRow(),
       el('div', { className: 'upgrade-grid' },
         el('label', { className: 'field' }, el('span', { textContent: 'Attack upgrades' }), this.attackSelect),
         el('label', { className: 'field' }, el('span', { textContent: 'Armour upgrades' }), this.armourSelect)),
@@ -66,6 +67,25 @@ class SidePanel {
       n.addEventListener('input', () => this.update());
     }
     await this.setCiv(this.defaults.civ, this.defaults.unit);
+  }
+
+  /** 1–5 units on this side */
+  countRow() {
+    this.count = 1;
+    const group = el('div', { className: 'count', role: 'radiogroup', 'aria-label': `${this.label} unit count` });
+    this.countButtons = [1, 2, 3, 4, 5].map((n) => {
+      const btn = el('button', { type: 'button', textContent: String(n) });
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-checked', String(n === 1));
+      btn.addEventListener('click', () => {
+        this.count = n;
+        for (const b of this.countButtons) b.setAttribute('aria-checked', String(b === btn));
+        this.onChange?.();
+      });
+      group.append(btn);
+      return btn;
+    });
+    return el('div', { className: 'field' }, el('span', { textContent: 'How many' }), group);
   }
 
   async setCiv(civ, preferredUnit) {
@@ -165,6 +185,7 @@ class SidePanel {
     if (!pick) return null;
     const name = nameText(this.strings[pick.node.name_string_id] || pick.node.name);
     return {
+      count: this.count,
       icon: imageUrl('Unit', pick.node.picture_index),
       stats: buildFighter(pick.unit, name, {
         civ: this.civ,
@@ -213,34 +234,10 @@ export async function initDuel() {
   const player = new ArenaPlayer(document.getElementById('arena'));
   const resultBox = document.getElementById('result');
   let current = null;
-  let pack = await loadPack();
+  const pack = await loadPack();
   const packText = document.getElementById('pack-text');
-  const packRemove = document.getElementById('pack-remove');
-  const packFile = document.getElementById('pack-file');
-  const packLabel = document.getElementById('pack-import-label');
-  const showPack = (message) => {
-    packText.textContent = message || (!pack
-      ? 'Units show as icons. For the in-game look, import a sprite pack made from your copy of AoE2.'
-      : pack.bundled
-        ? `In-game graphics on: ${pack.unitCount} units.`
-        : `In-game graphics on: ${pack.unitCount} units from your imported pack.`);
-    packRemove.hidden = !pack || pack.bundled;
-    packLabel.textContent = pack ? 'Use a different pack' : 'Import sprite pack';
-  };
-  showPack();
-  packFile.addEventListener('change', async () => {
-    const file = packFile.files[0];
-    packFile.value = '';
-    if (!file) return;
-    packText.textContent = 'Importing…';
-    try {
-      pack = await importPack(file);
-      showPack();
-    } catch (err) {
-      showPack(err.message || 'Couldn\'t import that file.');
-    }
-  });
-  packRemove.addEventListener('click', async () => { pack = await removePack(); showPack(); });
+  const showPack = (message) => { packText.textContent = message || ''; packText.hidden = !message; };
+  if (!pack) showPack('In-game graphics couldn\'t be loaded, so units are shown as icons.');
 
   const spritesFor = async (fa, fb) => {
     if (!pack || !pack.has(fa.stats.unitId) || !pack.has(fb.stats.unitId)) return null;
@@ -254,22 +251,30 @@ export async function initDuel() {
     }
   };
 
+  const fightBtn = document.getElementById('fight');
   const run = async () => {
     const fa = a.fighter();
     const fb = b.fighter();
     if (!fa || !fb) return;
-    const many = simulateMany(fa.stats, fb.stats);
+    fightBtn.disabled = true;
+    fightBtn.textContent = 'Simulating…';
+    await new Promise((r) => setTimeout(r, 30)); // let the button repaint first
+    const counts = [fa.count, fb.count];
+    // Fewer samples for big battles keeps it quick on a phone.
+    const runs = counts[0] + counts[1] > 4 ? 100 : 200;
+    const many = simulateMany(fa.stats, fb.stats, { counts, runs });
     const { result } = many;
+    fightBtn.disabled = false;
+    fightBtn.textContent = 'Fight';
     const sprites = await spritesFor(fa, fb);
-    if (pack && !sprites) showPack('This matchup isn\'t in your sprite pack, so it\'s shown with icons.');
-    else showPack();
+    showPack(pack && !sprites ? 'This matchup has no in-game graphics, so it\'s shown with icons.' : '');
     const icons = await Promise.all([fa.icon, fb.icon].map((src) => new Promise((res) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = img.onerror = () => res(img);
       img.src = src;
     })));
-    current = { result, many, fa: fa.stats, fb: fb.stats };
+    current = { result, many, fa: fa.stats, fb: fb.stats, counts };
     wrap.hidden = false;
     resultBox.replaceChildren();
     player.resize();
@@ -279,7 +284,7 @@ export async function initDuel() {
     wrap.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   };
 
-  document.getElementById('fight').addEventListener('click', run);
+  fightBtn.addEventListener('click', run);
   document.getElementById('replay').addEventListener('click', () => { if (current) { resultBox.replaceChildren(); player.play(); } });
   for (const btn of document.querySelectorAll('.speed button')) {
     btn.addEventListener('click', () => {
@@ -289,42 +294,55 @@ export async function initDuel() {
   }
 }
 
-function showResult(box, { result, many, fa, fb }) {
+function showResult(box, { result, many, fa, fb, counts }) {
   const names = [fa.name, fb.name];
   const sideNames = ['Blue', 'Red'];
+  const plural = (n, name) => {
+    if (n < 2) return name;
+    if (/man$/.test(name)) return `${n} ${name.slice(0, -3)}men`;
+    if (/(s|i)$/.test(name)) return `${n} ${name}`;
+    if (/[^aeiou]y$/.test(name)) return `${n} ${name.slice(0, -1)}ies`;
+    return `${n} ${name}s`;
+  };
+  const label = (i) => plural(counts[i], names[i]);
   const pct = (x) => `${Math.round(x * 100)}%`;
   let heading;
   let odds = null;
+  const winsVerb = (i) => (counts[i] > 1 ? 'win' : 'wins');
   if (many.runs > 1) {
     const [w0, w1, draw] = many.rates;
     const top = w0 >= w1 ? 0 : 1;
     heading = Math.max(w0, w1) < 0.55 && Math.abs(w0 - w1) < 0.1
       ? 'Too close to call'
-      : `${sideNames[top]}'s ${names[top]} wins ${pct(many.rates[top])} of fights`;
+      : `${sideNames[top]}'s ${label(top)} ${winsVerb(top)} ${pct(many.rates[top])} of fights`;
     odds = el('p', { className: 'odds' },
-      `Out of ${many.runs} fights with different dice rolls for missed shots: Blue ${pct(w0)}, Red ${pct(w1)}`,
-      draw ? `, both die ${pct(draw)}` : '', '. The fight shown is a typical one.');
+      `Out of ${many.runs} fights with different dice rolls for shots: Blue ${pct(w0)}, Red ${pct(w1)}`,
+      draw ? `, everyone dies ${pct(draw)}` : '', '. The fight shown is a typical one.');
   } else {
     heading = result.winner === null
-      ? (result.timedOut ? 'No winner after 10 minutes' : 'Both units died')
-      : `${sideNames[result.winner]}'s ${names[result.winner]} wins`;
+      ? (result.timedOut ? 'No winner after 10 minutes' : 'Everyone died')
+      : `${sideNames[result.winner]}'s ${label(result.winner)} ${winsVerb(result.winner)}`;
   }
   const fighters = [fa, fb];
-  const row = (label, f) => el('tr', {}, el('th', { scope: 'row', textContent: label }),
+  const S = result.sides;
+  const row = (title, f) => el('tr', {}, el('th', { scope: 'row', textContent: title }),
     el('td', { textContent: f(0) }), el('td', { textContent: f(1) }));
+  const multi = counts[0] > 1 || counts[1] > 1;
   const table = el('table', { className: 'result-table' },
-    el('thead', {}, el('tr', {}, el('th', {}), el('th', { textContent: `Blue: ${names[0]}` }), el('th', { textContent: `Red: ${names[1]}` }))),
+    el('thead', {}, el('tr', {}, el('th', {}), el('th', { textContent: `Blue: ${label(0)}` }), el('th', { textContent: `Red: ${label(1)}` }))),
     el('tbody', {},
-      row('HP left', (i) => `${Math.ceil(result.sides[i].hpLeft)} / ${Math.floor(fighters[i].hp)}`),
+      multi ? row('Units left', (i) => `${S[i].survivors} / ${S[i].count}`) : null,
+      row(multi ? 'HP left (all units)' : 'HP left', (i) => `${Math.ceil(S[i].hpLeft)} / ${Math.floor(S[i].hpTotal)}`),
       row('Damage per hit', (i) => Math.round(damagePerHit(fighters[i], fighters[1 - i]) * 100) / 100),
-      row('Hits to kill', (i) => hitsToKill(fighters[i], fighters[1 - i]) + (fighters[i].projectile?.secondary ? ' (main arrow)' : '')),
-      row('Hits landed', (i) => (fighters[i].projectile ? `${result.sides[i].hits} of ${result.sides[i].shots} shots` : result.sides[i].hits)),
+      row('Hits to kill one', (i) => hitsToKill(fighters[i], fighters[1 - i]) + (fighters[i].projectile?.secondary ? ' (main arrow)' : '')),
+      row('Hits landed', (i) => (fighters[i].projectile ? `${S[i].hits} of ${S[i].shots} shots` : S[i].hits)),
+      row('Damage dealt', (i) => Math.round(S[i].dealt)),
     ));
   box.replaceChildren(
     el('h2', { textContent: heading }),
     odds,
     el('p', { className: 'subtle', textContent: `${odds ? 'This fight' : 'Fight'} lasted ${result.duration.toFixed(1)} game seconds (${(result.duration / 1.7).toFixed(1)} real seconds at Normal speed).` }),
     table,
-    el('p', { className: 'caveat', textContent: 'Imperial Age, flat ground, no micro: ranged units stand and shoot rather than running from melee units, and minimum range isn\'t modelled. Includes Blacksmith and Archery Range/Stable/Barracks upgrades, civ bonuses and unique techs that change unit stats. Special abilities (charge attacks, trample, regeneration) aren\'t simulated yet.' }),
+    el('p', { className: 'caveat', textContent: 'Imperial Age, flat ground, no micro: units go for the nearest enemy, and ranged units stand and shoot rather than running from melee units. Shots roll accuracy, fly at their real speed, can be dodged by sideways movement without Ballistics, and misses can still hit. Includes Blacksmith, Archery Range, Stable, Barracks and University upgrades, civ bonuses and unique techs that change unit stats. Special abilities (charge attacks, trample, bleed, healing) aren\'t simulated yet.' }),
   );
 }

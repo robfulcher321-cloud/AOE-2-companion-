@@ -25,6 +25,7 @@ AGE_OF = {101: 2, 102: 3, 103: 4}   # Feudal, Castle, Imperial age techs
 PLAYER_TECHS = [67, 68, 75, 74, 76, 77, 81, 82, 80, 199, 200, 201, 211, 212, 219,
                 435, 437, 436, 47, 215, 39]
 PROJECTILE_CLASS = 11
+BALLISTICS = 93
 
 
 def duel_eligible(u):
@@ -52,6 +53,12 @@ def ranged_record(dat, uid):
         'count': int(u.creatable.total_projectiles),
         'spread': round(float(t50.accuracy_dispersion), 3),
         'blast': round(float(t50.blast_width), 3),
+        # Ballistics (tech 93) makes these projectiles lead moving targets
+        'ballistics': any(c.c == 19 and c.a == pid for c in dat.effects[dat.techs[BALLISTICS].effect_id].effect_commands),
+        # smart mode bit 2: a stray hit on another unit does full damage instead of half
+        'fullStray': bool(int(p.projectile.smart_mode) & 2),
+        # chakrams fly through and hit everything in their path
+        'pierces': int(p.projectile.hit_mode) == 1 and int(p.projectile.vanish_mode) == 1,
     }
     sec = u.creatable.secondary_projectile_unit
     if rec['count'] > 1 and sec >= 0:

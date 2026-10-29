@@ -195,11 +195,7 @@ details[open] > summary::before { content: '−'; }
 }
 .fight:active { transform: translateY(1px); }
 
-.pack { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: -4px 0 16px; color: var(--muted); font-size: .92rem; }
-.pack p { margin: 0; flex: 1 1 16rem; }
-.pack-actions { display: flex; gap: 8px; }
-.pack-btn, .pack-actions button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--stone-2); color: var(--bone); cursor: pointer; font: inherit; }
-.pack-btn:focus-within { outline: 2px solid var(--gold); outline-offset: 2px; }
+.pack-note { margin: -4px 0 16px; color: var(--muted); font-size: .92rem; }
 .arena-wrap { overflow: hidden; }
 #arena { display: block; width: 100%; height: 300px; touch-action: manipulation; border-bottom: 3px solid #4a2c12; }
 .arena-controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--line); }
@@ -244,13 +240,18 @@ details[open] > summary::before { content: '−'; }
 .picker-overlay { position: fixed; inset: 0; z-index: 35; display: grid; align-items: end; }
 .picker-panel {
   position: relative; border-radius: 0;
-  width: 100%; max-width: 640px; margin: 0 auto; max-height: 80vh; display: flex; flex-direction: column;
+  width: 100%; max-width: 640px; margin: 0 auto; max-height: min(80vh, calc(100% - 24px)); display: flex; flex-direction: column;
+  min-height: 0;
   padding: 20px 12px calc(12px + env(safe-area-inset-bottom)); animation: rise .18s ease-out;
 }
+.picker-overlay.typing { align-items: start; }
+.picker-overlay.typing .picker-panel { padding-top: calc(20px + env(safe-area-inset-top)); }
+.picker-overlay.typing .picker-panel::before { display: none; }
 .picker-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 8px; }
 .picker-head .sheet-close { position: static; }
 .picker-search { width: 100%; min-height: 44px; margin-bottom: 8px; padding: 8px 10px; background: var(--stone-2); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--bone); }
-.picker-list { list-style: none; margin: 0; padding: 0; overflow: auto; }
+.picker-list { list-style: none; margin: 0; padding: 0; overflow: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
+.picker-search { flex: none; }
 .picker-option { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 6px 8px; background: none; border: 0; border-radius: var(--radius-sm); cursor: pointer; text-align: left; }
 .picker-option img { width: 40px; height: 40px; border-radius: 4px; }
 .picker-option:hover { background: rgb(120 80 30 / .1); }
@@ -280,7 +281,7 @@ details[open] > summary::before { content: '−'; }
 .update-actions button:disabled { opacity: .6; }
 
 /* Parchment form controls: crisp ink borders, slightly lighter paper */
-select, input[type=number], .picker, .picker-search, .pack-btn, .pack-actions button, .arena-controls button, .update-actions button {
+select, input[type=number], .picker, .picker-search, .arena-controls button, .update-actions button {
   box-shadow: inset 0 1px 2px rgb(110 70 20 / .18);
 }
 select:disabled { opacity: .55; }
@@ -305,3 +306,9 @@ select:disabled { opacity: .55; }
 .toggle input[type=checkbox]:checked { background: linear-gradient(#e2b24d, #b47f22); border-color: #5a3a10; }
 .toggle input[type=checkbox]:checked::after { transform: rotate(45deg) scale(1); }
 .toggle input[type=checkbox]:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Unit count: 1–5 */
+.count { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.count button { min-height: 44px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--stone-2); color: var(--bone); font: inherit; font-weight: 700; cursor: pointer; }
+.count button[aria-checked=true] { background: rgb(255 248 226 / .85); outline: 2px solid var(--gold); outline-offset: -1px; }
+.fight:disabled { opacity: .7; cursor: progress; }
