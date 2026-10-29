@@ -245,7 +245,7 @@ function describeSpecial(f) {
       case 4: out.push(`dodges up to ${r(ch.max)} projectiles, 1 back every ${r(1 / ch.rate)} s`); break;
       case 5: out.push(`blocks one melee blow every ${secs(ch)} s`); break;
       case 6:
-        if (ch.projectile && !f.projectile) out.push(`${ch.projectile.count > 1 ? `${ch.projectile.count} shots` : 'a throw'} of ${shotDmg(ch.projectile)} pierce from up to ${r(ch.event)} tiles before closing in, recharges in ${secs(ch)} s`);
+        if (ch.projectile && !f.projectile) out.push(`${ch.projectile.count > 1 ? `${ch.projectile.count} shots` : 'a throw'} of ${shotDmg(ch.projectile)} pierce${ch.projectile.combat & 1 ? ' ignoring armour' : ''} from up to ${r(ch.event)} tiles before closing in, recharges in ${secs(ch)} s`);
         else if (ch.projectile) out.push(`charged shot of ${shotDmg(ch.projectile)} pierce every ${secs(ch)} s`);
         break;
       case 7: out.push(`charged volley of ${1 + (ch.extra?.count || 0)} arrows every ${secs(ch)} s`); break;

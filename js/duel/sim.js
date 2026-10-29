@@ -31,7 +31,7 @@
 //   4 agility (Shrivamsha): each charge point dodges one projectile.
 //   5 block (Iron Pagoda): a full charge blocks one melee blow.
 //   6 charge projectiles: melee units (Fire Lancer, Hearth Troop) fire them as
-//     they close in, within the charge range; ranged units (Bolas Rider) fire
+//     they close in, within the charge range (these shots ignore armour); ranged units (Bolas Rider) fire
 //     them instead of their next normal shot.
 //   7 (Xianbei Raider): the next shot is a charge arrow plus extra arrows.
 //   Samurai: charges in faster from 2 to 6–7 tiles away when charged.
@@ -110,7 +110,7 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
   const sideAlive = (s) => units.some((u) => u.side === s && alive(u));
   const chargeOf = (u) => u.f.special?.charge || null;
   const full = (u) => { const ch = chargeOf(u); return ch && u.charge >= ch.max - 1e-9; };
-  const dmgOf = (u, v, attacks, extraMelee = 0) => damagePerHit(u.f, v.f, attacks ?? u.f.attacks, { armourLoss: v.armourLoss, extraMelee });
+  const dmgOf = (u, v, attacks, extraMelee = 0, ignoreArmour = false) => damagePerHit(u.f, v.f, attacks ?? u.f.attacks, { armourLoss: v.armourLoss, extraMelee, ignoreArmour });
 
   const deal = (by, victim, amount, at, note) => {
     if (!alive(victim)) return;
@@ -184,12 +184,14 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
     const [px, py, k] = posAt(s, t);
     const done = t >= s.landed - 1e-9;
     const foes = units.filter((e) => e.side !== s.side && alive(e));
+    const pierceArmour = Boolean((p.combat || 0) & 1); // shot ignores armour (Fire Lancer, Hearth Troop)
+    const shotDmg = (e) => dmgOf(shooter, e, s.attacks, 0, pierceArmour);
     const stop = (id) => { s.hit = id; s.landed = t; s.x1 = px; s.y1 = py; return true; };
     if (p.blast > 0) {
       if (!done) return false;
       // Area shot (grenadier): everything in the blast takes the damage.
       for (const e of foes) {
-        if (Math.hypot(e.x - px, e.y - py) <= p.blast + e.r) { deal(shooter, e, dmgOf(shooter, e, s.attacks), t); s.hit = s.hit ?? e.id; }
+        if (Math.hypot(e.x - px, e.y - py) <= p.blast + e.r) { deal(shooter, e, shotDmg(e), t); s.hit = s.hit ?? e.id; }
       }
       return true;
     }
@@ -199,7 +201,7 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
       for (const e of foes) {
         if (!s.struck.has(e.id) && inBox(e, px, py)) {
           s.struck.add(e.id);
-          if (!dodges(e)) { deal(shooter, e, dmgOf(shooter, e, s.attacks), t); s.hit = s.hit ?? e.id; }
+          if (!dodges(e)) { deal(shooter, e, shotDmg(e), t); s.hit = s.hit ?? e.id; }
         }
       }
       return done;
@@ -210,14 +212,14 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
         s.accurate = true; // a dodged shot flies on harmlessly
         hits.push({ t, by: shooter.id, side: s.side, victim: target.id, dmg: 0, note: 'dodged' });
       } else {
-        deal(shooter, target, dmgOf(shooter, target, s.attacks), t);
+        deal(shooter, target, shotDmg(target), t);
         return stop(target.id);
       }
     }
     if (!s.accurate && k > 0.7) {
       const stray = foes.find((e) => e.id !== s.target && inBox(e, px, py));
       if (stray && !dodges(stray)) {
-        const d = dmgOf(shooter, stray, s.attacks);
+        const d = shotDmg(stray);
         deal(shooter, stray, p.fullStray ? d : d / 2, t);
         return stop(stray.id);
       }

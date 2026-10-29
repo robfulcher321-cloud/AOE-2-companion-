@@ -118,6 +118,8 @@ def projectile_record(dat, pid, count=1):
         'spread': round(float(t50.accuracy_dispersion), 3),
         'fullStray': bool(int(p.projectile.smart_mode) & 2),
         'count': count,
+        # combat ability on the projectile itself: 1 = ignores armour (Fire Lancer, Hearth Troop)
+        'combat': int(t50.break_off_combat),
     }
 
 

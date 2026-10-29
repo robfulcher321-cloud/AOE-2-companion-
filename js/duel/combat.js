@@ -309,14 +309,15 @@ function spBase(rec) {
 /**
  * Damage of one blow or projectile. `attacks` defaults to the attacker's own.
  * opts.armourLoss: armour torn off the defender so far (Obuch);
- * opts.extraMelee: charge damage added to this blow.
+ * opts.extraMelee: charge damage added to this blow;
+ * opts.ignoreArmour: the projectile itself ignores armour (Fire Lancer shot).
  * Armour-ignoring attackers (Leitis, Composite Bowman) skip melee and pierce
  * armour; bonus damage resistance (Sicilians, Bengali elephants) shrinks the
  * bonus part of the attack.
  */
-export function damagePerHit(attacker, defender, attacks = attacker.attacks, { armourLoss = 0, extraMelee = 0 } = {}) {
+export function damagePerHit(attacker, defender, attacks = attacker.attacks, { armourLoss = 0, extraMelee = 0, ignoreArmour = false } = {}) {
   let sum = 0;
-  const ignore = ((attacker.special?.combat || 0) & 1) && !((defender.special?.combat || 0) & 2);
+  const ignore = (ignoreArmour || ((attacker.special?.combat || 0) & 1)) && !((defender.special?.combat || 0) & 2);
   const resist = defender.special?.bonusResist || 0;
   for (const [cls, raw] of attacks) {
     if (!defender.armours.has(cls)) continue;
