@@ -74,6 +74,10 @@ const ICONS = {
   'unique_unit/Aoe2de_ratha_ranged.webp': ['Unit', 1759],
   'unique_unit/Aoe2-icon-hussite-wagon.webp': ['Unit', 1704],
   'unique_unit/Aoe2-icon-flemish-militia.webp': ['Unit', 1699],
+  'other/Settlement.webp': ['Building', 2556],
+  'mill/Aoe2-icon--folwark.webp': ['Building', 1734],
+  'mill/Pasture.webp': ['Building', 1889],
+  'barracks/Champi_Scout.webp': ['Unit', 2588],
 };
 // Age-up icons -> age-up tech (101 Feudal, 102 Castle, 103 Imperial)
 const AGE_ICON = { 2: 'age/FeudalAgeIconDE', 3: 'age/CastleAgeIconDE', 4: 'age/ImperialAgeIconDE' };
@@ -154,6 +158,7 @@ const TOTAL_BEFORE = /\b(reach|total|until|have|keep|up to)\b[^@]*$/i;
 function purchases(note, data, seenTechs) {
   const out = [];
   for (const seg of String(note).split('|')) {
+    if (/^\s*Civ bonus:/i.test(seg)) continue; // a line about the civ, not something to do
     const parts = tokens(seg);
     // "Next villager builds a house": wait for that villager to come out.
     const byNext = /\bnext\b/i.test(seg);
@@ -185,10 +190,14 @@ function purchases(note, data, seenTechs) {
 /** The build order as a timeline with an estimated bank, second by second. */
 export function timeline(build, data) {
   const raw = build.build_order || [];
+  // Civ starts that differ (the app's own builds say so: Chinese start with 6
+  // villagers, Mayans 4, some civs start with more or less of a resource).
+  const startV = build.start?.villagers ?? 3;
+  const vTime = build.villager_time || VILLAGER_TIME;
   const steps = [];
   let prevT = 0;
-  let prevV = 3;
-  let prevRes = { food: 3, wood: 0, gold: 0, stone: 0, builder: 0 };
+  let prevV = startV;
+  let prevRes = { food: startV, wood: 0, gold: 0, stone: 0, builder: 0 };
   let estimated = false;
   for (const s of raw) {
     // -1 in a build order means "not given": keep what the previous step had.
@@ -224,17 +233,21 @@ export function timeline(build, data) {
   const moves = [];
   const seenTechs = new Set();
   const KEYS = ['food', 'wood', 'gold', 'stone', 'builder'];
-  let vPrev = 3;
-  let rPrev = { food: 3, wood: 0, gold: 0, stone: 0, builder: 0 };
+  let vPrev = startV;
+  let rPrev = { food: startV, wood: 0, gold: 0, stone: 0, builder: 0 };
   steps.forEach((st, si) => {
     const made = Math.max(0, st.vills - vPrev);
     // New villagers fill the resources that grow; anything left over is a move.
     const gains = KEYS.flatMap((k) => Array(Math.max(0, Math.round(st.res[k] - rPrev[k]))).fill(k));
     const losses = KEYS.flatMap((k) => Array(Math.max(0, Math.round(rPrev[k] - st.res[k]))).fill(k));
-    for (let k = 1; k <= made; k++) {
+    // Free villagers (Bengali age-ups, Wei eco upgrades) appear when the step starts.
+    const free = Math.min(made, st.free_villagers || 0);
+    for (let k = 0; k < free; k++) villagers.push({ q: st.start, done: st.start, res: gains.shift() || null, step: si, free: true });
+    const paid = made - free;
+    for (let k = 1; k <= paid; k++) {
       // Villagers are queued one training time before each is due.
-      const done = st.start + ((st.t - st.start) * k) / made;
-      const q = Math.max(0, done - VILLAGER_TIME);
+      const done = st.start + ((st.t - st.start) * k) / paid;
+      const q = Math.max(0, done - vTime);
       events.push({ t: q, cost: { food: 50 }, what: 'villager' });
       villagers.push({ q, done, res: gains.shift() || null, step: si });
     }
@@ -255,8 +268,11 @@ export function timeline(build, data) {
     // says "next villager builds...". Several in one step go a few seconds apart.
     const buys = (st.notes || []).flatMap((note) => purchases(note, data, seenTechs));
     const firstOut = made > 0 ? st.start + (st.t - st.start) / made : st.start;
+    // Loom in the step that clicks up is researched last, just before the click.
+    const clicks = (st.notes || []).some((n) => /@age\/(Feudal|Castle|Imperial)AgeIconDE/.test(n) && /click/i.test(n));
     buys.forEach((p, k) => {
-      const t = Math.min(st.t, (p.byNext ? firstOut : st.start) + k * 3);
+      let t = Math.min(st.t, (p.byNext ? firstOut : st.start) + k * 3);
+      if (clicks && p.icon === 'town_center/LoomDE.webp') t = Math.max(t, st.t - (p.time || 25));
       const cost = Object.fromEntries(Object.entries(p.cost).map(([key, v]) => [key, v * p.n]));
       // Units and buildings in a batch go one after another (one building / builder).
       const dur = (p.time || 0) * (p.type === 'Unit' || p.type === 'Building' ? p.n : 1);
@@ -277,8 +293,10 @@ export function timeline(build, data) {
       break;
     }
     const tech = data?.data?.Tech?.[AGE_TECH[age]];
-    events.push({ t: click, cost: lower(tech?.Cost || {}), what: `age${age}`, icon: `${AGE_ICON[age]}.webp`, type: 'Age', dur: tech?.ResearchTime || 130 });
-    ages.push({ age, click, reach: click + (tech?.ResearchTime || 130), pop: steps[i - 1].vills + 1 });
+    // Civ-specific research time when the build gives one (Malay, Persians).
+    const rt = build.age_research?.[age] ?? tech?.ResearchTime ?? 130;
+    events.push({ t: click, cost: lower(tech?.Cost || {}), what: `age${age}`, icon: `${AGE_ICON[age]}.webp`, type: 'Age', dur: rt });
+    ages.push({ age, click, reach: click + rt, pop: steps[i - 1].vills + 1 });
   }
   // Nothing can be started before its age is reached (matters most for builds
   // without times, and for "In Feudal Age: build..." steps).
@@ -305,7 +323,7 @@ export function timeline(build, data) {
     ...moves.map((m) => ({ t: m.t, d: { [m.from]: -m.n, [m.to]: m.n } })),
   ].sort((a, b) => a.t - b.t);
   const alloc = (t) => {
-    const a = { food: 3, wood: 0, gold: 0, stone: 0, builder: 0 };
+    const a = { food: startV, wood: 0, gold: 0, stone: 0, builder: 0 };
     for (const c of changes) {
       if (c.t > t) break;
       for (const [k, v] of Object.entries(c.d)) a[k] = Math.max(0, (a[k] || 0) + v);
@@ -316,6 +334,7 @@ export function timeline(build, data) {
   // Second-by-second bank estimate. Purchases wait until they're affordable.
   const bank = [];
   const cur = { ...START_BANK };
+  for (const [k, v] of Object.entries(build.start?.bank || {})) if (k in cur) cur[k] = Math.max(0, cur[k] + v);
   let e = 0;
   const queue = [];
   const affordable = (c) => Object.entries(c).every(([k, v]) => !(k in cur) || cur[k] >= v - 1e-9);
@@ -350,7 +369,7 @@ export function timeline(build, data) {
     alloc,
     bankAt,
     /** Villagers trained by time t (3 to start) */
-    villagersAt: (t) => 3 + villagers.filter((v) => v.done <= t).length,
+    villagersAt: (t) => startV + villagers.filter((v) => v.done <= t).length,
     /** Index of the step you are working towards at time t */
     stepAt: (t) => {
       const i = steps.findIndex((st) => t < st.t);

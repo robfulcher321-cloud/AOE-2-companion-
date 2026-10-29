@@ -328,6 +328,9 @@ select:disabled { opacity: .55; }
 .bo-card:hover { background: rgb(255 248 226 / .8); }
 .bo-card-name { font-weight: 700; font-size: 1.05rem; }
 .bo-card-meta { color: var(--muted); font-size: .9rem; }
+.bo-sub { margin: 14px 0 6px; font-size: 1rem; }
+.bo-role { justify-self: start; padding: 1px 8px; border-radius: 10px; font-size: .78rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #fff8e6; background: #9a3b1d; }
+.bo-card-boom .bo-role { background: #3f6b2a; }
 .bo-more { margin: 12px 0; }
 .bo-more summary { cursor: pointer; font-weight: 700; padding: 8px 0; min-height: 44px; display: flex; align-items: center; }
 .bo-back { background: none; border: 0; color: var(--bone); font: inherit; font-weight: 700; padding: 10px 0; min-height: 44px; cursor: pointer; }

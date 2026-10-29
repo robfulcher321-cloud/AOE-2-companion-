@@ -92,21 +92,40 @@ export async function initGuides(root) {
     return btn;
   }
 
+  // A starter build: "Early game" or "Boom" tag, then what it is.
+  function roleCard(b, role) {
+    const btn = el('button', { type: 'button', className: `bo-card bo-card-${b.role}` },
+      el('span', { className: 'bo-role', textContent: role }),
+      el('span', { className: 'bo-card-name', textContent: b.name }),
+      el('span', { className: 'bo-card-meta', textContent: 'App build, adapted from Cicero\'s build order reference' }));
+    btn.addEventListener('click', () => showBuild(b));
+    return btn;
+  }
+
   function showList() {
     stopPlayer();
     const civ = civPicker.value;
     const name = civName(civ);
     const own = list.filter((b) => b.faction === civ);
+    const starters = ['early', 'boom'].map((r) => own.find((b) => b.role === r)).filter(Boolean);
+    const community = own.filter((b) => !b.role);
     const generic = list.filter((b) => b.faction === 'Generic');
     const sug = own.length ? null : suggestGeneric(specialty(civ));
     const sugBuild = sug && generic.find((b) => b.id === sug.id);
-    fill(main, 
+    const ROLE = { early: 'Early game', boom: 'Boom' };
+    fill(main,
       el('h2', { className: 'bo-h' }, el('img', { src: civIconUrl(civ), alt: '', className: 'bo-civ' }), `Build orders for ${name}`),
-      own.length
-        ? el('div', { className: 'bo-list' }, own.map((b) => buildCard(b)))
-        : el('div', {},
-          el('p', { className: 'subtle', textContent: `No ${name}-specific build in the library yet. Suggested general build, since ${name} is ${sug.why}:` }),
-          sugBuild ? el('div', { className: 'bo-list' }, buildCard(sugBuild, 'suggested')) : null),
+      starters.length ? [
+        el('h3', { className: 'bo-sub', textContent: 'Starter builds' }),
+        el('div', { className: 'bo-list' }, starters.map((b) => roleCard(b, ROLE[b.role]))),
+      ] : null,
+      community.length ? [
+        el('h3', { className: 'bo-sub', textContent: `From the community (${community.length})` }),
+        el('div', { className: 'bo-list' }, community.map((b) => buildCard(b))),
+      ] : null,
+      !own.length ? el('div', {},
+        el('p', { className: 'subtle', textContent: `No ${name}-specific build in the library yet. Suggested general build, since ${name} is ${sug.why}:` }),
+        sugBuild ? el('div', { className: 'bo-list' }, buildCard(sugBuild, 'suggested')) : null) : null,
       el('details', { className: 'bo-more' }, el('summary', { textContent: `General builds for any civ (${generic.length})` }),
         el('div', { className: 'bo-list' }, generic.filter((b) => b !== sugBuild).map((b) => buildCard(b)))),
     );

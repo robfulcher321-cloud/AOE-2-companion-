@@ -39,23 +39,32 @@ async function fetchWithTimeout(url, ms = 8000) {
   }
 }
 
+// The app's own starter builds: an early-game build and a boom for every civ
+// (tools/make_starter_builds.py). They ship with the app and are listed with
+// the library's builds; their ids start with "app-".
+const STARTER = 'assets/builds/starter.json';
+let starterP = null;
+const starter = () => (starterP ||= fetch(STARTER).then((r) => r.json()).catch(() => ({ list: [], builds: {} })));
+
 /**
  * The list of build orders: the cached live list if there is one, else the
- * bundled one. `refresh()` checks the live library and resolves to the new
- * list if anything changed (or null).
+ * bundled one, plus the starter builds. `refresh()` checks the live library
+ * and resolves to the new list if anything changed (or null).
  */
 export async function loadIndex() {
   const cached = store.get(CACHE_KEY);
-  let list = cached?.list;
-  if (!list) list = await (await fetch(BUNDLED_INDEX)).json();
+  let lib = cached?.list;
+  if (!lib) lib = await (await fetch(BUNDLED_INDEX)).json();
+  const own = (await starter()).list;
   return {
-    list,
+    list: [...own, ...lib],
     async refresh() {
       try {
         const live = parseIndex(await (await fetchWithTimeout(LIVE_INDEX)).text());
-        const same = JSON.stringify(live) === JSON.stringify(list);
+        const same = JSON.stringify(live) === JSON.stringify(lib);
         store.set(CACHE_KEY, { list: live, checked: Date.now() });
-        return same ? null : live;
+        lib = live;
+        return same ? null : [...own, ...live];
       } catch {
         return null;
       }
@@ -65,6 +74,11 @@ export async function loadIndex() {
 
 /** One build order: live copy when reachable (cached for offline use), else the bundled one. */
 export async function loadBuild(id) {
+  if (id.startsWith('app-')) {
+    const b = (await starter()).builds[id];
+    if (!b) throw new Error('Build not found.');
+    return b;
+  }
   try {
     const live = await (await fetchWithTimeout(liveBuild(id), 6000)).json();
     store.set(BUILD_KEY(id), live);
