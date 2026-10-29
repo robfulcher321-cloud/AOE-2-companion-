@@ -6,6 +6,7 @@ import { Picker } from '../picker.js';
 import { civOptions } from '../techtree.js';
 import { loadIndex, loadBuild, ICON_BASE, ICON_LIVE } from './source.js';
 import { overview, timeline, tokens, fmtTime, RES_KEYS } from './econ.js';
+import { openRun } from './run.js';
 
 const el = (tag, props = {}, ...children) => {
   const n = Object.assign(document.createElement(tag), props);
@@ -18,13 +19,6 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
-
-// In AoE2 DE the in-game clock runs 1.7 game seconds per real second at Normal
-// speed; build-order times are in-game times.
-const SPEEDS = [
-  { value: 1.7, label: 'In-game clock (Normal speed)' },
-  { value: 1, label: 'Real seconds' },
-];
 
 // A general build to suggest when a civ has none of its own, by what the civ is known for.
 function suggestGeneric(specialty) {
@@ -88,7 +82,7 @@ export async function initGuides(root) {
   );
 
   let player = null;
-  const stopPlayer = () => { player?.stop(); player = null; };
+  const stopPlayer = () => { player?.close(); player = null; };
 
   function buildCard(b, note) {
     const btn = el('button', { type: 'button', className: 'bo-card' },
@@ -127,7 +121,7 @@ export async function initGuides(root) {
     const back = el('button', { type: 'button', className: 'bo-back', textContent: '‹ All builds' });
     back.addEventListener('click', showList);
     const start = el('button', { type: 'button', className: 'fight', textContent: 'Start practice' });
-    start.addEventListener('click', () => showPlayer(bo, entry));
+    start.addEventListener('click', () => showPlayer(bo));
     const ageName = { 2: 'Feudal', 3: 'Castle', 4: 'Imperial' };
     const iconRow = (paths) => (paths.length ? el('div', { className: 'bo-icons' }, paths.map((p) => icon(p))) : el('span', { className: 'subtle', textContent: 'None' }));
     fill(main, 
@@ -164,103 +158,9 @@ export async function initGuides(root) {
     return ol;
   }
 
-  function showPlayer(bo, entry) {
+  function showPlayer(bo) {
     stopPlayer();
-    const tl = timeline(bo, data);
-    let t = 0;
-    let running = false;
-    let last = 0;
-    let speed = Number(store.get('bo-speed')) || 1.7;
-    let lastStep = -1;
-    let wake = null;
-
-    const clock = el('div', { className: 'bo-clock', textContent: '0:00' });
-    const playBtn = el('button', { type: 'button', className: 'bo-play', textContent: 'Start' });
-    const mk = (label, fn) => { const b = el('button', { type: 'button', textContent: label }); b.addEventListener('click', fn); return b; };
-    const speedSel = el('select', { 'aria-label': 'Timer speed' }, SPEEDS.map((s) => el('option', { value: s.value, textContent: s.label, selected: s.value === speed })));
-    speedSel.addEventListener('change', () => { speed = Number(speedSel.value); store.set('bo-speed', String(speed)); });
-    const now = el('section', { className: 'bo-now' });
-    const bankBox = el('section', { className: 'bo-bank' });
-    const next = el('section', { className: 'bo-next' });
-    const steps = stepList(tl, (i) => { t = tl.steps[i].start; lastStep = -1; render(); });
-    const back = mk('‹ Overview', () => showBuild(entry));
-    back.className = 'bo-back';
-
-    fill(main, 
-      back,
-      el('h2', { className: 'bo-h', textContent: bo.name }),
-      el('div', { className: 'bo-controls' },
-        clock,
-        el('div', { className: 'bo-buttons' }, playBtn, mk('−10s', () => { t = Math.max(0, t - 10); render(); }), mk('+10s', () => { t += 10; render(); }), mk('Reset', () => { t = 0; running = false; lastStep = -1; render(); }))),
-      el('label', { className: 'field bo-speed' }, el('span', { textContent: 'Timer' }), speedSel),
-      now, bankBox, next,
-      el('details', { className: 'bo-more' }, el('summary', { textContent: 'All steps (tap one to jump there)' }), steps),
-    );
-    window.scrollTo(0, 0);
-
-    playBtn.addEventListener('click', async () => {
-      running = !running;
-      last = performance.now();
-      if (running && 'wakeLock' in navigator) { try { wake = await navigator.wakeLock.request('screen'); } catch { wake = null; } }
-      if (!running) { wake?.release?.(); wake = null; }
-      render();
-    });
-
-    function render() {
-      clock.textContent = fmtTime(t);
-      playBtn.textContent = running ? 'Pause' : t > 0 ? 'Resume' : 'Start';
-      const i = tl.stepAt(t);
-      const st = tl.steps[i];
-      if (!st) return;
-      const prev = tl.steps[i - 1];
-      if (i !== lastStep) {
-        if (lastStep !== -1 && running) navigator.vibrate?.(120);
-        lastStep = i;
-        fill(now, 
-          el('h3', { textContent: `Step ${i + 1} of ${tl.steps.length}` }),
-          el('p', { className: 'bo-target' }, `Reach ${st.vills} villagers by `, el('b', { textContent: fmtTime(st.t) })),
-          (st.notes || []).map(noteView),
-          el('h4', { textContent: 'Villagers on each resource' }),
-          allocView(st.res, prev?.res),
-          el('div', { className: 'bo-progress' }, el('div', { className: 'bo-bar' })),
-        );
-        const upcoming = tl.steps.slice(i + 1, i + 4);
-        const ages = tl.ages.filter((a) => a.click > t);
-        fill(next, 
-          el('h3', { textContent: 'Coming up' }),
-          ages.length ? el('p', { className: 'bo-age-note' }, `Next age-up: click ${({ 2: 'Feudal', 3: 'Castle', 4: 'Imperial' })[ages[0].age]} at about `, el('b', { textContent: fmtTime(ages[0].click) })) : null,
-          upcoming.length
-            ? upcoming.map((u) => el('div', { className: 'bo-up' }, el('div', { className: 'bo-step-head' }, el('b', { textContent: fmtTime(u.t) }), ` · ${u.vills} villagers`), (u.notes || []).map(noteView)))
-            : el('p', { className: 'subtle', textContent: 'Last step: keep making villagers and follow up with your army.' }),
-        );
-        for (const [k, li] of [...steps.children].entries()) li.classList.toggle('current', k === i);
-      }
-      const bar = now.querySelector('.bo-bar');
-      if (bar) bar.style.width = `${Math.min(100, Math.max(0, ((t - st.start) / Math.max(1, st.t - st.start)) * 100))}%`;
-      const due = st.t - t;
-      now.querySelector('.bo-target b').textContent = `${fmtTime(st.t)}${due > 0 ? ` (in ${fmtTime(due)})` : ''}`;
-      const bank = tl.bankAt(t);
-      fill(bankBox, 
-        el('h3', { textContent: 'Resources you should have (estimate)' }),
-        el('div', { className: 'bo-alloc' }, RES_KEYS.map((k) => el('div', { className: 'bo-res' }, icon(RES_ICON[k], k), el('b', { textContent: String(Math.max(0, Math.round(bank[k]))) })))),
-        el('p', { className: 'bo-hint', textContent: 'Assumes typical gather rates and that you buy what each step says. Use it to spot if you\'re floating or short, not as an exact target.' }),
-      );
-    }
-
-    const tick = () => {
-      if (running) {
-        const n = performance.now();
-        t = Math.min(tl.end, t + ((n - last) / 1000) * speed);
-        last = n;
-        if (t >= tl.end) running = false;
-        render();
-      }
-    };
-    // The clock uses real elapsed time, so it stays right even if the phone
-    // screen turns off or the app is in the background.
-    const timer = setInterval(tick, 200);
-    render();
-    player = { stop() { clearInterval(timer); wake?.release?.(); } };
+    player = openRun(bo, timeline(bo, data), { onClose: () => { player = null; } });
   }
 
   showList();

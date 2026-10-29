@@ -155,24 +155,47 @@ export function timeline(build, data) {
   const end = (steps.at(-1)?.t || 0) + 90;
 
   // Spending events: villagers, age-ups and what the notes say to buy.
+  // Also, for the scrolling practice view: where each new villager goes and
+  // which villagers move between resources at each step.
   const events = [];
+  const villagers = [];
+  const moves = [];
   const seenTechs = new Set();
+  const KEYS = ['food', 'wood', 'gold', 'stone', 'builder'];
   let vPrev = 3;
-  for (const st of steps) {
-    // Villagers are queued one training time before each is due.
+  let rPrev = { food: 3, wood: 0, gold: 0, stone: 0, builder: 0 };
+  steps.forEach((st, si) => {
     const made = Math.max(0, st.vills - vPrev);
+    // New villagers fill the resources that grow; anything left over is a move.
+    const gains = KEYS.flatMap((k) => Array(Math.max(0, Math.round(st.res[k] - rPrev[k]))).fill(k));
+    const losses = KEYS.flatMap((k) => Array(Math.max(0, Math.round(rPrev[k] - st.res[k]))).fill(k));
     for (let k = 1; k <= made; k++) {
+      // Villagers are queued one training time before each is due.
       const done = st.start + ((st.t - st.start) * k) / made;
-      events.push({ t: Math.max(0, done - VILLAGER_TIME), cost: { food: 50 }, what: 'villager' });
+      const q = Math.max(0, done - VILLAGER_TIME);
+      events.push({ t: q, cost: { food: 50 }, what: 'villager' });
+      villagers.push({ q, done, res: gains.shift() || null, step: si });
+    }
+    const moved = new Map();
+    while (gains.length && losses.length) {
+      const key = `${losses[0]}>${gains[0]}`;
+      moved.set(key, (moved.get(key) || 0) + 1);
+      losses.shift(); gains.shift();
+    }
+    for (const [key, n] of moved) {
+      const [from, to] = key.split('>');
+      moves.push({ t: st.start, from, to, n, step: si });
     }
     vPrev = Math.max(vPrev, st.vills);
-    for (const note of st.notes || []) {
-      for (const p of purchases(note, data, seenTechs)) {
-        const cost = Object.fromEntries(Object.entries(p.cost).map(([k, v]) => [k, v * p.n]));
-        events.push({ t: st.start, cost, what: p.icon, n: p.n });
-      }
-    }
-  }
+    rPrev = { ...st.res };
+    // What this step says to buy, spread across the step in the order it's written.
+    const buys = (st.notes || []).flatMap((note) => purchases(note, data, seenTechs));
+    buys.forEach((p, k) => {
+      const t = st.start + ((st.t - st.start) * (k + 0.5)) / buys.length;
+      const cost = Object.fromEntries(Object.entries(p.cost).map(([key, v]) => [key, v * p.n]));
+      events.push({ t, cost, what: p.icon, n: p.n, step: si });
+    });
+  });
   // Age-ups: clicked at the "N pop" step that names the age, else when the age changes.
   const ages = [];
   for (let i = 1; i < steps.length; i++) {
@@ -187,7 +210,7 @@ export function timeline(build, data) {
       break;
     }
     const tech = data?.data?.Tech?.[AGE_TECH[age]];
-    events.push({ t: click, cost: lower(tech?.Cost || {}), what: `age${age}` });
+    events.push({ t: click, cost: lower(tech?.Cost || {}), what: `age${age}`, icon: `${AGE_ICON[age]}.webp` });
     ages.push({ age, click, reach: click + (tech?.ResearchTime || 130), pop: steps[i - 1].vills + 1 });
   }
   events.sort((a, b) => a.t - b.t);
@@ -225,13 +248,23 @@ export function timeline(build, data) {
     for (const k of RES_KEYS) cur[k] += (a[k] || 0) * RATES[k];
   }
 
+  const bankAt = (t) => {
+    const i = Math.max(0, Math.min(bank.length - 1, Math.floor(t)));
+    const j = Math.min(bank.length - 1, i + 1);
+    const f = Math.max(0, Math.min(1, t - i));
+    return Object.fromEntries(RES_KEYS.map((k) => [k, bank[i][k] + (bank[j][k] - bank[i][k]) * f]));
+  };
   return {
     steps,
     end,
     ages,
     events,
+    villagers,
+    moves,
     alloc,
-    bankAt: (t) => bank[Math.max(0, Math.min(bank.length - 1, Math.floor(t)))],
+    bankAt,
+    /** Villagers trained by time t (3 to start) */
+    villagersAt: (t) => 3 + villagers.filter((v) => v.done <= t).length,
     /** Index of the step you are working towards at time t */
     stepAt: (t) => {
       const i = steps.findIndex((st) => t < st.t);
