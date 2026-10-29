@@ -17,7 +17,11 @@ import urllib.request
 TECHTREE_URL = 'https://raw.githubusercontent.com/SiegeEngineers/aoe2techtree/master/data/data.json'
 # dat civ names that differ from aoe2techtree's civ keys
 CIV_ALIASES = {'British': 'Britons', 'French': 'Franks', 'Byzantine': 'Byzantines', 'Mayan': 'Mayans'}
-ATTRS = {0: 'hp', 5: 'speed', 8: 'armour', 9: 'attack', 10: 'reload', 11: 'accuracy', 12: 'range', 102: 'projectiles'}
+ATTRS = {0: 'hp', 5: 'speed', 8: 'armour', 9: 'attack', 10: 'reload', 11: 'accuracy', 12: 'range', 102: 'projectiles',
+         # special abilities (UGC guide attribute list)
+         22: 'blast width', 24: 'bonus damage resistance', 59: 'max charge', 60: 'recharge rate',
+         61: 'charge event', 62: 'charge type', 63: 'combat ability', 109: 'regeneration',
+         115: 'area damage', 118: 'damage reflection'}
 CASTLE = 82
 AGE_OF = {101: 2, 102: 3, 103: 4}   # Feudal, Castle, Imperial age techs
 # Techs the duel lets the player choose: Blacksmith lines (melee and archer),
@@ -90,6 +94,72 @@ def tech_record(dat, ti):
     return rec
 
 
+# Units that fight on as another unit when killed (help text: "fights on as
+# Infantry when felled"); the game handles this in code, not in the data.
+DISMOUNT = {1225: 1252, 1227: 1253}
+# Charge types the duel models (UGC guide): 1 attack charge, 3 area attack
+# charge, 4 agility (dodge projectiles), 5 ignore melee attacks, 6 charge
+# projectiles, 7 charge projectile plus extra projectiles.
+CHARGE_TYPES = {1, 3, 4, 5, 6, 7}
+
+
+def projectile_record(dat, pid, count=1):
+    p = dat.civs[1].units[pid]
+    t50 = p.type_50
+    gid = p.standing_graphic[0]
+    return {
+        'id': pid,
+        'attacks': [[a.class_, a.amount] for a in t50.attacks],
+        'speed': round(float(p.speed), 3),
+        'arc': round(float(p.projectile.projectile_arc), 3),
+        'sprite': dat.graphics[gid].file_name if gid >= 0 else None,
+        'minRange': round(float(t50.min_range), 3),
+        'accuracy': int(t50.accuracy_percent),
+        'spread': round(float(t50.accuracy_dispersion), 3),
+        'fullStray': bool(int(p.projectile.smart_mode) & 2),
+        'count': count,
+    }
+
+
+def special_record(dat, uid):
+    """Charge abilities, area (trample) damage, armour-ignoring and the like for one unit."""
+    u = dat.civs[1].units[uid]
+    c = u.creatable
+    t50 = u.type_50
+    rec = {}
+    if c.charge_type in CHARGE_TYPES and c.max_charge > 0 and c.recharge_rate < 1000:
+        ch = {'type': int(c.charge_type), 'max': round(float(c.max_charge), 3),
+              'rate': round(float(c.recharge_rate), 5), 'event': int(c.charge_event)}
+        if c.charge_type in (6, 7) and c.charge_projectile_unit >= 0:
+            ch['projectile'] = projectile_record(dat, c.charge_projectile_unit,
+                                                 int(c.max_total_projectiles) if c.charge_type == 6 else 1)
+            if c.charge_type == 7 and c.secondary_projectile_unit >= 0:
+                ch['extra'] = projectile_record(dat, c.secondary_projectile_unit, int(c.max_total_projectiles) - 1)
+        rec['charge'] = ch
+    for task in u.bird.tasks:
+        if task.action_type == 133:   # charge into battle (Samurai): speed boost between two distances
+            rec['rush'] = {'from': round(float(task.work_value_1), 3), 'to': round(float(task.work_value_2), 3),
+                           'speed': round(float(task.work_range), 3)}
+    if t50.blast_width > 0 and not RANGED_ONLY(u):
+        rec['blast'] = {'width': round(float(t50.blast_width), 3), 'level': int(t50.blast_attack_level),
+                        'damage': round(float(t50.blast_damage), 3)}
+    elif t50.blast_damage != 1.0:
+        rec['blastDamage'] = round(float(t50.blast_damage), 3)   # used if a tech adds a blast later
+    if t50.break_off_combat & 0b101:
+        rec['combat'] = int(t50.break_off_combat)
+    if t50.bonus_damage_resistance:
+        rec['bonusResist'] = round(float(t50.bonus_damage_resistance), 3)
+    if t50.damage_reflection:
+        rec['reflect'] = round(float(t50.damage_reflection), 3)
+    if uid in DISMOUNT:
+        rec['dismount'] = DISMOUNT[uid]
+    return rec
+
+
+def RANGED_ONLY(u):
+    return u.type_50.projectile_unit_id >= 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--game', required=True)
@@ -103,6 +173,7 @@ def main():
     unit_ids = sorted(int(k) for k, u in tt['data']['Unit'].items() if duel_eligible(u))
 
     ranged = {uid: r for uid in unit_ids if (r := ranged_record(dat, uid))}
+    unit_ids = sorted(set(unit_ids) | set(DISMOUNT.values()))
     units = {uid: {'class': dat.civs[1].units[uid].class_, 'radius': round(float(dat.civs[1].units[uid].collision_size_x), 3)}
              for uid in unit_ids}
 
@@ -140,6 +211,16 @@ def main():
         fh.write('// Collision radius in tiles per unit ID, read from the game data file (empires2_x2_p1.dat)\n')
         fh.write('// by tools/extract_effects.py.\n')
         fh.write('export const RADII = ' + json.dumps({k: v['radius'] for k, v in units.items()}, separators=(',', ':')) + ';\n')
+    extra_ids = set(unit_ids) | set(DISMOUNT.values())
+    specials = {uid: r for uid in sorted(extra_ids) if (r := special_record(dat, uid))}
+    with open(os.path.join(args.out, 'specials.js'), 'w') as fh:
+        fh.write('// Special abilities per unit ID, read from the game data file by tools/extract_effects.py.\n')
+        fh.write('// charge: type 1 attack charge, 3 area charge, 4 dodge projectiles, 5 block melee,\n')
+        fh.write('//   6 charge projectiles, 7 charge projectile + extras; max/rate (per second)/event as in the data.\n')
+        fh.write('// rush: speed boost when charging in from `from` to `to` tiles (Samurai).\n')
+        fh.write('// blast: melee area damage (width tiles; damage >0 = share of the hit, <0 = fixed amount).\n')
+        fh.write('// combat: 1 ignores armour, 4 strips 1 armour per hit. dismount: unit that fights on.\n')
+        fh.write('export const SPECIALS = ' + json.dumps(specials, separators=(',', ':')) + ';\n')
     with open(os.path.join(args.out, 'ranged.js'), 'w') as fh:
         fh.write('// Projectile data per ranged unit ID, read from the game data file by tools/extract_effects.py.\n')
         fh.write('// speed in tiles per second; spread = miss distance per tile of range; count = projectiles per shot.\n')

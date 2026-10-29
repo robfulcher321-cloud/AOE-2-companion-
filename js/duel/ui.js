@@ -42,6 +42,7 @@ class SidePanel {
       return el('label', { className: 'field' }, el('span', { textContent: text }), input);
     };
     this.statline = el('p', { className: 'statline' });
+    this.specialNote = el('p', { className: 'special-note' });
 
     this.root.replaceChildren(
       el('legend', { textContent: this.label }),
@@ -54,6 +55,7 @@ class SidePanel {
       this.otherBox,
       this.utBox,
       this.bonusNote,
+      this.specialNote,
       el('details', { className: 'extra' },
         el('summary', { textContent: 'Manual adjustments' }),
         el('div', { className: 'extra-grid' },
@@ -194,6 +196,7 @@ class SidePanel {
         techs: this.otherInputs.filter((i) => i.checked).map((i) => Number(i.value)),
         uts: this.utInputs.filter((i) => i.checked).map((i) => Number(i.value)),
         extra: Object.fromEntries(Object.entries(this.extras).map(([k, v]) => [k, Number(v.value) || 0])),
+        units: this.data.data.Unit,
       }),
     };
   }
@@ -216,12 +219,48 @@ class SidePanel {
     const p = s.projectile;
     const attack = p ? `${r(s.attacks.get(CLASS.PIERCE) ?? 0)} pierce attack` : `${r(s.attacks.get(CLASS.MELEE) ?? 0)} attack`;
     const shots = p ? `${p.count > 1 ? `, ${p.count} arrows per shot` : ''}, range ${r(s.range)}, ${Math.round(p.accuracy)}% accuracy` : s.range >= 1 ? `, reach ${r(s.range)}` : '';
+    const sp = describeSpecial(s);
+    this.specialNote.textContent = sp ? `Special: ${sp}` : '';
+    this.specialNote.hidden = !sp;
     this.statline.textContent =
       `${Math.floor(s.hp)} HP, ${attack}, ` +
       `${r(s.armours.get(CLASS.MELEE) ?? 0)}/${r(s.armours.get(CLASS.PIERCE) ?? 0)} armour, ` +
       `${r(s.reload)}s reload, ${r(s.speed)} speed${shots}`;
     this.onChange?.();
   }
+}
+
+/** One line describing a unit's special abilities, as the simulator uses them. */
+function describeSpecial(f) {
+  const sp = f.special || {};
+  const out = [];
+  const ch = sp.charge;
+  const secs = (c) => Math.round(c.max / c.rate);
+  const r = (v) => Math.round(v * 100) / 100;
+  if (ch) {
+    const shotDmg = (p) => [...p.attacks].filter(([c]) => c === 3).map(([, a]) => a)[0] ?? 0;
+    switch (ch.type) {
+      case 1: if (ch.event === 1) out.push(`charged blow +${r(ch.max)} damage, recharges in ${secs(ch)} s`); break;
+      case 3: out.push(`charged sweep +${r(ch.max)} damage to the target and enemies around it, recharges in ${secs(ch)} s`); break;
+      case 4: out.push(`dodges up to ${r(ch.max)} projectiles, 1 back every ${r(1 / ch.rate)} s`); break;
+      case 5: out.push(`blocks one melee blow every ${secs(ch)} s`); break;
+      case 6:
+        if (ch.projectile && !f.projectile) out.push(`${ch.projectile.count > 1 ? `${ch.projectile.count} shots` : 'a throw'} of ${shotDmg(ch.projectile)} pierce from up to ${r(ch.event)} tiles before closing in, recharges in ${secs(ch)} s`);
+        else if (ch.projectile) out.push(`charged shot of ${shotDmg(ch.projectile)} pierce every ${secs(ch)} s`);
+        break;
+      case 7: out.push(`charged volley of ${1 + (ch.extra?.count || 0)} arrows every ${secs(ch)} s`); break;
+      default:
+    }
+  }
+  if (sp.rush) out.push(`charges in ${Math.round((sp.rush.speed - 1) * 100)}% faster from ${sp.rush.from}–${sp.rush.to} tiles`);
+  if (sp.blast) out.push(sp.blast.damage < 0 ? `trample: ${-sp.blast.damage} damage to enemies within ${r(sp.blast.width)} tiles` : `trample: ${Math.round(sp.blast.damage * 100)}% damage to enemies within ${r(sp.blast.width)} tiles`);
+  if (sp.combat & 1) out.push('ignores armour');
+  if (sp.combat & 4) out.push('tears 1 melee and pierce armour per hit');
+  if (sp.bonusResist) out.push(`takes ${Math.round(sp.bonusResist * 100)}% less bonus damage`);
+  if (sp.regen) out.push(`regenerates ${r(sp.regen)} HP per minute`);
+  if (sp.reflect) out.push(`reflects ${Math.round(sp.reflect * 100)}% of melee damage`);
+  if (f.dismount) out.push(`fights on as ${f.dismount.name.replace(' (on foot)', '')} on foot (${Math.floor(f.dismount.hp)} HP) when its horse falls`);
+  return out.join('; ');
 }
 
 export async function initDuel() {
@@ -239,12 +278,28 @@ export async function initDuel() {
   const showPack = (message) => { packText.textContent = message || ''; packText.hidden = !message; };
   if (!pack) showPack('In-game graphics couldn\'t be loaded, so units are shown as icons.');
 
+  // Sprites for every unit that can appear (including a Konnik's dismounted
+  // form) and every projectile they can throw or fire.
   const spritesFor = async (fa, fb) => {
-    if (!pack || !pack.has(fa.stats.unitId) || !pack.has(fb.stats.unitId)) return null;
+    if (!pack) return null;
+    const fighters = [fa.stats, fb.stats];
+    const unitIds = new Set();
+    const shotNames = new Set();
+    for (let f of fighters) {
+      for (; f; f = f.dismount) {
+        unitIds.add(f.unitId);
+        for (const p of [f.projectile, f.special?.charge?.projectile, f.special?.charge?.extra]) if (p?.sprite) shotNames.add(p.sprite);
+      }
+    }
+    if (![fa.stats.unitId, fb.stats.unitId].every((id) => pack.has(id))) return null;
     try {
-      const [grass, ua, ub, pa, pb] = await Promise.all([pack.grass(), pack.unit(fa.stats.unitId), pack.unit(fb.stats.unitId),
-        pack.projectile?.(fa.stats.projectile?.sprite), pack.projectile?.(fb.stats.projectile?.sprite)]);
-      return { grass, units: [ua, ub], projectiles: [pa, pb] };
+      const units = {};
+      const projectiles = {};
+      await Promise.all([
+        ...[...unitIds].filter((id) => pack.has(id)).map(async (id) => { units[id] = await pack.unit(id); }),
+        ...[...shotNames].map(async (n) => { projectiles[n] = await pack.projectile(n); }),
+      ]);
+      return { grass: await pack.grass(), units, projectiles };
     } catch (err) {
       console.warn(err);
       return null;
@@ -338,11 +393,11 @@ function showResult(box, { result, many, fa, fb, counts }) {
       row('Hits landed', (i) => (fighters[i].projectile ? `${S[i].hits} of ${S[i].shots} shots` : S[i].hits)),
       row('Damage dealt', (i) => Math.round(S[i].dealt)),
     ));
-  box.replaceChildren(
+  box.replaceChildren(...[
     el('h2', { textContent: heading }),
     odds,
     el('p', { className: 'subtle', textContent: `${odds ? 'This fight' : 'Fight'} lasted ${result.duration.toFixed(1)} game seconds (${(result.duration / 1.7).toFixed(1)} real seconds at Normal speed).` }),
     table,
-    el('p', { className: 'caveat', textContent: 'Imperial Age, flat ground, no micro: units go for the nearest enemy, and ranged units stand and shoot rather than running from melee units. Shots roll accuracy, fly at their real speed, can be dodged by sideways movement without Ballistics, and misses can still hit. Includes Blacksmith, Archery Range, Stable, Barracks and University upgrades, civ bonuses and unique techs that change unit stats. Special abilities (charge attacks, trample, bleed, healing) aren\'t simulated yet.' }),
-  );
+    el('p', { className: 'caveat', textContent: 'Imperial Age, flat ground, no micro: units go for the nearest enemy, and ranged units stand and shoot rather than running from melee units. Shots roll accuracy, fly at their real speed, can be dodged by sideways movement without Ballistics, and misses can still hit. Includes Blacksmith, Archery Range, Stable, Barracks and University upgrades, civ bonuses and unique techs that change unit stats. Special abilities come from the game data: charge attacks and charge shots, trample, dodging, blocking, armour-ignoring and tearing, regeneration from techs and civ bonuses, and the Konnik fighting on foot. Not yet simulated: the Bolas Rider\'s slow, the Berserk\'s built-in regeneration and hero auras.' }),
+  ].filter(Boolean));
 }

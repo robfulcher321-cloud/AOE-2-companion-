@@ -104,7 +104,8 @@ export class ArenaPlayer {
 
   pickFrame(i, t, f) {
     const unit = this.result.units[i];
-    const sprite = this.sprites.units[unit.side];
+    const sprite = this.sprites.units[unit.unitId];
+    if (!sprite) return { fr: null, flip: false, atlas: null };
     const [, , , moving, face, attackStart] = f.u[i];
     // The pack has blue facing right and red facing left; the other way is mirrored.
     const side = unit.side === 0 ? 'blue' : 'red';
@@ -184,9 +185,11 @@ export class ArenaPlayer {
       if (!d) continue;
       const top = d.sy - (d.fr ? d.fr[5] : 50) * zoom - 14 * zoom - age * 30;
       ctx.globalAlpha = 1 - age / 0.9;
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgb(0 0 0 / .75)'; ctx.fillStyle = '#fff3c4';
-      ctx.strokeText(`-${hit.dmg}`, d.sx, top);
-      ctx.fillText(`-${hit.dmg}`, d.sx, top);
+      const label = hit.note === 'blocked' ? 'Blocked' : hit.note === 'dodged' ? 'Dodged' : `-${hit.dmg}`;
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgb(0 0 0 / .75)';
+      ctx.fillStyle = hit.note === 'charge' ? '#ffb347' : hit.note === 'blocked' || hit.note === 'dodged' ? '#bfe3ff' : '#fff3c4';
+      ctx.strokeText(label, d.sx, top);
+      ctx.fillText(label, d.sx, top);
       ctx.globalAlpha = 1;
     }
   }
@@ -222,7 +225,7 @@ export class ArenaPlayer {
         this.drawShot(s, t, at, k, stuck, zoom, ppt);
         continue;
       }
-      const sprite = this.sprites?.projectiles?.[s.side];
+      const sprite = this.sprites?.projectiles?.[s.sprite];
       const seq = sprite?.frames?.[s.x1 >= s.x0 ? 'right' : 'left'];
       if (seq?.length && sprite.atlas) {
         let n;

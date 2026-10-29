@@ -46,7 +46,7 @@ for (const [x, y] of [[etk, pal], [champ, halb], [halb, pal]]) {
   assert.equal(r.sides[r.winner].hits, kills[r.winner], 'winner lands exactly hits-to-kill');
   assert.ok(r.sides[1 - r.winner].hits < kills[1 - r.winner]);
   console.log(`${x.name} vs ${y.name}: ${[x, y][r.winner].name} wins in ${r.duration.toFixed(1)}s,`,
-    `dmg/hit ${r.damage.join(' / ')}, HP left ${r.sides.map((s) => Math.ceil(s.hpLeft)).join(' / ')}`);
+    `dmg/hit ${damagePerHit(x, y)} / ${damagePerHit(y, x)}, HP left ${r.sides.map((s) => Math.ceil(s.hpLeft)).join(' / ')}`);
 }
 
 // Civ bonuses and unique techs come from the game data, applied in game order
@@ -121,6 +121,51 @@ const ms = performance.now() - t0;
 console.log(`5 Elite Chu Ko Nu vs 5 Elite Kipchak: ${big.rates.map((r) => Math.round(r * 100) + '%').join(' / ')} (${Math.round(ms)} ms for 200 runs)`);
 assert.ok(ms < 8000, 'sampling stays fast enough for a phone');
 console.log('Multi-unit checks passed.');
+
+// Special abilities, read from the game data
+const opt = (extra = {}) => ({ ...full, units: U, ...extra });
+const fl = buildFighter(U[1903], 'Elite Fire Lancer', opt());
+const flFight = simulate(fl, palF);
+const firstMelee = flFight.hits.find((h) => h.side === 0 && !flFight.shots.some((s) => s.kind === 'charge' && Math.abs(s.landed - h.t) < 1e-9));
+const chargeShots = flFight.shots.filter((s) => s.kind === 'charge');
+assert.equal(chargeShots.length >= 3, true, 'Fire Lancer fires its 3 charge shots');
+assert.ok(chargeShots[0].t0 < firstMelee.t, 'charge shots come before the first melee blow');
+assert.ok(Math.hypot(chargeShots[0].x1 - chargeShots[0].x0, chargeShots[0].y1 - chargeShots[0].y0) <= 5 + fl.radius + palF.radius + 0.5, 'fired from charge range');
+const cous = buildFighter(U[1657], 'Elite Coustillier', opt());
+const cousFight = simulate(cous, champ);
+const cHits = cousFight.hits.filter((h) => h.side === 0);
+assert.equal(cHits[0].note, 'charge');
+assert.equal(cHits[0].dmg, damagePerHit(cous, champ, cous.attacks, { extraMelee: 25 }), 'first blow carries the 25 charge');
+assert.equal(cHits[1].dmg, damagePerHit(cous, champ), 'then normal blows until it recharges');
+const pag = buildFighter(U[1910], 'Elite Iron Pagoda', opt());
+const pagFight = simulate(champ, pag);
+assert.equal(pagFight.hits.find((h) => h.side === 0).note, 'blocked', 'Iron Pagoda blocks the first melee blow');
+const shri = buildFighter(U[1753], 'Elite Shrivamsha', opt());
+const shriFight = simulate(arb, shri);
+const dodged = shriFight.hits.filter((h) => h.note === 'dodged').length;
+assert.ok(dodged >= 7, `Shrivamsha dodges its 7 charges worth of arrows (${dodged})`);
+const leitis = buildFighter(U[1236], 'Elite Leitis', opt());
+assert.equal(damagePerHit(leitis, teutonEtk), leitis.attacks.get(4), 'Leitis ignores armour');
+const urumi = buildFighter(U[1737], 'Elite Urumi', opt());
+const uFight = simulate(urumi, buildFighter(U[74], 'Militia'), { counts: [1, 3] });
+assert.ok(uFight.hits.some((h) => h.note === 'splash'), 'charged Urumi blow hits nearby enemies');
+const konnik = buildFighter(U[1227], 'Elite Konnik', opt());
+assert.ok(konnik.dismount, 'Konnik has a dismounted form');
+const kFight = simulate(konnik, buildFighter(U[359], 'Halberdier', full), { counts: [1, 2] });
+assert.ok(kFight.units.some((u) => u.unitId === 1253), 'Konnik fights on foot after its horse falls');
+const obuch = buildFighter(U[1703], 'Elite Obuch', opt());
+const oFight = simulate(obuch, teutonEtk);
+const oh = oFight.hits.filter((h) => h.side === 0);
+assert.ok(oh[3].dmg > oh[0].dmg, 'Obuch tears armour, so later blows hit harder');
+const hearth = buildFighter(U[2706], 'Elite Hearth Troop', opt({ attackLevel: 3 }));
+assert.equal(hearth.special.charge.event, 6 + 3, 'Fletching line adds javelin range');
+const hFight = simulate(hearth, champ);
+assert.ok(hFight.shots.some((s) => s.kind === 'charge'), 'Hearth Troop throws its javelin');
+const sam = buildFighter(U[560], 'Elite Samurai', opt());
+const samFight = simulate(sam, champ, { startGap: 6 });
+const noRush = simulate({ ...sam, special: { ...sam.special, rush: null } }, champ, { startGap: 6 });
+assert.ok(samFight.hits[0].t < noRush.hits[0].t, 'Samurai charges in faster');
+console.log('Special ability checks passed.');
 
 // Mirror match is symmetric: equal units die together
 const r = simulate(buildFighter(U[567], 'A', full), buildFighter(U[567], 'B', full));

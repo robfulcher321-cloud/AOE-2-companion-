@@ -8,6 +8,7 @@
 import { RADII } from './radii.js';
 import { UNIT_CLASS, CIV_EFFECTS, PLAYER_TECHS } from './effects.js';
 import { RANGED, PROJECTILE_CLASS } from './ranged.js';
+import { SPECIALS } from './specials.js';
 
 export const CLASS = { INFANTRY: 1, PIERCE: 3, MELEE: 4, ELEPHANT: 5, CAVALRY: 8, ARCHER: 15, SHIP: 16, RAM: 17, SIEGE: 20 };
 
@@ -68,6 +69,8 @@ export function radiusOf(u) {
 }
 
 const ATTR = { HP: 0, SPEED: 5, ARMOUR: 8, ATTACK: 9, RELOAD: 10, ACCURACY: 11, RANGE: 12, PROJECTILES: 102 };
+// Special-ability attributes (UGC guide numbering), kept in stats.sp
+const SP_ATTRS = new Set([22, 24, 59, 60, 61, 62, 63, 109, 115, 118]);
 
 /** Armour/attack effect values pack class * 256 + amount (amount may be negative). */
 function unpack(value) {
@@ -89,6 +92,10 @@ function applyCommand(stats, [type, unit, unitClass, attr, value], me) {
     case ATTR.ACCURACY: if (stats.accuracy === undefined) return false; stats.accuracy = op(stats.accuracy); break;
     case ATTR.RANGE: if (stats.range === undefined) return false; stats.range = op(stats.range); break;
     case ATTR.PROJECTILES: if (stats.projectiles === undefined) return false; stats.projectiles = op(stats.projectiles); break;
+    default:
+      if (!SP_ATTRS.has(attr) || !stats.sp) return false;
+      stats.sp[attr] = op(stats.sp[attr] ?? 0);
+      return true;
     case ATTR.ARMOUR:
     case ATTR.ATTACK: {
       const map = attr === ATTR.ARMOUR ? stats.armours : stats.attacks;
@@ -98,7 +105,6 @@ function applyCommand(stats, [type, unit, unitClass, attr, value], me) {
       map.set(cls, type === 0 ? amount : type === 4 ? current + amount : current * (amount / 100));
       break;
     }
-    default: return false;
   }
   return true;
 }
@@ -124,10 +130,11 @@ export function otherTechsFor(unit) {
  */
 export function playerTechIds(unit, { attackLevel = 0, armourLevel = 0, bloodlines = false, techs = [] } = {}) {
   const ids = [];
-  const atk = trackFor(unit, 'attack');
-  if (atk) ids.push(...atk.techs.slice(0, attackLevel));
-  const arm = trackFor(unit, 'armour');
-  if (arm) ids.push(...arm.techs.slice(0, armourLevel));
+  // Every line that upgrades the unit counts (Hearth Troops get Forging for the
+  // sword and Fletching for the javelin).
+  const me = meOf(unit);
+  for (const t of TRACKS.attack) if (touches(t.techs[0], me)) ids.push(...t.techs.slice(0, attackLevel));
+  for (const t of TRACKS.armour) if (touches(t.techs[0], me)) ids.push(...t.techs.slice(0, armourLevel));
   const others = new Set(otherTechsFor(unit).map((t) => t.id));
   if (bloodlines && others.has(435)) ids.push(435);
   for (const id of techs) if (others.has(id) && !ids.includes(id)) ids.push(id);
@@ -197,6 +204,7 @@ export function buildFighter(unit, name, opts = {}) {
     projectiles: ranged ? ranged.count : undefined,
     attacks: new Map((unit.Attacks || []).map((a) => [a.Class, a.Amount])),
     armours: new Map((unit.Armours || []).map((a) => [a.Class, a.Amount])),
+    sp: spBase(SPECIALS[unit.ID]),
   };
   const me = meOf(unit);
   const civEffects = civ ? CIV_EFFECTS[civ] : null;
@@ -216,6 +224,35 @@ export function buildFighter(unit, name, opts = {}) {
     const sec = { attacks: new Map(ranged.secondary.attacks), armours: new Map(), hp: 0, speed: 0, reload: 0 };
     applyEffects(sec, { id: ranged.secondary.id, cls: PROJECTILE_CLASS }, effectOpts);
     secondary = { attacks: sec.attacks };
+  }
+
+  // Charge projectiles (Fire Lancer, Hearth Troop, Bolas Rider, Xianbei) are
+  // upgraded separately from the unit, like extra arrows.
+  const spec = SPECIALS[unit.ID] || {};
+  const chargeShot = (rec) => {
+    if (!rec) return null;
+    const ps = { attacks: new Map(rec.attacks), armours: new Map(), hp: 0, speed: 0, reload: 0 };
+    applyEffects(ps, { id: rec.id, cls: PROJECTILE_CLASS }, effectOpts);
+    return { ...rec, attacks: ps.attacks, ballistics: effectOpts.chosen.includes(93) };
+  };
+  const sp = stats.sp;
+  const chargeType = Math.round(sp[62] || 0);
+  const special = {
+    charge: chargeType && sp[59] > 0 ? {
+      type: chargeType, max: sp[59], rate: sp[60], event: Math.round(sp[61] || 0),
+      projectile: chargeShot(spec.charge?.projectile),
+      extra: chargeShot(spec.charge?.extra),
+    } : null,
+    rush: spec.rush || null,
+    blast: sp[22] > 0 ? { width: sp[22], level: spec.blast?.level ?? 2, damage: sp[115] || 1 } : null,
+    combat: Math.round(sp[63] || 0),
+    bonusResist: sp[24] || 0,
+    regen: sp[109] || 0,             // HP per minute
+    reflect: sp[118] || 0,
+  };
+  let dismount = null;
+  if (spec.dismount && opts.units?.[spec.dismount]) {
+    dismount = buildFighter(opts.units[spec.dismount], `${name} (on foot)`, { ...opts, units: null });
   }
 
   const bump = (map, cls, by) => { if (by) map.set(cls, (map.get(cls) ?? 0) + by); };
@@ -238,6 +275,8 @@ export function buildFighter(unit, name, opts = {}) {
     minRange: unit.MinRange || 0,
     radius: radiusOf(unit),
     bonuses,
+    special,
+    dismount,
     projectile: ranged && {
       speed: ranged.speed,
       arc: ranged.arc,
@@ -254,11 +293,43 @@ export function buildFighter(unit, name, opts = {}) {
   };
 }
 
-/** Damage of one blow or projectile. `attacks` defaults to the attacker's own. */
-export function damagePerHit(attacker, defender, attacks = attacker.attacks) {
+/** Special-ability attributes a unit starts with (charge, trample, etc.). */
+function spBase(rec) {
+  const sp = {};
+  if (!rec) return sp;
+  if (rec.charge) { sp[62] = rec.charge.type; sp[59] = rec.charge.max; sp[60] = rec.charge.rate; sp[61] = rec.charge.event; }
+  if (rec.blast) { sp[22] = rec.blast.width; sp[115] = rec.blast.damage; }
+  else if (rec.blastDamage !== undefined) sp[115] = rec.blastDamage;
+  if (rec.combat) sp[63] = rec.combat;
+  if (rec.bonusResist) sp[24] = rec.bonusResist;
+  if (rec.reflect) sp[118] = rec.reflect;
+  return sp;
+}
+
+/**
+ * Damage of one blow or projectile. `attacks` defaults to the attacker's own.
+ * opts.armourLoss: armour torn off the defender so far (Obuch);
+ * opts.extraMelee: charge damage added to this blow.
+ * Armour-ignoring attackers (Leitis, Composite Bowman) skip melee and pierce
+ * armour; bonus damage resistance (Sicilians, Bengali elephants) shrinks the
+ * bonus part of the attack.
+ */
+export function damagePerHit(attacker, defender, attacks = attacker.attacks, { armourLoss = 0, extraMelee = 0 } = {}) {
   let sum = 0;
-  for (const [cls, amount] of attacks) {
-    if (defender.armours.has(cls)) sum += Math.max(0, amount - defender.armours.get(cls));
+  const ignore = ((attacker.special?.combat || 0) & 1) && !((defender.special?.combat || 0) & 2);
+  const resist = defender.special?.bonusResist || 0;
+  for (const [cls, raw] of attacks) {
+    if (!defender.armours.has(cls)) continue;
+    const amount = raw + (cls === CLASS.MELEE ? extraMelee : 0);
+    const base = cls === CLASS.MELEE || cls === CLASS.PIERCE;
+    let armour = defender.armours.get(cls);
+    if (base) armour = ignore ? Math.min(0, armour) : armour > 0 ? Math.max(0, armour - armourLoss) : armour;
+    let part = Math.max(0, amount - armour);
+    if (!base && part > 0) part *= 1 - resist;
+    sum += part;
+  }
+  if (extraMelee && !attacks.has(CLASS.MELEE) && defender.armours.has(CLASS.MELEE)) {
+    sum += Math.max(0, extraMelee - (ignore ? 0 : defender.armours.get(CLASS.MELEE)));
   }
   return Math.max(1, sum);
 }
