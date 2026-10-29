@@ -78,6 +78,21 @@ const ICONS = {
 // Age-up icons -> age-up tech (101 Feudal, 102 Castle, 103 Imperial)
 const AGE_ICON = { 2: 'age/FeudalAgeIconDE', 3: 'age/CastleAgeIconDE', 4: 'age/ImperialAgeIconDE' };
 const AGE_TECH = { 2: 101, 3: 102, 4: 103 };
+// The age each building, upgrade or unit needs (2 Feudal, 3 Castle, 4 Imperial):
+// nothing is shown before the age it can be made in.
+const FEUDAL = ['archery_range/Archery_range_aoe2DE.webp', 'stable/Stable_aoe2DE.webp', 'blacksmith/Blacksmith_aoe2de.webp',
+  'market/Market_aoe2DE.webp', 'defensive_structures/Tower_aoe2de.webp', 'blacksmith/FletchingDE.webp', 'blacksmith/Forging_aoe2de.webp',
+  'blacksmith/ScaleBardingArmorDE.webp', 'lumber_camp/DoubleBitAxe_aoe2DE.webp', 'mill/HorseCollarDE.webp',
+  'town_center/WheelbarrowDE.webp', 'mining_camp/GoldMiningDE.webp', 'stable/BloodlinesDE.webp', 'stable/HusbandryDE.webp',
+  'barracks/ManAtArmsUpgDE.webp', 'barracks/Spearman_aoe2DE.webp', 'archery_range/Archer_aoe2DE.webp'];
+const CASTLE = ['university/University_AoE2_DE.webp', 'monastery/MonasteryAoe2DE.webp', 'siege_workshop/Siege_workshop_aoe2DE.webp',
+  'castle/Castle_aoe2DE.webp', 'town_center/Towncenter_aoe2DE.webp', 'lumber_camp/BowSawDE.webp', 'blacksmith/BodkinArrowDE.webp',
+  'archery_range/Crossbowman_aoe2DE.webp', 'town_center/HandcartDE.webp', 'mill/HeavyPlowDE.webp', 'university/BallisticsDE.webp',
+  'archery_range/ThumbRingDE.webp', 'monastery/RedemptionDE.webp', 'stable/Knight_aoe2DE.webp', 'archery_range/Cavalryarcher_aoe2DE.webp',
+  'monastery/Monk_aoe2DE.webp', 'siege_workshop/Battering_ram_aoe2DE.webp', 'siege_workshop/Mangonel_aoe2DE.webp',
+  'siege_workshop/Scorpion_aoe2DE.webp', 'stable/Steppelancericon.webp', 'stable/Battle_elephant_aoe2DE.webp'];
+const MIN_AGE = Object.fromEntries([...FEUDAL.map((k) => [k, 2]), ...CASTLE.map((k) => [k, 3]), ['university/ChemistryDE.webp', 4]]);
+
 const VERB = /\b(build|builds|built|seed|seeds|research|researches|get|make|makes|train|trains|queue|add|click|drop|start making|produce)\b/i;
 
 const lower = (c) => Object.fromEntries(Object.entries(c || {}).map(([k, v]) => [k.toLowerCase(), v]));
@@ -92,19 +107,48 @@ export const fmtTime = (sec) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
+// Some builds write a name instead of using its icon ("archeryRange",
+// "feudalAge"); those words are shown and counted as the icon.
+const WORD_ICONS = {
+  archeryrange: 'archery_range/Archery_range_aoe2DE.webp', barracks: 'barracks/Barracks_aoe2DE.webp',
+  stable: 'stable/Stable_aoe2DE.webp', blacksmith: 'blacksmith/Blacksmith_aoe2de.webp',
+  lumbercamp: 'lumber_camp/Lumber_camp_aoe2de.webp', miningcamp: 'mining_camp/Mining_camp_aoe2de.webp',
+  market: 'market/Market_aoe2DE.webp', towncenter: 'town_center/Towncenter_aoe2DE.webp',
+  loom: 'town_center/LoomDE.webp', feudalage: 'age/FeudalAgeIconDE.webp', castleage: 'age/CastleAgeIconDE.webp',
+  imperialage: 'age/ImperialAgeIconDE.webp',
+};
+const WORD_RE = /\b(archeryRange|lumberCamp|miningCamp|townCenter|feudalAge|castleAge|imperialAge|loom)\b/gi;
+
 /** Note text split into plain text and icon tokens: [{text} | {icon}] */
 export function tokens(note) {
-  return String(note).split('@').map((part, i) => (i % 2 ? { icon: part } : { text: part })).filter((t) => t.icon || t.text);
+  const out = [];
+  String(note).split('@').forEach((part, i) => {
+    if (i % 2) { out.push({ icon: part }); return; }
+    let last = 0;
+    for (const m of part.matchAll(WORD_RE)) {
+      if (m.index > last) out.push({ text: part.slice(last, m.index) });
+      out.push({ icon: WORD_ICONS[m[1].toLowerCase()] });
+      last = m.index + m[0].length;
+    }
+    if (last < part.length) out.push({ text: part.slice(last) });
+  });
+  return out.filter((t) => t.icon || t.text);
 }
 
+const FIXED_TIME = { 'barracks/ManAtArmsUpgDE.webp': 40, 'archery_range/Crossbowman_aoe2DE.webp': 35 };
 function costOf(icon, data) {
   const def = ICONS[icon];
   if (!def) return null;
   const [type, ref] = def;
-  if (type === 'Fixed') return { type, cost: lower(ref) };
+  if (type === 'Fixed') return { type, cost: lower(ref), time: FIXED_TIME[icon] || 30 };
   const e = data?.data?.[type]?.[ref];
-  return e?.Cost ? { type, cost: lower(e.Cost) } : null;
+  return e?.Cost ? { type, cost: lower(e.Cost), time: e.TrainTime ?? e.ResearchTime ?? 0 } : null;
 }
+
+// A building named after these words is somewhere to go, not something to build:
+// "3 villagers to 1st lumber camp", "food under TC", "far from lumber camp".
+const PLACE_BEFORE = /\b(to|on|at|under|near|same|from|only|existing|behind|around|beside|next to|of|in|into|inside|towards?)\s+(the\s+|your\s+|a\s+|\d+(st|nd|rd|th)?\s+|\d+\s+)?$/i;
+const TOTAL_BEFORE = /\b(reach|total|until|have|keep|up to)\b[^@]*$/i;
 
 /** What one note says to pay for: [{ icon, n, cost }] */
 function purchases(note, data, seenTechs) {
@@ -116,13 +160,20 @@ function purchases(note, data, seenTechs) {
     let before = '';
     for (const p of parts) {
       if (p.text) { before += p.text; continue; }
+      if (p.icon === 'resource/Aoe2de_hammer.webp') { before += ' build '; continue; } // hammer = build
       const c = costOf(p.icon, data);
       if (c) {
+        const m = before.match(/(\d+)\s*$/);
+        const n = m ? Number(m[1]) : 1;
         if (c.type === 'Tech' || c.type === 'Fixed') {
-          if (!seenTechs.has(p.icon)) { seenTechs.add(p.icon); out.push({ icon: p.icon, n: 1, cost: c.cost, byNext }); }
-        } else if (VERB.test(before)) {
-          const m = before.match(/(\d+)\s*$/);
-          out.push({ icon: p.icon, n: m ? Number(m[1]) : 1, cost: c.cost, byNext });
+          if (!seenTechs.has(p.icon)) { seenTechs.add(p.icon); out.push({ icon: p.icon, n: 1, cost: c.cost, time: c.time, type: c.type, byNext }); }
+        } else if (c.type === 'Building') {
+          // Every building the notes mention is built, unless the words say it's
+          // a place to go or a running total.
+          const place = PLACE_BEFORE.test(before) && !VERB.test(before.slice(-20));
+          if (!place && !TOTAL_BEFORE.test(before)) out.push({ icon: p.icon, n, cost: c.cost, time: c.time, type: c.type, byNext });
+        } else if (VERB.test(before) && !TOTAL_BEFORE.test(before)) {
+          out.push({ icon: p.icon, n, cost: c.cost, time: c.time, type: c.type, byNext });
         }
       }
       before += ' ';
@@ -138,6 +189,7 @@ export function timeline(build, data) {
   let prevT = 0;
   let prevV = 3;
   let prevRes = { food: 3, wood: 0, gold: 0, stone: 0, builder: 0 };
+  let estimated = false;
   for (const s of raw) {
     // -1 in a build order means "not given": keep what the previous step had.
     const vills = s.villager_count >= 0 ? s.villager_count : prevV;
@@ -148,7 +200,15 @@ export function timeline(build, data) {
       else if (k === 'builder') res[k] = 0;
     }
     let t = parseTime(s.time);
-    if (t === null || t < prevT) t = prevT + Math.max(10, (vills - prevV) * VILLAGER_TIME);
+    if (t === null || t < prevT) {
+      // No time given: villagers take 25 s each; arriving in an age waits for
+      // its research (130 s Feudal, 160 s Castle, 190 s Imperial).
+      estimated = true;
+      const note = (s.notes || []).join(' ');
+      const arrive = /\bIn\s*@?age\/(Feudal|Castle|Imperial)|\bIn\s+(feudal|castle|imperial)Age/i.exec(note);
+      const research = arrive ? { feudal: 130, castle: 160, imperial: 190 }[(arrive[1] || arrive[2]).toLowerCase()] : 0;
+      t = prevT + Math.max(10, (vills - prevV) * VILLAGER_TIME, research);
+    }
     steps.push({ ...s, t, start: prevT, vills, res });
     prevT = t;
     prevV = vills;
@@ -198,7 +258,9 @@ export function timeline(build, data) {
     buys.forEach((p, k) => {
       const t = Math.min(st.t, (p.byNext ? firstOut : st.start) + k * 3);
       const cost = Object.fromEntries(Object.entries(p.cost).map(([key, v]) => [key, v * p.n]));
-      events.push({ t, cost, what: p.icon, n: p.n, step: si });
+      // Units and buildings in a batch go one after another (one building / builder).
+      const dur = (p.time || 0) * (p.type === 'Unit' || p.type === 'Building' ? p.n : 1);
+      events.push({ t, cost, what: p.icon, n: p.n, step: si, type: p.type, dur });
     });
   });
   // Age-ups: clicked at the "N pop" step that names the age, else when the age changes.
@@ -215,22 +277,40 @@ export function timeline(build, data) {
       break;
     }
     const tech = data?.data?.Tech?.[AGE_TECH[age]];
-    events.push({ t: click, cost: lower(tech?.Cost || {}), what: `age${age}`, icon: `${AGE_ICON[age]}.webp` });
+    events.push({ t: click, cost: lower(tech?.Cost || {}), what: `age${age}`, icon: `${AGE_ICON[age]}.webp`, type: 'Age', dur: tech?.ResearchTime || 130 });
     ages.push({ age, click, reach: click + (tech?.ResearchTime || 130), pop: steps[i - 1].vills + 1 });
+  }
+  // Nothing can be started before its age is reached (matters most for builds
+  // without times, and for "In Feudal Age: build..." steps).
+  const reachOf = (age) => (age <= 1 ? 0 : ages.find((g) => g.age === age)?.reach ?? 0);
+  for (const e of events) {
+    const need = MIN_AGE[e.what];
+    if (need) e.t = Math.max(e.t, reachOf(need));
+  }
+  events.sort((a, b) => a.t - b.t);
+  // Upgrades and units wait for the building they come from to finish
+  // (Fletching after the Blacksmith is up, archers after the Archery Range).
+  const builtAt = {};
+  for (const e of events) {
+    const folder = e.what.split('/')[0];
+    if (e.type === 'Building') { if (builtAt[folder] === undefined) builtAt[folder] = e.t + (e.dur || 0) / Math.max(1, e.n || 1); continue; }
+    if ((e.type === 'Tech' || e.type === 'Fixed' || e.type === 'Unit') && builtAt[folder] !== undefined) e.t = Math.max(e.t, builtAt[folder]);
   }
   events.sort((a, b) => a.t - b.t);
 
-  // Villagers on each resource at time t, easing from one step to the next.
+  // Villagers on each resource at time t: each new villager counts once it is
+  // trained (25 s after it was queued), and moves happen when the step says.
+  const changes = [
+    ...villagers.map((v) => ({ t: v.done, d: { [v.res || 'food']: 1 } })),
+    ...moves.map((m) => ({ t: m.t, d: { [m.from]: -m.n, [m.to]: m.n } })),
+  ].sort((a, b) => a.t - b.t);
   const alloc = (t) => {
-    let prev = { food: 3, wood: 0, gold: 0, stone: 0, builder: 0 };
-    for (const st of steps) {
-      if (t <= st.t) {
-        const k = st.t > st.start ? Math.max(0, Math.min(1, (t - st.start) / (st.t - st.start))) : 1;
-        return Object.fromEntries(Object.keys(prev).map((key) => [key, prev[key] + ((st.res[key] || 0) - prev[key]) * k]));
-      }
-      prev = { ...prev, ...st.res };
+    const a = { food: 3, wood: 0, gold: 0, stone: 0, builder: 0 };
+    for (const c of changes) {
+      if (c.t > t) break;
+      for (const [k, v] of Object.entries(c.d)) a[k] = Math.max(0, (a[k] || 0) + v);
     }
-    return prev;
+    return a;
   };
 
   // Second-by-second bank estimate. Purchases wait until they're affordable.
@@ -262,6 +342,7 @@ export function timeline(build, data) {
   return {
     steps,
     end,
+    estimated,             // the build gave no times, so they're worked out from villagers
     ages,
     events,
     villagers,

@@ -129,6 +129,7 @@ export async function initGuides(root) {
       el('h2', { className: 'bo-h', textContent: bo.name }),
       el('p', { className: 'subtle' }, `By ${bo.author}`, bo.source ? [' · ', el('a', { href: bo.source, target: '_blank', rel: 'noopener', textContent: 'source' })] : null),
       bo.description ? el('p', { className: 'bo-desc', textContent: bo.description }) : null,
+      ov.tl.estimated ? el('p', { className: 'bo-hint', textContent: 'This build doesn\'t give times, so the app works them out from the villager counts (25 s per villager, plus age-up research). Treat them as a guide.' }) : null,
       el('h3', { textContent: 'Timeline' }),
       el('ul', { className: 'bo-milestones' },
         ov.ages.map((a) => el('li', {}, el('b', { textContent: `${ageName[a.age]} Age: ` }),

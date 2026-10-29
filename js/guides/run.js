@@ -89,20 +89,25 @@ export function openRun(build, tl, { onClose } = {}) {
     el('div', { className: 'run-lanes' }, el('div'), el('div'), el('div')),
     track,
     el('div', { className: 'run-now' }, el('span', { textContent: 'NOW' })),
-    el('div', { className: 'run-lane-heads' }, el('span', { textContent: 'Send villagers' }), el('span', { textContent: 'Move villagers' }), el('span', { textContent: 'Build & research' })));
+    el('div', { className: 'run-lane-heads' }, el('span', { textContent: 'Train' }), el('span', { textContent: 'Move villagers' }), el('span', { textContent: 'Build & research' })));
   const items = [];
   const LANE = { train: 0, move: 1, build: 2 };
   const nextFree = [-1e9, -1e9, -1e9];
-  const place = (lane, time, content) => {
+  // Each item sits at the time to start it. Items that take time (training,
+  // building, research) fill a bar from start to finish once they begin.
+  const place = (lane, time, content, dur = 0) => {
     const li = LANE[lane];
     const y = Math.max(time * PX, nextFree[li]);
     nextFree[li] = y + ITEM_H;
-    const when = el('span', { className: 'run-when' }, el('b', { textContent: fmtTime(time) }), el('small', { className: 'run-in' }));
-    const node = el('div', { className: `run-item run-${lane}` }, when, el('div', { className: 'run-body' }, content));
+    // One small slot after the time: how long it takes, then "in 8s" as it nears, then "12s left".
+    const durText = dur ? `${Math.round(dur)}s` : '';
+    const when = el('span', { className: 'run-when' }, el('b', { textContent: fmtTime(time) }), el('small', { className: 'run-in', textContent: durText }));
+    const bar = dur ? el('div', { className: 'run-bar' }) : null;
+    const node = el('div', { className: `run-item run-${lane}` }, when, el('div', { className: 'run-body' }, content), bar);
     node.style.left = `calc(${(li * 100) / 3}% + 4px)`;
     node.style.transform = `translateY(${y}px)`;
     track.append(node);
-    items.push({ t: time, node, inEl: when.lastChild });
+    items.push({ t: time, end: time + dur, node, inEl: when.lastChild, bar, durText });
   };
   // Step boundaries: villager target for each step
   for (const st of tl.steps) {
@@ -110,21 +115,32 @@ export function openRun(build, tl, { onClose } = {}) {
     mark.style.transform = `translateY(${st.t * PX}px)`;
     track.append(mark);
   }
-  // New villagers: when each comes out and where it goes
-  for (const v of tl.villagers) {
-    place('train', v.done, [icon(VILL_ICON, 'run-ic'), el('span', { className: 'run-arrow', textContent: '→' }), v.res ? icon(RES_ICON[v.res], 'run-ic') : el('span', { textContent: '?' })]);
+  // Train column holds villagers and army: place both in time order so they stack right.
+  const trainQueue = [
+    ...tl.villagers.map((v) => ({ kind: 'v', t: v.q, v })),
+    ...tl.events.filter((e) => e.type === 'Unit').map((e) => ({ kind: 'u', t: e.t, e })),
+  ].sort((a, b) => a.t - b.t);
+  for (const it of trainQueue) {
+    if (it.kind === 'u') {
+      const e = it.e;
+      place('train', e.t, [icon(e.what, 'run-ic'), e.n > 1 ? el('span', { className: 'run-count', textContent: `×${e.n}` }) : null], e.dur || 0);
+      continue;
+    }
+    const v = it.v;
+    place('train', v.q, [icon(VILL_ICON, 'run-ic'), el('span', { className: 'run-arrow', textContent: '→' }), v.res ? icon(RES_ICON[v.res], 'run-ic') : el('span', { textContent: '?' })], v.done - v.q);
   }
   // Villagers moving between resources
   for (const m of tl.moves) {
     place('move', m.t, [el('span', { className: 'run-count', textContent: `${m.n}` }), icon(RES_ICON[m.from], 'run-ic-s'), el('span', { className: 'run-arrow', textContent: '→' }), icon(RES_ICON[m.to], 'run-ic-s')]);
   }
-  // Buildings, research, units and age-ups, at the time to start them
-  for (const e of tl.events) {
-    if (e.what === 'villager') continue;
+  // Army units go in the Train column; buildings, upgrades and age-ups in Build & research.
+  const ordered = [...tl.events].filter((e) => e.what !== 'villager').sort((a, b) => a.t - b.t);
+  for (const e of ordered) {
+    if (e.type === 'Unit') continue; // already in the Train column
     const isAge = e.what.startsWith('age');
-    place('build', e.t, [icon(isAge ? e.icon : e.what, isAge ? 'run-ic run-ic-age' : 'run-ic'),
+    place(e.type === 'Unit' ? 'train' : 'build', e.t, [icon(isAge ? e.icon : e.what, isAge ? 'run-ic run-ic-age' : 'run-ic'),
       e.n > 1 ? el('span', { className: 'run-count', textContent: `×${e.n}` }) : null,
-      isAge ? el('span', { className: 'run-cap', textContent: 'Click up' }) : null]);
+      isAge ? el('span', { className: 'run-cap', textContent: 'Click up' }) : null], e.dur || 0);
   }
   track.style.height = `${(tl.end + 120) * PX}px`;
 
@@ -187,11 +203,16 @@ export function openRun(build, tl, { onClose } = {}) {
     // Countdown on what's about to happen; light up as it reaches NOW, then dim.
     for (const it of items) {
       const d = it.t - t;
+      const active = d <= 0 && t < Math.max(it.end, it.t + 3);
       it.node.classList.toggle('soon', d > 0 && d <= 10);
-      it.node.classList.toggle('hit', d <= 0 && d > -3);
-      it.node.classList.toggle('past', d <= -3);
-      const label = d > 0 && d <= 15 ? `in ${Math.ceil(d)}s` : '';
+      it.node.classList.toggle('hit', active);
+      it.node.classList.toggle('past', !active && d <= 0);
+      let label = it.durText, live = false;
+      if (d > 0 && d <= 15) { label = `in ${Math.ceil(d)}s`; live = true; }
+      else if (d <= 0 && t < it.end) { label = `${Math.ceil(it.end - t)}s left`; live = true; }
       if (it.inEl.textContent !== label) it.inEl.textContent = label;
+      it.inEl.classList.toggle('live', live);
+      if (it.bar) it.bar.style.width = `${Math.max(0, Math.min(100, ((t - it.t) / Math.max(0.01, it.end - it.t)) * 100))}%`;
     }
     const i = tl.stepAt(t);
     if (i !== shownStep || force) {
