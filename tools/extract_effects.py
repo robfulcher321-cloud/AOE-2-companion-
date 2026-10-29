@@ -21,7 +21,9 @@ ATTRS = {0: 'hp', 5: 'speed', 8: 'armour', 9: 'attack', 10: 'reload', 11: 'accur
          # special abilities (UGC guide attribute list)
          22: 'blast width', 24: 'bonus damage resistance', 59: 'max charge', 60: 'recharge rate',
          61: 'charge event', 62: 'charge type', 63: 'combat ability', 109: 'regeneration',
-         115: 'area damage', 118: 'damage reflection'}
+         115: 'area damage', 118: 'damage reflection',
+         # costs: 100 all resources, 103 food, 104 wood, 105 stone, 106 gold
+         100: 'cost', 103: 'food cost', 104: 'wood cost', 105: 'stone cost', 106: 'gold cost'}
 CASTLE = 82
 AGE_OF = {101: 2, 102: 3, 103: 4}   # Feudal, Castle, Imperial age techs
 # Techs the duel lets the player choose: Blacksmith lines (melee and archer),

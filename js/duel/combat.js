@@ -71,6 +71,8 @@ export function radiusOf(u) {
 const ATTR = { HP: 0, SPEED: 5, ARMOUR: 8, ATTACK: 9, RELOAD: 10, ACCURACY: 11, RANGE: 12, PROJECTILES: 102 };
 // Special-ability attributes (UGC guide numbering), kept in stats.sp
 const SP_ATTRS = new Set([22, 24, 59, 60, 61, 62, 63, 109, 115, 118]);
+// Cost attributes: 100 every resource, then one resource each
+const COST_ATTRS = { 103: 'Food', 104: 'Wood', 105: 'Stone', 106: 'Gold' };
 
 /** Armour/attack effect values pack class * 256 + amount (amount may be negative). */
 function unpack(value) {
@@ -92,6 +94,14 @@ function applyCommand(stats, [type, unit, unitClass, attr, value], me) {
     case ATTR.ACCURACY: if (stats.accuracy === undefined) return false; stats.accuracy = op(stats.accuracy); break;
     case ATTR.RANGE: if (stats.range === undefined) return false; stats.range = op(stats.range); break;
     case ATTR.PROJECTILES: if (stats.projectiles === undefined) return false; stats.projectiles = op(stats.projectiles); break;
+    case 100:
+      if (!stats.cost) return false;
+      for (const k of Object.keys(stats.cost)) stats.cost[k] = op(stats.cost[k]);
+      break;
+    case 103: case 104: case 105: case 106:
+      if (!stats.cost) return false;
+      stats.cost[COST_ATTRS[attr]] = op(stats.cost[COST_ATTRS[attr]] ?? 0);
+      break;
     default:
       if (!SP_ATTRS.has(attr) || !stats.sp) return false;
       stats.sp[attr] = op(stats.sp[attr] ?? 0);
@@ -205,6 +215,7 @@ export function buildFighter(unit, name, opts = {}) {
     attacks: new Map((unit.Attacks || []).map((a) => [a.Class, a.Amount])),
     armours: new Map((unit.Armours || []).map((a) => [a.Class, a.Amount])),
     sp: spBase(SPECIALS[unit.ID]),
+    cost: { Food: 0, Wood: 0, Gold: 0, Stone: 0, ...(unit.Cost || {}) },
   };
   const me = meOf(unit);
   const civEffects = civ ? CIV_EFFECTS[civ] : null;
@@ -279,6 +290,7 @@ export function buildFighter(unit, name, opts = {}) {
     bonuses,
     special,
     dismount,
+    cost: Object.fromEntries(Object.entries(stats.cost).map(([k, v]) => [k, Math.round(v)]).filter(([, v]) => v > 0)),
     projectile: ranged && {
       speed: ranged.speed,
       arc: ranged.arc,

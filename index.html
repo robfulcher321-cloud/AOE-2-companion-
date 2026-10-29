@@ -27,7 +27,7 @@
 
     <section id="view-duel" class="view" aria-labelledby="duel-title" hidden>
       <header class="view-head">
-        <h1 id="duel-title">Duel</h1>
+        <h1 id="duel-title">Test</h1>
         <p class="subtle">Pick up to five units a side, melee or ranged, and their upgrades, then watch them fight.</p>
       </header>
       <div class="duel-setup">
@@ -49,6 +49,13 @@
         <div id="result" class="result" aria-live="polite"></div>
       </div>
     </section>
+    <section id="view-guides" class="view" aria-labelledby="guides-title" hidden>
+      <header class="view-head">
+        <h1 id="guides-title">Guides</h1>
+        <p class="subtle">Build orders to practise, step by step and in real time.</p>
+      </header>
+      <div id="guides-body"><p class="status">Loading build orders…</p></div>
+    </section>
   </main>
 
   <div id="sheet" class="sheet" hidden>
@@ -63,7 +70,8 @@
 
   <nav class="tabs" aria-label="Sections">
     <button type="button" data-view="tree" aria-current="page">Tech tree</button>
-    <button type="button" data-view="duel">Duel</button>
+    <button type="button" data-view="duel">Test</button>
+    <button type="button" data-view="guides">Guides</button>
   </nav>
   <footer class="data-note" id="data-note"></footer>
 

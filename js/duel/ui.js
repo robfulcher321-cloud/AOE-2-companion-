@@ -43,6 +43,7 @@ class SidePanel {
     };
     this.statline = el('p', { className: 'statline' });
     this.specialNote = el('p', { className: 'special-note' });
+    this.costLine = el('p', { className: 'cost-line' });
 
     this.root.replaceChildren(
       el('legend', { textContent: this.label }),
@@ -62,6 +63,7 @@ class SidePanel {
           el('p', { className: 'extra-note', textContent: 'For effects the simulator doesn\'t model yet. Added on top of everything else.' }),
           num('attack', 'Extra attack'), num('hp', 'Extra HP'),
           num('meleeArmour', 'Extra melee armour'), num('pierceArmour', 'Extra pierce armour'))),
+      this.costLine,
       this.statline,
     );
 
@@ -82,7 +84,7 @@ class SidePanel {
       btn.addEventListener('click', () => {
         this.count = n;
         for (const b of this.countButtons) b.setAttribute('aria-checked', String(b === btn));
-        this.onChange?.();
+        this.update();
       });
       group.append(btn);
       return btn;
@@ -98,10 +100,19 @@ class SidePanel {
     this.techOk = new Set([...this.techNodes.values()].filter(available).map((n) => n.node_id));
     const prev = preferredUnit ?? this.unitPicker.value;
     this.units = new Map();
+    // Some units are listed twice because a second building trains a copy
+    // (Tarkans at the Stable, Huskarls at the Barracks, Konniks at the
+    // Krepost). Keep one per name: the original, which has the lowest ID.
+    const byName = new Map();
     for (const node of tree.units_techs) {
       const unit = this.data.data.Unit[node.node_id];
-      if (node.use_type !== 'Unit' || !available(node) || !isDuelEligible(unit) || this.units.has(node.node_id)) continue;
-      this.units.set(node.node_id, { node, unit });
+      if (node.use_type !== 'Unit' || !available(node) || !isDuelEligible(unit)) continue;
+      const label = nameText(this.strings[node.name_string_id] || node.name);
+      const prev = byName.get(label);
+      if (!prev || node.node_id < prev.node.node_id) byName.set(label, { node, unit });
+    }
+    for (const pick of [...byName.values()].sort((x, y) => tree.units_techs.indexOf(x.node) - tree.units_techs.indexOf(y.node))) {
+      this.units.set(pick.node.node_id, pick);
     }
     this.unitPicker.setOptions([...this.units.values()].map(({ node }) => ({
       value: node.node_id,
@@ -219,6 +230,7 @@ class SidePanel {
     const p = s.projectile;
     const attack = p ? `${r(s.attacks.get(CLASS.PIERCE) ?? 0)} pierce attack` : `${r(s.attacks.get(CLASS.MELEE) ?? 0)} attack`;
     const shots = p ? `${p.count > 1 ? `, ${p.count} arrows per shot` : ''}, range ${r(s.range)}, ${Math.round(p.accuracy)}% accuracy` : s.range >= 1 ? `, reach ${r(s.range)}` : '';
+    this.costLine.replaceChildren(el('span', { className: 'cost-label', textContent: this.count > 1 ? `Cost each (×${this.count} = ${costTotal(s.cost, this.count)}):` : 'Cost:' }), costView(s.cost));
     const sp = describeSpecial(s);
     this.specialNote.textContent = sp ? `Special: ${sp}` : '';
     this.specialNote.hidden = !sp;
@@ -229,6 +241,21 @@ class SidePanel {
     this.onChange?.();
   }
 }
+
+const RES = ['Food', 'Wood', 'Gold', 'Stone'];
+/** Resource cost with the game's resource icons, e.g. [food] 60 [gold] 75 */
+export function costView(cost, times = 1) {
+  const wrap = el('span', { className: 'cost' });
+  for (const r of RES) {
+    if (!cost?.[r]) continue;
+    wrap.append(el('span', { className: 'res' },
+      el('img', { src: `img/res/${r.toLowerCase()}.webp`, alt: r, width: 18, height: 18 }),
+      String(Math.round(cost[r] * times))));
+  }
+  if (!wrap.childNodes.length) wrap.append('free');
+  return wrap;
+}
+const costTotal = (cost, n) => `${Math.round(RES.reduce((acc, r) => acc + (cost?.[r] || 0), 0) * n)} total`;
 
 /** One line describing a unit's special abilities, as the simulator uses them. */
 function describeSpecial(f) {
@@ -383,6 +410,10 @@ function showResult(box, { result, many, fa, fb, counts }) {
   const row = (title, f) => el('tr', {}, el('th', { scope: 'row', textContent: title }),
     el('td', { textContent: f(0) }), el('td', { textContent: f(1) }));
   const multi = counts[0] > 1 || counts[1] > 1;
+  // Original units still standing (a dismounted Konnik still counts its horse as lost)
+  const unitsLeft = (i) => result.units.filter((u) => u.side === i && u.spawnedAt === 0 && u.hpLeft > 0).length;
+  const costRow = (title, f) => el('tr', {}, el('th', { scope: 'row', textContent: title }),
+    ...[0, 1].map((i) => { const [c, n] = f(i); return n > 0 ? el('td', {}, costView(c, n), el('small', { className: 'cost-sum', textContent: ` (${costTotal(c, n)})` })) : el('td', { textContent: 'None' }); }));
   const table = el('table', { className: 'result-table' },
     el('thead', {}, el('tr', {}, el('th', {}), el('th', { textContent: `Blue: ${label(0)}` }), el('th', { textContent: `Red: ${label(1)}` }))),
     el('tbody', {},
@@ -392,6 +423,8 @@ function showResult(box, { result, many, fa, fb, counts }) {
       row('Hits to kill one', (i) => hitsToKill(fighters[i], fighters[1 - i]) + (fighters[i].projectile?.secondary ? ' (main arrow)' : '')),
       row('Hits landed', (i) => (fighters[i].projectile ? `${S[i].hits} of ${S[i].shots} shots` : S[i].hits)),
       row('Damage dealt', (i) => Math.round(S[i].dealt)),
+      costRow('Cost', (i) => [fighters[i].cost, counts[i]]),
+      costRow('Resources lost', (i) => [fighters[i].cost, S[i].count - Math.min(S[i].count, unitsLeft(i))]),
     ));
   box.replaceChildren(...[
     el('h2', { textContent: heading }),

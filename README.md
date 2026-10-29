@@ -3,7 +3,8 @@
 A personal Age of Empires II: Definitive Edition companion app for Android (and anything with a modern browser).
 
 - **Tech tree:** every civilisation's units, techs and buildings, with stats and descriptions. Greyed-out entries aren't available to that civ.
-- **Duel:** pick 1–5 units a side (melee or ranged, no siege yet), their civs and upgrades, then watch them fight and see who wins, how fast, and with how much HP left. Battles with dice rolls for shots are run 100–200 times to give a win rate.
+- **Test:** pick 1–5 units a side (melee or ranged, no siege yet), their civs and upgrades, then watch them fight and see who wins, how fast, and with how much HP left. Battles with dice rolls for shots are run 100–200 times to give a win rate.
+- **Guides:** build orders for every civ (from the community RTS Builds library, updated automatically), with an overview and a real-time practice mode: timer, current step, villagers per resource, what's coming up and an estimated resource bank.
 
 ## Game data stays up to date
 
