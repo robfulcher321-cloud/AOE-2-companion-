@@ -111,16 +111,18 @@ function purchases(note, data, seenTechs) {
   const out = [];
   for (const seg of String(note).split('|')) {
     const parts = tokens(seg);
+    // "Next villager builds a house": wait for that villager to come out.
+    const byNext = /\bnext\b/i.test(seg);
     let before = '';
     for (const p of parts) {
       if (p.text) { before += p.text; continue; }
       const c = costOf(p.icon, data);
       if (c) {
         if (c.type === 'Tech' || c.type === 'Fixed') {
-          if (!seenTechs.has(p.icon)) { seenTechs.add(p.icon); out.push({ icon: p.icon, n: 1, cost: c.cost }); }
+          if (!seenTechs.has(p.icon)) { seenTechs.add(p.icon); out.push({ icon: p.icon, n: 1, cost: c.cost, byNext }); }
         } else if (VERB.test(before)) {
           const m = before.match(/(\d+)\s*$/);
-          out.push({ icon: p.icon, n: m ? Number(m[1]) : 1, cost: c.cost });
+          out.push({ icon: p.icon, n: m ? Number(m[1]) : 1, cost: c.cost, byNext });
         }
       }
       before += ' ';
@@ -188,10 +190,13 @@ export function timeline(build, data) {
     }
     vPrev = Math.max(vPrev, st.vills);
     rPrev = { ...st.res };
-    // What this step says to buy, spread across the step in the order it's written.
+    // What this step says to build or research, as start times: right away
+    // when the step begins, or when the next villager comes out if the note
+    // says "next villager builds...". Several in one step go a few seconds apart.
     const buys = (st.notes || []).flatMap((note) => purchases(note, data, seenTechs));
+    const firstOut = made > 0 ? st.start + (st.t - st.start) / made : st.start;
     buys.forEach((p, k) => {
-      const t = st.start + ((st.t - st.start) * (k + 0.5)) / buys.length;
+      const t = Math.min(st.t, (p.byNext ? firstOut : st.start) + k * 3);
       const cost = Object.fromEntries(Object.entries(p.cost).map(([key, v]) => [key, v * p.n]));
       events.push({ t, cost, what: p.icon, n: p.n, step: si });
     });

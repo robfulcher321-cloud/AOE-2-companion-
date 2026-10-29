@@ -1,18 +1,19 @@
-// The practice window: a full-screen, game-style view of a build order.
-// Top: live resource bank and villagers per resource, like the in-game bar.
-// Middle: the build scrolls past a "now" line - villagers to train and where
-// they go, villagers to move, and what to build or research.
-// Bottom: the current step in words and the controls.
+// The practice window: a full-screen, game-style view of a build order, made
+// to be read from a phone propped up under the monitor.
+// Top: clock, age, villager count, and the live resource bank with how many
+// villagers should be on each resource, in big type.
+// Middle (most of the screen): the build scrolls up from the bottom towards a
+// NOW line - villagers to send, villagers to move, and what to build or
+// research - each tagged with the time to start it.
+// Bottom: the current step in words, then the controls.
 
 import { ICON_BASE, ICON_LIVE } from './source.js';
 import { tokens, fmtTime, RES_KEYS } from './econ.js';
 
-const PX = 5.5;        // pixels per game second on the strip (about a minute ahead on a phone)
-const NOW_X = 0.24;    // "now" line position, fraction of the strip width
-const SPEEDS = [
-  { value: 1.7, label: 'In-game clock' },
-  { value: 1, label: 'Real seconds' },
-];
+const PX = 3.6;        // pixels per game second (about two minutes ahead on a phone)
+const NOW_Y = 0.15;    // NOW line position, fraction of the strip height from the top
+const SPEEDS = [1.7, 1];
+const SPEED_LABEL = { 1.7: 'Game clock', 1: 'Real time' };
 const RES_ICON = {
   food: 'resource/Aoe2de_food.webp', wood: 'resource/Aoe2de_wood.webp', gold: 'resource/Aoe2de_gold.webp',
   stone: 'resource/Aoe2de_stone.webp', builder: 'resource/Aoe2de_hammer.webp',
@@ -20,6 +21,7 @@ const RES_ICON = {
 const VILL_ICON = 'resource/MaleVillDE.webp';
 const AGE_ICONS = { 1: 'age/DarkAgeIconDE.webp', 2: 'age/FeudalAgeIconDE.webp', 3: 'age/CastleAgeIconDE.webp', 4: 'age/ImperialAgeIconDE.webp' };
 const AGE_NAMES = { 1: 'Dark', 2: 'Feudal', 3: 'Castle', 4: 'Imperial' };
+const ITEM_H = 84;     // room one item takes in its lane, px
 
 const el = (tag, props = {}, ...children) => {
   const n = Object.assign(document.createElement(tag), props);
@@ -56,94 +58,95 @@ export function openRun(build, tl, { onClose } = {}) {
   let wake = null;
   let shownStep = -1;
 
-  // ---------- HUD ----------
+  // ---------- Top bar ----------
+  const ageImg = icon(AGE_ICONS[1], 'run-age-ic');
+  const clock = el('div', { className: 'run-clock', textContent: '0:00' });
+  const popNum = el('b', { textContent: '3' });
+  const builders = el('b', { textContent: '0' });
+  const closeBtn = el('button', { type: 'button', className: 'run-close', textContent: '×', onclick: () => close() });
+  closeBtn.setAttribute('aria-label', 'Close practice');
+  const head = el('div', { className: 'run-head' },
+    ageImg, clock,
+    el('div', { className: 'run-pop', title: 'Villagers' }, icon(VILL_ICON, 'run-pop-ic'), popNum),
+    el('div', { className: 'run-pop run-build', title: 'Building' }, icon(RES_ICON.builder, 'run-pop-ic'), builders),
+    closeBtn);
+
+  // ---------- Resources ----------
   const resBoxes = {};
   const hud = el('header', { className: 'run-hud' });
   for (const k of RES_KEYS) {
     const amount = el('b', { className: 'run-amt', textContent: '0' });
-    const vills = el('span', { className: 'run-vills', textContent: '0' });
+    const vills = el('b', { className: 'run-vills', textContent: '0' });
     resBoxes[k] = { amount, vills };
-    hud.append(el('div', { className: `run-res run-${k}` }, icon(RES_ICON[k], 'run-res-ic'), amount, el('span', { className: 'run-vbadge' }, icon(VILL_ICON, 'run-vb-ic'), vills)));
+    hud.append(el('div', { className: `run-res run-${k}` },
+      el('div', { className: 'run-res-top' }, icon(RES_ICON[k], 'run-res-ic'), amount),
+      el('div', { className: 'run-res-vills' }, icon(VILL_ICON, 'run-vb-ic'), vills)));
   }
-  const popNum = el('b', { className: 'run-amt', textContent: '3' });
-  const builders = el('span', { className: 'run-vills', textContent: '0' });
-  hud.append(el('div', { className: 'run-res run-pop' }, icon(VILL_ICON, 'run-res-ic'), popNum,
-    el('span', { className: 'run-vbadge', title: 'Building' }, icon(RES_ICON.builder, 'run-vb-ic'), builders)));
-  const ageImg = icon(AGE_ICONS[1], 'run-age-ic');
-  const clock = el('div', { className: 'run-clock', textContent: '0:00' });
-  const top = el('div', { className: 'run-top' },
-    el('div', { className: 'run-title' }, ageImg, el('span', { className: 'run-name', textContent: build.name })),
-    clock);
 
-  // ---------- Strip ----------
+  // ---------- Scrolling strip ----------
   const track = el('div', { className: 'run-track' });
   const strip = el('div', { className: 'run-strip' },
-    el('div', { className: 'run-lane-labels' },
-      el('span', { textContent: 'Train villagers' }), el('span', { textContent: 'Move villagers' }), el('span', { textContent: 'Build & research' })),
+    el('div', { className: 'run-lanes' }, el('div'), el('div'), el('div')),
     track,
-    el('div', { className: 'run-now' }, el('span', { textContent: 'NOW' })));
+    el('div', { className: 'run-now' }, el('span', { textContent: 'NOW' })),
+    el('div', { className: 'run-lane-heads' }, el('span', { textContent: 'Send villagers' }), el('span', { textContent: 'Move villagers' }), el('span', { textContent: 'Build & research' })));
   const items = [];
-  const lanes = { train: 0, move: 1, build: 2 };
-  // Lanes share the strip's height; items within a lane can use two rows.
-  const laneTop = (lane, row) => `calc(${(lane * 100) / 3}% + ${22 + row * 40}px)`;
-  const lastX = { train: [-1e9, -1e9], move: [-1e9, -1e9], build: [-1e9, -1e9] };
-  const place = (lane, time, node, width = 44) => {
-    const x = time * PX;
-    const rows = lastX[lane];
-    const row = x >= rows[0] + width ? 0 : x >= rows[1] + width ? 1 : (rows[0] <= rows[1] ? 0 : 1);
-    rows[row] = Math.max(x, rows[row] + width);
-    const left = rows[row];
-    node.style.transform = `translateX(${left}px)`;
-    node.style.top = laneTop(lanes[lane], row);
+  const LANE = { train: 0, move: 1, build: 2 };
+  const nextFree = [-1e9, -1e9, -1e9];
+  const place = (lane, time, content) => {
+    const li = LANE[lane];
+    const y = Math.max(time * PX, nextFree[li]);
+    nextFree[li] = y + ITEM_H;
+    const when = el('span', { className: 'run-when' }, el('b', { textContent: fmtTime(time) }), el('small', { className: 'run-in' }));
+    const node = el('div', { className: `run-item run-${lane}` }, when, el('div', { className: 'run-body' }, content));
+    node.style.left = `calc(${(li * 100) / 3}% + 4px)`;
+    node.style.transform = `translateY(${y}px)`;
     track.append(node);
-    items.push({ t: time, node });
+    items.push({ t: time, node, inEl: when.lastChild });
   };
-  // Step boundaries: villager targets
-  tl.steps.forEach((st, i) => {
-    const mark = el('div', { className: 'run-mark' }, el('span', { textContent: `${st.vills}` }), icon(VILL_ICON, 'run-mark-ic'));
-    mark.style.transform = `translateX(${st.t * PX}px)`;
-    mark.dataset.step = i;
+  // Step boundaries: villager target for each step
+  for (const st of tl.steps) {
+    const mark = el('div', { className: 'run-mark' }, el('span', {}, el('b', { textContent: `${st.vills}` }), icon(VILL_ICON, 'run-mark-ic'), ` by ${fmtTime(st.t)}`));
+    mark.style.transform = `translateY(${st.t * PX}px)`;
     track.append(mark);
-  });
-  // Villagers: one tile each, with where it goes when it pops out
+  }
+  // New villagers: when each comes out and where it goes
   for (const v of tl.villagers) {
-    place('train', v.done, el('div', { className: 'run-item run-vill' }, icon(VILL_ICON), v.res ? icon(RES_ICON[v.res], 'run-badge-ic') : null));
+    place('train', v.done, [icon(VILL_ICON, 'run-ic'), el('span', { className: 'run-arrow', textContent: '→' }), v.res ? icon(RES_ICON[v.res], 'run-ic') : el('span', { textContent: '?' })]);
   }
   // Villagers moving between resources
   for (const m of tl.moves) {
-    place('move', m.t, el('div', { className: 'run-item run-move' },
-      el('span', { className: 'run-count', textContent: `${m.n}` }), icon(RES_ICON[m.from], 'run-mv-ic'), el('span', { className: 'run-arrow', textContent: '→' }), icon(RES_ICON[m.to], 'run-mv-ic')), 92);
+    place('move', m.t, [el('span', { className: 'run-count', textContent: `${m.n}` }), icon(RES_ICON[m.from], 'run-ic-s'), el('span', { className: 'run-arrow', textContent: '→' }), icon(RES_ICON[m.to], 'run-ic-s')]);
   }
-  // Buildings, research, units, age-ups
+  // Buildings, research, units and age-ups, at the time to start them
   for (const e of tl.events) {
     if (e.what === 'villager') continue;
     const isAge = e.what.startsWith('age');
-    const node = el('div', { className: `run-item run-buy${isAge ? ' run-ageup' : ''}` },
-      icon(isAge ? e.icon : e.what),
+    place('build', e.t, [icon(isAge ? e.icon : e.what, isAge ? 'run-ic run-ic-age' : 'run-ic'),
       e.n > 1 ? el('span', { className: 'run-count', textContent: `×${e.n}` }) : null,
-      isAge ? el('span', { className: 'run-cap', textContent: 'Click!' }) : null);
-    place('build', e.t, node, isAge ? 56 : 44);
+      isAge ? el('span', { className: 'run-cap', textContent: 'Click up' }) : null]);
   }
-  track.style.width = `${(tl.end + 60) * PX}px`;
+  track.style.height = `${(tl.end + 120) * PX}px`;
 
   // ---------- Current step ----------
   const stepBox = el('section', { className: 'run-step' });
 
   // ---------- Controls ----------
   const playBtn = el('button', { type: 'button', className: 'run-play', textContent: 'Start' });
-  const btn = (label, fn, cls = '') => { const b = el('button', { type: 'button', className: cls, textContent: label }); b.addEventListener('click', fn); return b; };
-  const speedSel = el('select', { 'aria-label': 'Timer speed' }, SPEEDS.map((s) => el('option', { value: s.value, textContent: s.label, selected: s.value === speed })));
-  speedSel.addEventListener('change', () => { speed = Number(speedSel.value); store.set('bo-speed', String(speed)); });
+  const btn = (label, fn, cls = '') => el('button', { type: 'button', className: cls, textContent: label, onclick: fn });
+  const speedBtn = btn(SPEED_LABEL[speed], () => {
+    speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+    store.set('bo-speed', String(speed));
+    speedBtn.textContent = SPEED_LABEL[speed];
+  }, 'run-speed');
+  speedBtn.title = 'Timer speed: the in-game clock runs 1.7× real time at Normal speed';
   const jump = (dt) => { t = Math.max(0, Math.min(tl.end, t + dt)); draw(true); };
   const controls = el('footer', { className: 'run-controls' },
     btn('−10s', () => jump(-10)), playBtn, btn('+10s', () => jump(10)),
-    btn('↺', () => { t = 0; setRunning(false); draw(true); }, 'run-reset'),
-    speedSel);
+    btn('↺', () => { t = 0; setRunning(false); draw(true); }, 'run-reset'), speedBtn);
 
-  const closeBtn = btn('×', () => close(), 'run-close');
-  closeBtn.setAttribute('aria-label', 'Close practice');
   const root = el('div', { className: 'run', role: 'dialog', 'aria-label': `Practise ${build.name}` },
-    el('div', { className: 'run-head' }, top, closeBtn), hud, strip, stepBox, controls);
+    head, hud, strip, stepBox, controls);
   document.body.append(root);
   document.body.classList.add('run-open');
 
@@ -158,21 +161,15 @@ export function openRun(build, tl, { onClose } = {}) {
 
   function drawStep(i) {
     const st = tl.steps[i];
-    const nxt = tl.steps[i + 1];
     stepBox.replaceChildren(
-      el('div', { className: 'run-step-head' },
-        el('span', { textContent: `Step ${i + 1}/${tl.steps.length}` }),
-        el('span', { className: 'run-due' })),
-      ...(st.notes || []).map(noteLine),
-      nxt ? el('div', { className: 'run-next' }, el('span', { className: 'run-next-label', textContent: `Next (${fmtTime(nxt.t)})` }), ...(nxt.notes || []).map(noteLine)) : null,
-    );
+      el('div', { className: 'run-step-head' }, el('span', { textContent: `Step ${i + 1}/${tl.steps.length}` }), el('span', { className: 'run-due' })),
+      ...(st.notes || []).map(noteLine));
   }
 
   function draw(force = false) {
-    const w = strip.clientWidth || 360;
-    track.style.transform = `translateX(${Math.round(w * NOW_X - t * PX)}px)`;
+    const h = strip.clientHeight || 400;
+    track.style.transform = `translateY(${Math.round(h * NOW_Y - t * PX)}px)`;
     clock.textContent = fmtTime(t);
-    // Live numbers
     const bank = tl.bankAt(t);
     const a = tl.alloc(t);
     for (const k of RES_KEYS) {
@@ -187,12 +184,14 @@ export function openRun(build, tl, { onClose } = {}) {
     if (!ageImg.src.endsWith(ageSrc)) ageImg.src = ageSrc;
     ageImg.classList.toggle('researching', Boolean(researching));
     ageImg.title = researching ? `Researching ${AGE_NAMES[researching.age]} Age` : `${AGE_NAMES[age]} Age`;
-    // Items that have reached the line light up, then dim.
+    // Countdown on what's about to happen; light up as it reaches NOW, then dim.
     for (const it of items) {
-      const d = t - it.t;
-      it.node.classList.toggle('soon', d < 0 && d > -6);
-      it.node.classList.toggle('hit', d >= 0 && d < 2.5);
-      it.node.classList.toggle('past', d >= 2.5);
+      const d = it.t - t;
+      it.node.classList.toggle('soon', d > 0 && d <= 10);
+      it.node.classList.toggle('hit', d <= 0 && d > -3);
+      it.node.classList.toggle('past', d <= -3);
+      const label = d > 0 && d <= 15 ? `in ${Math.ceil(d)}s` : '';
+      if (it.inEl.textContent !== label) it.inEl.textContent = label;
     }
     const i = tl.stepAt(t);
     if (i !== shownStep || force) {
@@ -202,7 +201,7 @@ export function openRun(build, tl, { onClose } = {}) {
     }
     const due = tl.steps[i].t - t;
     const dueEl = stepBox.querySelector('.run-due');
-    if (dueEl) dueEl.textContent = due > 0 ? `${tl.steps[i].vills} villagers by ${fmtTime(tl.steps[i].t)} · ${fmtTime(due)} left` : `${tl.steps[i].vills} villagers`;
+    if (dueEl) dueEl.textContent = due > 0 ? `${tl.steps[i].vills} villagers by ${fmtTime(tl.steps[i].t)} (${fmtTime(due)})` : `${tl.steps[i].vills} villagers`;
   }
 
   // Real elapsed time drives the clock, so it stays right if the screen sleeps.
@@ -221,16 +220,16 @@ export function openRun(build, tl, { onClose } = {}) {
     if (e.key === ' ') { e.preventDefault(); setRunning(!running); }
   };
   document.addEventListener('keydown', onKey);
-  // Drag the strip to scrub through the build.
-  let dragX = null;
-  strip.addEventListener('pointerdown', (e) => { dragX = e.clientX; strip.setPointerCapture(e.pointerId); });
+  // Drag the strip up or down to scrub through the build.
+  let dragY = null;
+  strip.addEventListener('pointerdown', (e) => { dragY = e.clientY; strip.setPointerCapture(e.pointerId); });
   strip.addEventListener('pointermove', (e) => {
-    if (dragX === null) return;
-    t = Math.max(0, Math.min(tl.end, t - (e.clientX - dragX) / PX));
-    dragX = e.clientX;
+    if (dragY === null) return;
+    t = Math.max(0, Math.min(tl.end, t - (e.clientY - dragY) / PX));
+    dragY = e.clientY;
     last = performance.now();
   });
-  const endDrag = () => { dragX = null; };
+  const endDrag = () => { dragY = null; };
   strip.addEventListener('pointerup', endDrag);
   strip.addEventListener('pointercancel', endDrag);
 

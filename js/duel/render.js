@@ -56,10 +56,25 @@ export class ArenaPlayer {
     this.raf = requestAnimationFrame(tick);
   }
 
+  // The simulation keeps 20 snapshots a second; positions are blended between
+  // them so movement draws smoothly at the screen's full frame rate.
   frameAt(t) {
     const { frames } = this.result;
-    const i = Math.min(frames.length - 1, Math.max(0, Math.round(t / (frames[1]?.t - frames[0].t || 1 / 60))));
-    return frames[i];
+    const step = frames[1] ? frames[1].t - frames[0].t : 1 / 20;
+    const x = Math.max(0, t / step);
+    const i = Math.min(frames.length - 1, Math.floor(x));
+    const a = frames[i];
+    const b = frames[i + 1];
+    if (!b) return a;
+    const k = x - i;
+    return {
+      t,
+      u: a.u.map((ua, j) => {
+        const ub = b.u[j];
+        if (!ub) return ua;
+        return [ua[0] + (ub[0] - ua[0]) * k, ua[1] + (ub[1] - ua[1]) * k, ua[2] + (ub[2] - ua[2]) * k, ua[3], ua[4], ua[5]];
+      }),
+    };
   }
 
   draw(t) {
