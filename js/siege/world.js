@@ -147,10 +147,16 @@ export class World {
     return c;
   }
 
-  /** Gold player p gets each tick: base, Markets, and the territory bonus. */
+  /**
+   * Gold player p gets each tick. The base income and the territory bonus are
+   * shared out between teammates (a 2v2 team earns what one player does in a
+   * 1v1); each player's own Markets pay them in full.
+   */
   income(side) {
     const s = this.sides[side];
-    return Math.round((BASE_INCOME + MARKET.income * s.markets + (this.territory[s.team] ? TERRITORY.bonus : 0)) * s.incomeMult);
+    const share = 1 / this.teams[s.team].players.length;
+    const g = ((BASE_INCOME + (this.territory[s.team] ? TERRITORY.bonus : 0)) * share + MARKET.income * s.markets) * s.incomeMult;
+    return Math.round(g * 2) / 2;
   }
 
   // ---------- Spending ----------

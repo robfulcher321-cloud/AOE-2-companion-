@@ -97,7 +97,7 @@ for (const [i, [a, b]] of games.entries()) {
   const back = v.sellValue(b1.id);
   assert.ok(v.sell(0, b1.id));
   assert.equal(v.sides[0].gold, gold + back);
-  assert.equal(back, Math.round((150 + k.lines.find((l) => l.key === knights).tiers[1].upgrade) / 2), 'selling gives half of what went in');
+  assert.equal(back, Math.round((k.lines.find((l) => l.key === knights).cost + k.lines.find((l) => l.key === knights).tiers[1].upgrade) / 2), 'selling gives half of what went in');
   const forging = k.techs.find((t) => t.name === 'Forging');
   const hp0 = v.units.find((u) => u.side === 0).f;
   assert.ok(v.buy(0, 'research', forging.id));
@@ -112,6 +112,9 @@ for (const [i, [a, b]] of games.entries()) {
   const kits = [await kitFor('Franks'), await kitFor('Britons'), await kitFor('Goths'), await kitFor('Mongols')];
   const w = new World(kits, data, { seed: 5, teams: [0, 0, 1, 1] });
   assert.equal(w.plotCount(0), 12);
+  assert.equal(w.income(0), 5, 'teammates split the base income');
+  assert.ok(kits[0].lines.find((l) => l.band === 'spear').cost < kits[0].lines.find((l) => l.label === 'Militia').cost, 'spears cheaper than militia');
+  assert.ok(kits[0].lines.find((l) => l.label === 'Knight').cost < (await kitFor('Khmer')).lines.find((l) => l.band === 'elephant').cost, 'elephants dearest');
   assert.ok(w.plotPos(0, 0)[1] < 0 && w.plotPos(1, 0)[1] > 0, 'top player above the castle, bottom player below');
   assert.ok(w.plotPos(2, 0)[0] > 43, 'red team builds on the right');
   const ais = kits.map((_, i) => new Computer(w, i, { level: 'normal' }));

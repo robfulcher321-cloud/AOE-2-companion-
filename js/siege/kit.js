@@ -13,14 +13,28 @@ import { CIV_EFFECTS, UNIT_CLASS } from '../duel/effects.js';
 
 export const TRAIN_AT = [12, 87, 101, 82];        // Barracks, Archery Range, Stable, Castle
 export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 82: 'Castle', 84: 'Market' };
-export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 250, income: 5, max: 3 };
+export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 275, income: 5, max: 3 };
 export const NOT_UNITS = new Set([440, 331]);    // Petard, Trebuchet: not lane fighters
 export const NEEDS = { 5: 47 };                // unit -> tech it needs (Hand Cannoneer: Chemistry)
-export const BUILD_COST = 150;
-export const UNIQUE_COST = 225;
+// What a building costs depends on what it trains: cheap counters (spears,
+// skirmishers), standard infantry, archers and scouts, dearer cavalry, and
+// elephants dearest. Castle (unique unit) buildings cost 40% more again.
+export const BUILD_PRICES = { spear: 140, skirm: 150, standard: 175, scout: 185, cavalry: 215, elephant: 270 };
+const UNIQUE_MARKUP = 1.4;
+const ARMOUR = { ELEPHANT: 5, CAVALRY: 8, CAMEL: 30 };
+/** Which price band a line's first unit falls in. */
+export function priceBand(rootId, unit) {
+  if (rootId === 93) return 'spear';
+  if (rootId === 7) return 'skirm';
+  const armours = new Set((unit?.Armours || []).map((a) => a.Class));
+  if (armours.has(ARMOUR.ELEPHANT)) return 'elephant';
+  if (rootId === 448 || rootId === 751 || rootId === 1755) return 'scout';   // Scout Cavalry, Eagle Scout, Camel Scout
+  if (armours.has(ARMOUR.CAVALRY) || armours.has(ARMOUR.CAMEL)) return 'cavalry';
+  return 'standard';
+}
 const OUTPUT = 4.5;          // resources' worth of units a building trains per game second
 const UPGRADE_SHARE = 0.3;   // building upgrades cost this share of the real upgrade's resources (+30)
-const TECH_SHARE = 0.3;      // Armory techs: same idea (+25)
+const TECH_SHARE = 0.33;     // Armory techs: same idea (+25)
 const TECH_TIME = 0.3;       // and this share of the real research time
 
 // Building upgrades: 30% of the real upgrade's resources (+30) up to 600 of them, then
@@ -83,7 +97,8 @@ export function buildKit({ data, strings = {}, tree, civ }) {
         building,
         unique: building === 82,
         label: tiers[0].name,
-        cost: building === 82 ? UNIQUE_COST : BUILD_COST,
+        band: priceBand(root.node_id, U[root.node_id]),
+        cost: (() => { const base = BUILD_PRICES[priceBand(root.node_id, U[root.node_id])]; return building === 82 ? round5(base * UNIQUE_MARKUP) : base; })(),
         needs: NEEDS[root.node_id] ?? null,
         tiers,
       });
