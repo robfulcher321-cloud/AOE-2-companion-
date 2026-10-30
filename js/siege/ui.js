@@ -100,7 +100,7 @@ export async function initSiege(root) {
   root.replaceChildren(
     el('div', { className: 'sg-create' },
       el('h3', { textContent: 'Custom game' }),
-      el('p', { className: 'sg-note', textContent: 'Up to 4 players, 2 a team. Put the computer in any place, or leave places open for friends on the same Wi-Fi to join.' }),
+      el('p', { className: 'sg-note', textContent: 'Up to 6 players, 3 a team. Put the computer in any place, or leave places open for friends on the same Wi-Fi to join.' }),
       el('label', { className: 'field' }, el('span', { textContent: 'Your name' }), nameIn),
       el('div', { className: 'sg-create-acts' },
         el('button', { type: 'button', className: 'fight', textContent: 'Create game', onclick: lobby('create') }),
@@ -124,8 +124,9 @@ export async function initSiege(root) {
         el('li', { textContent: 'The red hand holds every building\'s next unit; GO sends them all out at once.' }),
         el('li', { textContent: 'The Armory (anvil, bottom left) has Blacksmith upgrades, Ballistics, Chemistry, Bloodlines and your civ\'s unique techs. One at a time; each one reaches all your units, even those already fighting.' }),
         el('li', { textContent: 'The middle of the map is split by a river into two lanes. Buildings above your Wonder send units down the top lane, those below it the bottom lane, those in line with it take turns. Arrows fly over the river; soldiers cross only near the bases.' }),
-        el('li', { textContent: `One explosion each (the fire button): tap it, drag the circle, then Drop. It hurts every enemy soldier within ${BLAST.radius} tiles for ${Math.round(BLAST.share * 100)}% of their HP. It can only be dropped on your own end of the map (up to the dashed line, a little past your base): it's for defending against a deathball, not for pushing. Soldiers of yours past the enemy's line earn +5 gold a tick.` }),
-        el('li', { textContent: 'Gold comes in every few seconds; Markets add more, and kills pay a bounty. In team games the base income is split between teammates, so a 2v2 team earns what one player does in a 1v1 (your own Markets still pay you in full).' }),
+        el('li', { textContent: `One explosion each (the fire button): tap it, drag the circle, then Drop. It hurts every enemy soldier within ${BLAST.radius} tiles for ${Math.round(BLAST.share * 100)}% of their HP. It can only be dropped on your own end of the map (up to the dashed line, a little past your base): it's for defending against a deathball, not for pushing.` }),
+        el('li', { textContent: 'Gold comes in every few seconds; Markets add more, and kills pay a bounty. In team games everyone gets two thirds of the 1v1 base income (your own Markets and mines still pay you in full).' }),
+        el('li', { textContent: 'Four gold mines sit beside the lanes, two along each bank of the river. When your soldiers get past one, the first of them past it builds a Mining Camp in your colour on your side of it, which pays you every income tick (+5 gold in a 1v1, +3 in team games). If enemy soldiers get past it, they pull your camp down in about 5 seconds and build their own.' }),
         el('li', { textContent: 'Prices follow the game: a building costs what its unit costs (with your civ\'s discounts, like Goths\' cheap infantry), gold counting double, so gold-heavy units and their upgrades cost more. Each unit comes out at its real training time.' }),
         el('li', { textContent: 'Rams and Trebuchets only attack buildings. Trebuchets unpack to fire and pack up to move, so keep them behind your army.' }),
         el('li', { textContent: 'Counter what the computer builds: spearmen beat cavalry, skirmishers beat archers, cavalry and infantry beat archers.' }),
@@ -187,7 +188,7 @@ async function loadAssets(kits, onStatus = () => {}) {
       }
     }
     for (const d of kit.defences) shotNames.add(d.shot);
-    for (const id of [82, 84, 103, 79, 234, 235, 236, ...kit.lines.map((l) => l.building)]) {
+    for (const id of [82, 84, 103, 79, 234, 235, 236, 584, ...kit.lines.map((l) => l.building)]) {
       const pic = kit.buildingPicture(id);
       if (pic !== undefined && !buildingIcons[id]) { buildingIcons[id] = null; jobs.push(loadImg(imageUrl('Building', pic)).then((img) => { buildingIcons[id] = img; })); }
     }
@@ -199,10 +200,13 @@ async function loadAssets(kits, onStatus = () => {}) {
     shotNames.add('p_arrow_x1');   // the Wonder's arrows
     jobs.push(...[...shotNames].map(async (n) => { sprites.projectiles[n] = await pack.projectile(n); }));
     jobs.push(...['water', 'shallow', 'beach', 'wetbeach'].map(async (n) => { sprites.textures[n] = await pack.texture(n); }));
-    jobs.push(...['barracks', 'archery', 'stable', 'castle', 'market', 'workshop', 'wonder', 'tower1', 'tower2', 'tower3', 'bombard'].map(async (n) => { sprites.rubble[n] = await pack.rubble(n); }));
+    jobs.push(...['barracks', 'archery', 'stable', 'castle', 'market', 'workshop', 'wonder', 'tower1', 'tower2', 'tower3', 'bombard', 'miningcamp'].map(async (n) => { sprites.rubble[n] = await pack.rubble(n); }));
     sprites.foundations = {};
     if (pack.foundation) jobs.push(...['barracks', 'archery', 'stable', 'castle', 'market', 'workshop', 'tower1', 'tower2', 'tower3', 'bombard'].map(async (n) => { sprites.foundations[n] = await pack.foundation(n); }));
     jobs.push(pack.trees().then((t) => { sprites.trees = t; }));
+    if (pack.foam) jobs.push(pack.foam().then((f) => { sprites.foam = f; }));
+    if (pack.nature) jobs.push(pack.nature('goldmine').then((g) => { sprites.goldmine = g; }));
+    if (pack.foundation) jobs.push(pack.foundation('miningcamp').then((f) => { sprites.foundations.miningcamp = f; }));
   }
   await Promise.all(jobs);
   return { sprites, unitIcons, buildingIcons };
@@ -921,7 +925,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         if (c) castles[s].fill.style.width = `${Math.max(0, (c.hp / c.maxHp) * 100)}%`;
         castles[s].count.textContent = String(world.alive[s]);
       }
-      incomeTxt.classList.toggle('bonus', world.territory[myTeam]);
+      incomeTxt.classList.toggle('bonus', world.minesOf(ME) > 0);
       const left = world.sides[ME].blasts;
       blastBtn.disabled = left <= 0;
       blastBtn.querySelector('.sg-blast-n').textContent = String(left);

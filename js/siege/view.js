@@ -3,7 +3,7 @@
 // with their in-game animations, and a minimap. Also turns touches into
 // actions: drag to look around, tap your base to build, tap a building, drag a new building into place.
 
-import { LANE, CASTLE_X, RIVER, BLAST, TERRITORY } from './world.js';
+import { LANE, CASTLE_X, RIVER, BLAST, TERRITORY, MINES, GAME_SPEED } from './world.js';
 import { TEAM_RGB } from '../duel/spritepack.js';
 
 const TILE = 96 / Math.SQRT2;   // screen px per tile at zoom 1 (same as the Test arena)
@@ -24,7 +24,7 @@ const rgbOf = (hex) => {
   const m = Math.max(...c, 1);
   return c.map((v) => Math.round((v * 236) / m));
 };
-const BUILDING_KIND = { 276: 'wonder', 12: 'barracks', 87: 'archery', 101: 'stable', 82: 'castle', 84: 'market', 103: 'blacksmith', 49: 'workshop', 104: 'monastery', 79: 'tower1', 234: 'tower2', 235: 'tower3', 236: 'bombard' };
+const BUILDING_KIND = { 276: 'wonder', 12: 'barracks', 87: 'archery', 101: 'stable', 82: 'castle', 84: 'market', 103: 'blacksmith', 49: 'workshop', 104: 'monastery', 79: 'tower1', 234: 'tower2', 235: 'tower3', 236: 'bombard', 584: 'miningcamp' };
 
 export class SiegeView {
   /** handlers: { tapGround(x, y), tapBuilding(b), holdBuilding(b), tapEmpty(), aimAt(x, y), placed() } */
@@ -330,6 +330,10 @@ export class SiegeView {
     const items = [];
     for (const b of this.w.structures) items.push({ y: b.y, b });
     if (this.placing) items.push({ y: this.placing.y, ghost: this.placing });
+    for (const m of this.w.mines || []) {
+      items.push({ y: m.y, mine: m });
+      if (m.camp) items.push({ y: m.y + 0.01, b: this.campOf(m, t) });
+    }
     for (const tr of this.treeList()) items.push({ y: tr.y, tree: tr });
     for (const u of this.w.units) {
       const x = u.px + (u.x - u.px) * alpha;
@@ -338,7 +342,8 @@ export class SiegeView {
     }
     items.sort((a, b) => a.y - b.y);
     for (const it of items) {
-      if (it.b) this.drawStructure(it.b, t, ppt);
+      if (it.mine) this.drawMine(it.mine, t);
+      else if (it.b) this.drawStructure(it.b, t, ppt);
       else if (it.ghost) this.drawGhost(it.ghost);
       else if (it.tree) this.drawTree(it.tree, zoom);
       else this.drawUnit(it.u, it.x, it.uy, t, zoom * UNIT_SCALE);
@@ -411,6 +416,63 @@ export class SiegeView {
     ctx.globalAlpha = 1;
   }
 
+  /** A gold mine's Mining Camp as a building to draw: going up, working, or coming down (its HP bar runs out). */
+  campOf(m, t) {
+    const c = m.camp;
+    const dir = c.team === 0 ? -1 : 1;
+    const razing = c.razeStart !== null && c.razeStart !== undefined ? Math.min(1, (t - c.razeStart) / (MINES.raze * GAME_SPEED)) : 0;
+    const key = `${m.id}|${c.owner}|${c.buildStart}`;
+    this.camps ||= new Map();
+    let b = this.camps.get(key);
+    if (!b) { b = { id: -100 - m.id, kind: 'building', building: 584, line: 'camp', owner: c.owner, side: c.team, r: 0.9 }; this.camps.set(key, b); }
+    Object.assign(b, { x: m.x + dir * MINES.camp, y: m.y, done: c.done, buildStart: c.buildStart, buildEnd: c.buildEnd, maxHp: 1, hp: c.done ? 1 - razing : 0.15 + 0.85 * Math.min(1, (t - c.buildStart) / Math.max(0.1, c.buildEnd - c.buildStart)) });
+    return b;
+  }
+
+  /** A gold mine: the game's graphic (or gold rocks), with a pickaxe in the owner's colour while their camp works it. */
+  drawMine(m, t) {
+    const { ctx } = this;
+    const [gx, gy] = this.toScreen(m.x, m.y);
+    if (gx < -80 || gx > this.vw + 80) return;
+    const zoom = this.cam.zoom;
+    const g = this.sprites?.goldmine;
+    let top = gy - 30 * zoom;
+    if (g) {
+      const [fx, fy, fw, fh, ax, ay] = g.frames[m.id % g.frames.length];
+      const k = zoom * 1.5;
+      ctx.drawImage(g.atlas, fx, fy, fw, fh, gx - ax * k, gy - ay * k, fw * k, fh * k);
+      top = gy - ay * k;
+    } else {
+      // gold-flecked rocks
+      const ppt = TILE * zoom;
+      for (const [dx, dy, r, c] of [[-0.35, 0.05, 0.42, '#7a6a48'], [0.3, -0.1, 0.38, '#8a7650'], [0, 0.18, 0.34, '#6e5f40'], [-0.1, -0.15, 0.3, '#d9b13a'], [0.25, 0.12, 0.22, '#f0cc4a'], [-0.35, 0.15, 0.18, '#e8c23a']]) {
+        ctx.beginPath();
+        ctx.ellipse(gx + dx * ppt, gy + dy * ppt * DEPTH - r * ppt * 0.45, r * ppt, r * ppt * 0.7, 0, 0, Math.PI * 2);
+        ctx.fillStyle = c; ctx.fill();
+      }
+      top = gy - 0.8 * ppt * 0.7;
+    }
+    if (m.camp?.done) {
+      const col = this.colours[m.camp.owner] || SIDE[m.camp.team];
+      const sz = Math.max(16, 26 * zoom);
+      const bob = Math.sin(t * 3 + m.id) * 2;
+      ctx.beginPath();
+      ctx.arc(gx, top - sz * 0.6 + bob, sz * 0.62, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgb(20 14 8 / .75)'; ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = col; ctx.stroke();
+      // a pickaxe (drawn, so it looks the same on every phone)
+      const cx = gx, cy = top - sz * 0.6 + bob, k = sz * 0.36;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#a8763c'; ctx.lineWidth = Math.max(2, k * 0.28);
+      ctx.beginPath(); ctx.moveTo(cx - k * 0.75, cy + k * 0.75); ctx.lineTo(cx + k * 0.45, cy - k * 0.45); ctx.stroke();
+      ctx.strokeStyle = '#d8dde2'; ctx.lineWidth = Math.max(2, k * 0.3);
+      // the head: across the top of the handle, bowed away from it, pointed at both ends
+      const hx = cx + k * 0.45, hy = cy - k * 0.45;
+      ctx.beginPath(); ctx.moveTo(hx - k * 0.95, hy - k * 0.35); ctx.quadraticCurveTo(hx + k * 0.25, hy - k * 0.25, hx + k * 0.35, hy + k * 0.95); ctx.stroke();
+      ctx.lineCap = 'butt';
+    }
+  }
+
   /** A team's colour: its first player's. */
   teamColour(team) {
     const p = this.w.sides.findIndex((s) => s.team === team);
@@ -418,8 +480,8 @@ export class SiegeView {
   }
 
   /**
-   * Where each team's third ends (the explosion zone; holding the enemy's earns
-   * the territory bonus): a faint dashed line in the team's colour, a small label at the top.
+   * Where each team's end of the map stops (its explosion zone): a faint dashed line in
+   * the team's colour, a small label at the top.
    */
   drawThirds(top, bottom) {
     const { ctx } = this;
@@ -462,16 +524,27 @@ export class SiegeView {
       ctx.fillStyle = g;
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     }
-    // ripples drifting along
-    ctx.strokeStyle = 'rgb(220 240 255 / .22)';
-    ctx.lineWidth = 1.5;
-    const ppt = TILE * this.cam.zoom;
-    for (let k = 0; k < 5; k++) {
-      const yy = y0 + ((k + 0.7) / 5.4) * (y1 - y0);
-      const off = ((t * 0.6 + k * 1.7) % 3) * ppt;
-      for (let xx = x0 + ppt + off; xx < x1 - ppt; xx += 3 * ppt) {
-        ctx.beginPath(); ctx.moveTo(xx, yy); ctx.quadraticCurveTo(xx + 6, yy - 3, xx + 12, yy); ctx.stroke();
+    // The game's shore foam, washing in and out along both banks
+    const foam = this.sprites?.foam;
+    if (foam) {
+      const ppt = TILE * this.cam.zoom;
+      const n = foam.cols * foam.rows;
+      const w = 2.4 * ppt, h = w * 0.5;
+      ctx.globalAlpha = 0.5;
+      for (const bank of [-1, 1]) {
+        for (let i = 0, x = RIVER.x0 + 1.2; x < RIVER.x1 - 1.2; x += 2.1, i++) {
+          const [fx, fy] = this.toScreen(x, bank * (RIVER.half - 0.35));
+          if (fx < -w || fx > this.vw + w) continue;
+          const f = Math.floor(t * 9 + i * 11 + (bank > 0 ? 31 : 0)) % n;
+          const sx = (f % foam.cols) * foam.size, sy = Math.floor(f / foam.cols) * foam.size;
+          if (bank > 0) {
+            ctx.save(); ctx.translate(0, fy * 2); ctx.scale(1, -1);
+            ctx.drawImage(foam.atlas, sx, sy, foam.size, foam.size, fx - w / 2, fy - h / 2, w, h);
+            ctx.restore();
+          } else ctx.drawImage(foam.atlas, sx, sy, foam.size, foam.size, fx - w / 2, fy - h / 2, w, h);
+        }
       }
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -688,7 +761,7 @@ export class SiegeView {
     }
     // The picture on the platform: for a training building, the unit it makes now
     // (it changes when you upgrade), with the building's own icon small in the corner.
-    const trains = b.kind === 'building' && b.line !== 'market' && !b.def;
+    const trains = b.kind === 'building' && b.line !== 'market' && b.line !== 'camp' && !b.def;
     const line = trains ? this.w.line(b.owner, b.line) : null;
     const unitImg = trains ? this.unitIcons[line.tiers[b.tier].unitId] : null;
     if (trains) {
@@ -1076,6 +1149,11 @@ export class SiegeView {
       c.fillRect(Math.round(sx(team === 0 ? edge : LANE.length - edge)) - 0.5, 0, 1, mh);
     }
     c.globalAlpha = 1;
+    for (const m of this.w.mines || []) {
+      c.fillStyle = '#e8c23a';
+      c.fillRect(sx(m.x) - 2.5, sy(m.y) - 2.5, 5, 5);
+      if (m.camp?.done) { c.strokeStyle = this.colours[m.camp.owner] || SIDE[m.camp.team]; c.lineWidth = 1.5; c.strokeRect(sx(m.x) - 3.5, sy(m.y) - 3.5, 7, 7); }
+    }
     for (const b of this.w.structures) {
       if (b.hp <= 0) continue;
       const s = b.kind === 'castle' ? 9 : 5;

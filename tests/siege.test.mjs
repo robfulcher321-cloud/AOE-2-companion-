@@ -142,25 +142,58 @@ for (const [i, [a, b]] of games.entries()) {
   const knight = v.units.find((u) => u.side === 0 && u.hp > 0);
   if (knight) assert.notEqual(knight.f, hp0, 'research reaches units on the field');
 }
+// Gold mines: the first soldier past one builds a camp there; enemies past it pull it down.
+{
+  const k = await kitFor('Franks');
+  const w = new World([k, k], data, { seed: 2 });
+  const m = w.mines[0];   // top lane, nearer blue
+  const knights = k.lines.find((l) => l.tiers[0].unitId === 38).key;
+  w.sides.forEach((s) => { s.age = 4; s.gold = 9999; });
+  const put = (side, x) => { w.buy(side, 'build', knights, side === 0 ? [20, -6] : [66, -6]); const b = w.buildings(side).at(-1); w.spawn(side, b); const u = w.units.at(-1); u.x = x; u.y = m.y + 0.5 * Math.sign(m.y); u.f = { ...u.f, speed: 0 }; return u; };
+  const blue = put(0, m.x + 2);
+  for (let i = 0; i < 30 * 12; i++) { w.updateMines(w.t); w.t += 1 / 30; }
+  assert.ok(m.camp?.done && m.camp.owner === 0, 'blue got past: a blue camp');
+  const base = w.income(0);
+  assert.equal(base, 15, '+5 a tick for a mine in a 1v1');
+  blue.hp = 0;
+  const red = put(1, m.x - 2);
+  for (let i = 0; i < 30 * 4; i++) { w.updateMines(w.t); w.t += 1 / 30; }
+  assert.ok(m.camp?.owner === 0, 'still standing while it comes down');
+  for (let i = 0; i < 30 * 16; i++) { w.updateMines(w.t); w.t += 1 / 30; }
+  assert.ok(m.camp?.done && m.camp.owner === 1, 'then red builds theirs');
+  red.hp = 0;
+}
+// 3v3: three a team; the game still ends.
+{
+  const civs = ['Franks', 'Britons', 'Goths', 'Mongols', 'Aztecs', 'Japanese'];
+  const kits = await Promise.all(civs.map((c) => kitFor(c)));
+  const w = new World(kits, data, { seed: 11, teams: [0, 0, 0, 1, 1, 1] });
+  assert.equal(w.income(0), 6.5);
+  const ais = kits.map((_, i) => new Computer(w, i, { level: 'normal' }));
+  while (w.winner === null && w.t < 3600) { for (const a of ais) a.think(); w.step(); }
+  assert.notEqual(w.winner, null, '3v3 game ends');
+  assert.ok(w.sides.every((s) => s.stats.trained > 10), 'every player trained an army');
+  console.log(`3v3: team ${w.winner} won after ${(w.t / 60).toFixed(1)} game min; trained ${w.sides.map((s) => s.stats.trained)}`);
+}
 // 2v2: each player has their own base half, gold and buildings; the game still ends.
 {
   const kits = [await kitFor('Franks'), await kitFor('Britons'), await kitFor('Goths'), await kitFor('Mongols')];
   const w = new World(kits, data, { seed: 5, teams: [0, 0, 1, 1] });
-  assert.equal(w.income(0), 5, 'teammates split the base income');
+  assert.equal(w.income(0), 6.5, 'two thirds of the base income each in a team game');
   assert.ok(kits[0].lines.find((l) => l.band === 'spear').cost < kits[0].lines.find((l) => l.label === 'Militia').cost, 'spears cheaper than militia');
   assert.ok(kits[0].lines.find((l) => l.label === 'Knight').cost < (await kitFor('Khmer')).lines.find((l) => l.band === 'elephant').cost, 'elephants dearest');
   assert.deepEqual(w.zone(0), w.zone(1), 'teammates share their base');
   assert.ok(w.zone(2).x0 > 43, 'red team builds on the right');
   const ais = kits.map((_, i) => new Computer(w, i, { level: 'normal' }));
-  let territorySeen = false;
+  let minesWon = 0;
   while (w.winner === null && w.t < 3600) {
     for (const a of ais) a.think();
     w.step();
-    if (w.territory[0] || w.territory[1]) territorySeen = true;
+    minesWon = Math.max(minesWon, w.mines.filter((m) => m.camp?.done).length);
   }
   assert.notEqual(w.winner, null, '2v2 game ends');
   assert.ok(w.sides.every((s) => s.stats.trained > 20), 'every player trained an army');
-  assert.ok(territorySeen, 'someone held the enemy third at some point');
+  assert.ok(minesWon > 0, 'someone took a gold mine');
   console.log(`2v2 Franks+Britons v Goths+Mongols: team ${w.winner} won after ${(w.t / 60).toFixed(1)} game min; trained ${w.sides.map((s) => s.stats.trained)}`);
 }
 // Wi-Fi sync: a joined phone's copy matches the host after snapshots (through JSON, like the network).
@@ -202,19 +235,6 @@ for (const [i, [a, b]] of games.entries()) {
   const tf = k.fighter(treb.key, 0);
   assert.equal(tf.range, 8, 'trebuchet range halved');
   assert.ok(tf.packs > 0 && tf.walkAs === 331);
-}
-// Territory: soldiers in the enemy's third add 5 gold a tick.
-{
-  const k = await kitFor('Franks');
-  const w = new World([k, k], data, { seed: 2 });
-  const base = w.income(0);
-  w.sides[0].gold = 1000;
-  w.buy(0, 'build', k.lines[0].key, 0);
-  for (let i = 0; i < 30 * 30; i++) w.step();
-  const u = w.units.find((x) => x.side === 0 && x.hp > 0);
-  u.x = 80; u.y = 0;   // walk it into red's third
-  for (let i = 0; i < 30 * 5; i++) w.step();
-  if (w.units.includes(u) && u.hp > 0) assert.equal(w.income(0), base + 5, 'territory bonus');
 }
 // Chat: everyone gets it, even when sent while paused (same game time as the last snapshot).
 {

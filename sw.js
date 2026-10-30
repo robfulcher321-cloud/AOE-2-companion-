@@ -2,7 +2,7 @@
 // Unit/tech icons and fonts: cache forever once downloaded.
 // Game data JSON is cached by the app itself (js/data.js), so it's left alone here.
 
-const SHELL = 'shell-v34';
+const SHELL = 'shell-v35';
 const ASSETS = 'assets-v1';
 const SHELL_FILES = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',

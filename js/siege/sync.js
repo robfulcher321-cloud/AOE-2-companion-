@@ -51,6 +51,7 @@ export function snapshot(w, since) {
       r2(s.x0), r2(s.y0), r2(s.x1), r2(s.y1), r2(s.t0), r2(s.t1), s.sprite || '', s.arc || 0, s.castle ? 1 : 0, s.landed ? 1 : 0,
     ]),
     effects: w.effects.map((e) => [r2(e.t), r2(e.x), r2(e.y), e.side, e.owner ?? -1]),
+    mines: w.mines.map((m) => (m.camp ? [m.camp.owner, m.camp.team, r2(m.camp.buildStart), r2(m.camp.buildEnd), m.camp.done ? 1 : 0, m.camp.razeStart === null ? -1 : r2(m.camp.razeStart)] : 0)),
     events: w.events.filter((e) => (e.type === 'chat' ? e.n > chatFrom : e.t > since)).map((e) => ({ ...e, x: e.x !== undefined ? r2(e.x) : undefined, y: e.y !== undefined ? r2(e.y) : undefined })),
   };
 }
@@ -109,6 +110,11 @@ export function applySnapshot(w, snap) {
     return u;
   });
   w.shots = snap.shots.map(([x0, y0, x1, y1, t0, t1, sprite, arc, castle, landed]) => ({ x0, y0, x1, y1, t0, t1, sprite, arc, castle: Boolean(castle), landed: Boolean(landed) }));
+  if (snap.mines) {
+    snap.mines.forEach((c, i) => {
+      w.mines[i].camp = c ? { owner: c[0], team: c[1], buildStart: c[2], buildEnd: c[3], done: Boolean(c[4]), razeStart: c[5] < 0 ? null : c[5] } : null;
+    });
+  }
   w.effects = snap.effects.map(([t, x, y, side, owner]) => ({ t, x, y, side, owner }));
   for (const e of snap.events) w.events.push(e);
   if (w.events.length > 200) w.events.splice(0, w.events.length - 200);

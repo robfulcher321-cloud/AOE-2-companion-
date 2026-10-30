@@ -51,7 +51,7 @@ VERSION = 2
 # Imperial-look buildings the app draws, by the unit ID that has that look
 BUILDINGS = {'barracks': 20, 'archery': 14, 'stable': 153, 'castle': 82, 'market': 137,
              'blacksmith': 19, 'workshop': 150, 'monastery': 104, 'wonder': 276,
-             'tower1': 79, 'tower2': 234, 'tower3': 235, 'bombard': 236}
+             'tower1': 79, 'tower2': 234, 'tower3': 235, 'bombard': 236, 'miningcamp': 584}
 # Extra animations: the Trebuchet's assembly stages (its build graphic) play as packing/unpacking.
 EXTRA_ANIMS = {42: {'pack': (137, 0.2)}}
 # Game data civ names that differ from aoe2techtree's civ keys
@@ -386,6 +386,21 @@ def main():
             img, m, ax, ay = comp
             atlas, _, rects = atlas_pair([img], [m], width=img.width)
             pack.meta['rubble'][kind] = {'atlas': pack.add(atlas), 'frame': list(rects[0]) + [ax, ay]}
+        # The gold mine (Gaia's), every variation
+        pack.meta['nature'] = {}
+        g0 = dat.civs[0].units[66]
+        g, sld = sld_for(g0.standing_graphic[0])
+        if sld:
+            images, masks, frames = [], [], []
+            for f in range(len(sld.frames)):
+                comp = compose(sld.frame(f))
+                if comp is None:
+                    continue
+                img, m, ax, ay = comp
+                frames.append((ax, ay)); images.append(img); masks.append(m)
+            atlas, _, rects = atlas_pair(images, masks)
+            pack.meta['nature']['goldmine'] = {'atlas': pack.add(atlas), 'frames': [list(r) + [ax, ay] for r, (ax, ay) in zip(rects, frames)]}
+            print(f'Gold mine: {len(images)} variations')
         # Construction sites: the game's scaffolding, in its build stages (the same for every civ)
         pack.meta['foundations'] = {}
         for kind, uid in BUILDINGS.items():
@@ -423,6 +438,16 @@ def main():
             b = io.BytesIO()
             Image.open(path).convert('RGB').resize((512, 512), Image.LANCZOS).save(b, 'WEBP', quality=82)
             pack.meta['textures'][name] = pack.add(b.getvalue())
+        # Shore foam: the game's animated wave sheet (8 x 8 frames, a grey alpha mask) as white foam
+        foam = os.path.join(common, 'terrain', 'water', 'atlas_v1_ortho_1.png')
+        if os.path.exists(foam):
+            m = Image.open(foam).convert('L').resize((1024, 1024), Image.LANCZOS)
+            white = Image.new('RGBA', m.size, (255, 255, 255, 0))
+            white.putalpha(m)
+            b = io.BytesIO()
+            white.save(b, 'WEBP', quality=80, method=4)
+            pack.meta['foam'] = {'atlas': pack.add(b.getvalue()), 'cols': 8, 'rows': 8, 'size': 128}
+            print(f'Foam: {len(b.getvalue()) // 1024} KB')
         pack.meta['trees'] = {}
         for name in ('n_tree_oak_x1', 'n_tree_green_oak_x1', 'n_tree_pine_x1', 'n_tree_willow_x1', 'n_tree_palm_x1', 'n_tree_bush_a_x1', 'n_tree_reeds_x1'):
             path = os.path.join(gfx_dir, name + '.sld')

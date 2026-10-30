@@ -114,6 +114,18 @@ class Sprites {
     return r ? this.once(`t${name}`, () => this.terrainFile.bitmap(r)) : Promise.resolve(null);
   }
 
+  /** Shore foam: the game's animated wave sheet, { atlas, cols, rows, size } or null. */
+  foam() {
+    const f = this.terrainFile?.meta.foam;
+    return f ? this.once('foam', async () => ({ ...f, atlas: await this.terrainFile.bitmap(f.atlas) })) : Promise.resolve(null);
+  }
+
+  /** Gaia graphics (the gold mine): { atlas, frames: [[x, y, w, h, ax, ay]...] } or null. */
+  nature(name) {
+    const r = this.rubbleFile?.meta.nature?.[name];
+    return r ? this.once(`n${name}`, async () => ({ ...r, atlas: await this.rubbleFile.bitmap(r.atlas) })) : Promise.resolve(null);
+  }
+
   /** Tree graphics: { name: { atlas, frames: [[x, y, w, h, ax, ay]...] } } (each frame a different tree) */
   trees() {
     const t = this.terrainFile?.meta.trees;

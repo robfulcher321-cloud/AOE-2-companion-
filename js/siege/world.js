@@ -25,9 +25,21 @@ export const CASTLE_X = [13, 73];
 // Where each player may build: anywhere in their team's base (in front of the Wonder and
 // behind it; teammates share it), leaving a small gap between buildings. Blue's x range; red mirrors it.
 export const BUILD = { x0: 1.5, x1: 26.5, gap: 0.5 };
-// Your own end of the map, a little beyond where you can build: the explosion only lands
-// here, and soldiers of yours in the enemy's end earn +5 gold a tick.
-export const TERRITORY = { edge: 30.5, bonus: 5 };
+// Your own end of the map, a little beyond where you can build: the explosion only lands here.
+export const TERRITORY = { edge: 30.5 };
+// Gold mines beside the lanes, two along each bank of the river. When a team's soldiers get past
+// one (and the other team's don't), the first of them past it builds a Mining Camp on their side
+// of it, which pays its owner every income tick. Enemies getting past it pull the camp down
+// (about 5 seconds), then build their own.
+export const MINES = {
+  spots: [[36.5, -1], [49.5, -1], [36.5, 1], [49.5, 1]],   // x, lane (−1 top, 1 bottom)
+  y: 7.9,            // how far out from the middle, beside each lane
+  gold: 3, solo: 5,  // a tick per mine: in team games, and in a 1v1
+  camp: 1.9,         // camp this far from the mine, on its owner's side
+  build: 5, raze: 5, // real seconds
+};
+// Base income per player: full in a 1v1, two thirds in team games.
+export const TEAM_SHARE = 2 / 3;
 // Game seconds per real second at Normal speed (build times are given in real seconds).
 export const GAME_SPEED = 1.7;
 const BUILD_HP = 0.15;          // a new building starts at this share of its HP...
@@ -89,7 +101,8 @@ export class World {
     this.sbins = [];
     this.incomeAt = INCOME_EVERY;
     this.alive = [0, 0];       // living units per team
-    this.territory = [false, false];   // team holding the enemy's third of the map this tick
+    this.territory = [false, false];   // (no longer used: kept for older snapshots)
+    this.mines = MINES.spots.map(([x, lane], i) => ({ id: i, x, y: lane * MINES.y, lane, camp: null }));
     this.effects = [];         // explosions, for drawing: { t, x, y, side }
     this.chatSeq = 0;          // chat and emotes go out as events: { type: 'chat', owner, text, n }
     this.bins = [];            // living units by lane position, rebuilt each step
@@ -162,9 +175,9 @@ export class World {
     const s = this.sides[p];
     const dir = s.team === 0 ? 1 : -1;
     const fx = s.team === 0 ? z.x1 - r : z.x0 + r;
-    const ax = front ? fx : CASTLE_X[s.team] + dir * 4;
-    // Teammates share the base: the first starts above the Wonder, the second below
-    const ay = this.teams[s.team].players.length > 1 ? (s.rank === 0 ? -4 : 4) : 0;
+    const ax = front ? fx : CASTLE_X[s.team] + dir * (s.rank === 2 ? -6 : 4);
+    // Teammates share the base: the first starts above the Wonder, the second below, a third behind it
+    const ay = this.teams[s.team].players.length > 1 ? [-4, 4, 0][s.rank] ?? 0 : 0;
     const spots = [];
     // (well clear of the top edge, where a tall building's health bar would go off the screen)
     for (let x = z.x0 + r; x <= z.x1 - r + 1e-6; x += 0.5) {
@@ -188,15 +201,53 @@ export class World {
   }
 
   /**
-   * Gold player p gets each tick. The base income and the territory bonus are
-   * shared out between teammates (a 2v2 team earns what one player does in a
-   * 1v1); each player's own Markets pay them in full.
+   * Gold player p gets each tick: the base income (two thirds of it in team games),
+   * their own Markets, and their Mining Camps at the gold mines.
    */
   income(side) {
     const s = this.sides[side];
-    const share = 1 / this.teams[s.team].players.length;
-    const g = ((BASE_INCOME + (this.territory[s.team] ? TERRITORY.bonus : 0)) * share + MARKET.income * s.markets) * s.incomeMult;
+    const team = this.teams[s.team].players.length > 1;
+    const camps = this.mines.filter((m) => m.camp?.done && m.camp.owner === side).length;
+    const g = (BASE_INCOME * (team ? TEAM_SHARE : 1) + MARKET.income * s.markets + camps * (this.sides.length > 2 ? MINES.gold : MINES.solo)) * s.incomeMult;
     return Math.round(g * 2) / 2;
+  }
+
+  /** Mines a player's camps are working. */
+  minesOf(side) { return this.mines.filter((m) => m.camp?.done && m.camp.owner === side).length; }
+
+  /**
+   * Who has got past each gold mine: the camp goes up for the first soldier past it,
+   * comes down (after a few seconds) when only the other team has got past.
+   */
+  updateMines(t) {
+    for (const m of this.mines) {
+      // The most advanced soldier of each team past this mine, on its bank
+      const past = [null, null];
+      for (const u of this.units) {
+        if (u.hp <= 0 || Math.sign(u.y) !== m.lane || Math.abs(u.y) < RIVER.half - 0.5) continue;
+        if (u.side === 0 && u.x > m.x + 0.8 && (!past[0] || u.x > past[0].x)) past[0] = u;
+        if (u.side === 1 && u.x < m.x - 0.8 && (!past[1] || u.x < past[1].x)) past[1] = u;
+      }
+      const claim = past[0] && !past[1] ? 0 : past[1] && !past[0] ? 1 : null;
+      const c = m.camp;
+      if (c && claim !== null && claim !== c.team) {
+        // The enemy got past: the camp comes down (a camp still going up just stops)
+        if (!c.done) { m.camp = null; continue; }
+        c.razeStart ??= t;
+        if (t - c.razeStart >= MINES.raze * GAME_SPEED) {
+          m.camp = null;
+          this.events.push({ t, type: 'mine-lost', side: c.team, owner: c.owner, mine: m.id, x: m.x, y: m.y });
+        }
+      } else if (c) c.razeStart = null;
+      if (!m.camp && claim !== null) {
+        const by = past[claim];
+        m.camp = { owner: by.owner, team: claim, buildStart: t, buildEnd: t + MINES.build * GAME_SPEED, done: false, razeStart: null };
+      }
+      if (m.camp && !m.camp.done && t >= m.camp.buildEnd) {
+        m.camp.done = true;
+        this.events.push({ t, type: 'mine-won', side: m.camp.team, owner: m.camp.owner, mine: m.id, x: m.x, y: m.y });
+      }
+    }
   }
 
   // ---------- Spending ----------
@@ -316,7 +367,9 @@ export class World {
   /** A defence's stats at a step: the game's building (HP, arrow, range), with its arrows and shot. */
   defenceStats(line, tier) {
     const st = this.buildingStats(line.tiers[tier].building);
-    return { ...st, arrows: line.arrows, projectile: { sprite: line.shot, arc: line.shot === 'p_ball_x1' ? -0.05 : -0.06 } };
+    // (towers hit a bit harder than in the game: `dmg`)
+    const attacks = new Map([...st.attacks].map(([c, a]) => [c, a > 0 ? Math.round(a * (line.dmg || 1)) : a]));
+    return { ...st, attacks, arrows: line.arrows, projectile: { sprite: line.shot, arc: line.shot === 'p_ball_x1' ? -0.05 : -0.06 } };
   }
 
   /**
@@ -646,13 +699,10 @@ export class World {
     // Income
     if (t >= this.incomeAt) {
       this.incomeAt += INCOME_EVERY;
-      // Territory: a team with soldiers in the enemy's third of the map earns extra (like Direct Strike).
-      for (const team of [0, 1]) {
-        const line = team === 0 ? LANE.length - TERRITORY.edge : TERRITORY.edge;
-        this.territory[team] = this.units.some((u) => u.side === team && u.hp > 0 && (team === 0 ? u.x > line : u.x < line));
-      }
       this.sides.forEach((s, i) => { const g = this.income(i); s.gold += g; s.stats.earned += g; });
     }
+    // Gold mines change hands (checked a few times a second)
+    if (Math.round(t / DT) % 6 === 0) this.updateMines(t);
     // Armory research and ages finishing
     for (let side = 0; side < this.sides.length; side++) {
       const s = this.sides[side];

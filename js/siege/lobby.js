@@ -1,4 +1,4 @@
-// AOSiege custom games: a lobby with four places (two a team). The creator
+// Wonder Wars custom games: a lobby with six places (up to three a team). The creator
 // fills each place with the computer (its own difficulty, civ and colour),
 // leaves it open for someone on the same Wi-Fi to join, or closes it.
 //
@@ -14,8 +14,9 @@ import { buildKit } from './kit.js';
 import { loadAssets, openGame, COLOURS, LEVELS } from './ui.js';
 
 const VERSION = 1;   // bump when the network messages change, so mismatched app versions don't play together
-const SLOT_TEAM = [0, 0, 1, 1];
-const SLOT_NAMES = ['Blue 1', 'Blue 2', 'Red 1', 'Red 2'];
+// Up to 3v3
+const SLOT_TEAM = [0, 0, 0, 1, 1, 1];
+const SLOT_NAMES = ['Blue 1', 'Blue 2', 'Blue 3', 'Red 1', 'Red 2', 'Red 3'];
 const DICE = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect x="4" y="4" width="32" height="32" rx="7" fill="#8a7a5c"/><g fill="#fff"><circle cx="13" cy="13" r="3.2"/><circle cx="27" cy="13" r="3.2"/><circle cx="20" cy="20" r="3.2"/><circle cx="13" cy="27" r="3.2"/><circle cx="27" cy="27" r="3.2"/></g></svg>')}`;
 const filled = (s) => s.kind === 'human' || s.kind === 'ai';
 
@@ -78,7 +79,7 @@ export function openLobby({ data, strings, action, name }) {
 
     const slots = SLOT_NAMES.map(() => ({ kind: online ? 'open' : 'closed' }));
     slots[0] = { kind: 'human', name, colour: COLOURS[0].hex, civ: store.get('sg-civ') || 'random', peer: 'host', ready: true };
-    slots[2] = { kind: 'ai', colour: COLOURS[1].hex, civ: 'random', level: store.get('sg-level') || 'normal' };
+    slots[3] = { kind: 'ai', colour: COLOURS[1].hex, civ: 'random', level: store.get('sg-level') || 'normal' };
     let selected = 0;
     const freeColour = () => COLOURS.find((c) => !slots.some((s) => filled(s) && s.colour === c.hex))?.hex || COLOURS[0].hex;
     const me = () => slots.findIndex((s) => s.peer === 'host');
@@ -94,7 +95,7 @@ export function openLobby({ data, strings, action, name }) {
           if (msg.v !== VERSION) { lan.sendTo(m.peer, JSON.stringify({ t: 'refused', why: 'Different app versions: update the app on both phones.' })); return; }
           // An open place, on the team with fewer players first
           const count = (t) => slots.filter((s, i) => SLOT_TEAM[i] === t && filled(s)).length;
-          const free = [1, 3, 2, 0].sort((a, b) => count(SLOT_TEAM[a]) - count(SLOT_TEAM[b])).find((i) => slots[i].kind === 'open');
+          const free = [1, 4, 2, 5, 3, 0].sort((a, b) => count(SLOT_TEAM[a]) - count(SLOT_TEAM[b])).find((i) => slots[i].kind === 'open');
           if (free === undefined) { lan.sendTo(m.peer, JSON.stringify({ t: 'refused', why: 'That game has no open places.' })); return; }
           slots[free] = { kind: 'human', name: String(msg.name || 'Player').slice(0, 16), colour: freeColour(), civ: 'random', peer: m.peer, ready: false };
           lan.sendTo(m.peer, JSON.stringify({ t: 'welcome', slot: free }));
@@ -273,7 +274,7 @@ export function openLobby({ data, strings, action, name }) {
     }
   }
 
-  // ---------- The four places ----------
+  // ---------- The six places ----------
   function slotGrid(slots, { me, selected, online, onTap }) {
     const card = (s, i) => {
       const cls = `sg-slot${i === me ? ' me' : ''}${i === selected ? ' sel' : ''}${filled(s) ? '' : ` ${s.kind}`}`;
@@ -290,8 +291,8 @@ export function openLobby({ data, strings, action, name }) {
       return el('button', { type: 'button', className: cls, style: filled(s) ? `--pc:${s.colour}` : '', onclick: () => onTap(i) }, kids);
     };
     return el('div', { className: 'sg-slots' },
-      el('div', { className: 'sg-team blue' }, el('h4', { textContent: 'Blue team' }), card(slots[0], 0), card(slots[1], 1)),
-      el('div', { className: 'sg-team red' }, el('h4', { textContent: 'Red team' }), card(slots[2], 2), card(slots[3], 3)));
+      el('div', { className: 'sg-team blue' }, el('h4', { textContent: 'Blue team' }), [0, 1, 2].map((i) => card(slots[i], i))),
+      el('div', { className: 'sg-team red' }, el('h4', { textContent: 'Red team' }), [3, 4, 5].map((i) => card(slots[i], i))));
   }
 
   // ---------- Into the game ----------
