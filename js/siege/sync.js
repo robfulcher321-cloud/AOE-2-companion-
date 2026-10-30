@@ -19,10 +19,14 @@ export const COMMANDS = {
   go: (w, p) => w.go(p),
   blast: (w, p, a) => w.blast(p, a.x, a.y),
   age: (w, p) => w.buy(p, 'age'),
+  chat: (w, p, a) => w.chat(p, a.text),
 };
 
 /** Snapshot of the host's world. `since`: send only events after this game time. */
 export function snapshot(w, since) {
+  // Chat goes by number, not time: a line sent while paused (or between two steps) shares the last snapshot's time.
+  const chatFrom = w.chatSent || 0;
+  w.chatSent = w.chatSeq || 0;
   return {
     t: r2(w.t),
     winner: w.winner,
@@ -46,7 +50,7 @@ export function snapshot(w, since) {
       r2(s.x0), r2(s.y0), r2(s.x1), r2(s.y1), r2(s.t0), r2(s.t1), s.sprite || '', s.arc || 0, s.castle ? 1 : 0, s.landed ? 1 : 0,
     ]),
     effects: w.effects.map((e) => [r2(e.t), r2(e.x), r2(e.y), e.side, e.owner ?? -1]),
-    events: w.events.filter((e) => e.t > since).map((e) => ({ ...e, x: e.x !== undefined ? r2(e.x) : undefined, y: e.y !== undefined ? r2(e.y) : undefined })),
+    events: w.events.filter((e) => (e.type === 'chat' ? e.n > chatFrom : e.t > since)).map((e) => ({ ...e, x: e.x !== undefined ? r2(e.x) : undefined, y: e.y !== undefined ? r2(e.y) : undefined })),
   };
 }
 

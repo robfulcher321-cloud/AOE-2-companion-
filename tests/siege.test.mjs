@@ -190,4 +190,26 @@ for (const [i, [a, b]] of games.entries()) {
   for (let i = 0; i < 30 * 5; i++) w.step();
   if (w.units.includes(u) && u.hp > 0) assert.equal(w.income(0), base + 5, 'territory bonus');
 }
+// Chat: everyone gets it, even when sent while paused (same game time as the last snapshot).
+{
+  const kits = [await kitFor('Britons'), await kitFor('Goths')];
+  const host = new World(kits, data, { seed: 2 });
+  const copy = new World(kits, data, { seed: 2 });
+  applySnapshot(copy, JSON.parse(JSON.stringify(snapshot(host, -1))));
+  const sent = host.t;
+  assert.ok(COMMANDS.chat(host, 1, { text: '  GG  ' }));
+  assert.ok(!host.chat(1, 'spam'), 'too soon after the last line');
+  assert.ok(!host.chat(0, '   '), 'nothing to say');
+  applySnapshot(copy, JSON.parse(JSON.stringify(snapshot(host, sent))));
+  const got = copy.events.filter((e) => e.type === 'chat');
+  assert.deepEqual(got.map((e) => [e.owner, e.text]), [[1, 'GG']]);
+  applySnapshot(copy, JSON.parse(JSON.stringify(snapshot(host, sent))));
+  assert.equal(copy.events.filter((e) => e.type === 'chat').length, 1, 'sent once');
+  assert.equal(host.chat(0, 'x'.repeat(200)), true);
+  assert.equal(host.events.at(-1).text.length, 80);
+  // Civ summary for the flag panel
+  const sum = kits[0].summary();
+  assert.ok(sum.strengths.some((x) => /Longbowman/.test(x)) && sum.weaknesses.some((x) => /Hand Cannoneers/.test(x)), 'Britons: Longbows, no Hand Cannons');
+  assert.ok(kits[0].help.includes('Foot Archer') && kits[0].techs.some((t) => /\+1 attack/.test(t.help)), 'game help text');
+}
 console.log('AOSiege checks passed.');

@@ -41,6 +41,35 @@ const loadImg = (src) => new Promise((res) => {
 
 export { loadAssets, openGame, LEVELS };
 
+// Chat: one-tap emotes and phrases, or type a line (everyone sees it, allies and enemies).
+const EMOTES = ['👍', '👎', '😂', '😮', '😡', '🙏', '🔥', '💀'];
+const PHRASES = ['GG', 'Attack!', 'Help!', 'Hold on', 'Nice one', 'Well played', 'Sorry', 'Wow'];
+
+// The civ's bonuses in the game's own words, sorted by whether they matter in Wonder Wars
+// (soldiers, their costs and training count; villagers, ships, monks and buildings don't).
+const MILITARY = /infantry|cavalry|archer|militia|spear|pike|halberd|skirmish|scout|knight|cavalier|paladin|camel|elephant|cannon|gunpowder|siege|trebuchet|mangonel|onager|scorpion|\bram|soldier|units?\b|mounted|swords|champion|hussar|attack|armou?r|\bhp\b|hit points|trains?|created|barracks|archery range|stable|blacksmith|bombard|lancer|steppe/i;
+// Unit costs count (food, wood and gold all go into a building's price); tech and upgrade
+// discounts don't (Wonder Wars prices those the same for every civ), nor terrain, ships or the economy.
+const NOT_HERE = /villager|shepherd|farm|fish|lumber|forag|hunt|miner|mining|town cent|dock|ships?\b|warship|galley|galleon|monk|relic|trade|caravan|market|house|mill|tower|wall|gate|population|herd|feitoria|caravel|explore|line of sight|conver|university|krepost|donjon|fortif|outpost|settlement|start with|\bwork \+|elevation|^buildings\b|\bfree\b|(upgrades?|technolog\w*|techs?) (cost|research)|^(blacksmiths?|universities|archery ranges?|stables?|barracks|siege workshops?)( and [\w ]+)? cost/i;
+const countsHere = (line) => MILITARY.test(line) && !NOT_HERE.test(line);
+function parseCivHelp(html) {
+  const lines = String(html || '').split(/<br\s*\/?>/i).map((l) => l.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+  const out = { tagline: '', bonuses: [], unique: [], uts: [], team: [] };
+  let part = 'bonuses';
+  for (const l of lines) {
+    if (!l) continue;
+    if (/^unique units?:?$/i.test(l)) { part = 'unique'; continue; }
+    if (/^unique techs?:?$/i.test(l)) { part = 'uts'; continue; }
+    if (/^team bonus(es)?:?$/i.test(l)) { part = 'team'; continue; }
+    const text = l.replace(/^[•·-]\s*/, '');
+    if (part === 'bonuses' && !out.tagline && !l.startsWith('•')) { out.tagline = text; continue; }
+    // A bullet the game wrapped onto a second line ("…in Dark/Feudal/" + "Castle/Imperial Age")
+    if (part === 'bonuses' && !l.startsWith('•') && out.bonuses.length) { out.bonuses[out.bonuses.length - 1] += ` ${text}`; continue; }
+    out[part].push(text);
+  }
+  return out;
+}
+
 export async function initSiege(root) {
   const { data, strings } = await loadCore();
   const civs = civOptions(data, strings);
@@ -243,17 +272,25 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     el('button', { type: 'button', className: 'sg-btn', textContent: 'Cancel', onclick: () => setAim(false) }),
     el('small', { className: 'sg-aim-text', textContent: 'Drag to aim' }));
   const dock = el('section', { className: 'sg-dock' });
+  // Your civ's flag: tap for what it's good and bad at
+  const flagBtn = el('button', { type: 'button', className: 'sg-flag-btn', 'aria-label': `Your civ: ${players[ME].civName || ''}` },
+    el('img', { className: 'sg-flag', src: players[ME].civ ? civIconUrl(players[ME].civ) : '', alt: '', style: `--pc:${players[ME].colour}` }));
+  const chatBtn = el('button', { type: 'button', className: 'sg-chat-btn', 'aria-label': 'Chat and emotes' },
+    el('span', { textContent: '💬' }), el('i', { className: 'sg-chat-dot', hidden: true }));
+  const chatFeed = el('div', { className: 'sg-chat-feed', 'aria-live': 'polite' });
+  const tipBox = el('div', { className: 'sg-tip', role: 'tooltip', hidden: true });
 
   const screen = el('div', { className: 'sg-run', role: 'dialog', 'aria-label': 'Wonder Wars game' },
     el('header', { className: 'sg-head' },
       el('div', { className: 'sg-gold' },
-        el('img', { className: 'sg-flag', src: players[ME].civ ? civIconUrl(players[ME].civ) : '', alt: players[ME].civName || '', title: `You: ${players[ME].civName || ''}`, style: `--pc:${players[ME].colour}` }),
+        flagBtn,
         el('img', { className: 'sg-gold-ic', src: 'img/res/gold.webp', alt: 'Gold', width: 28, height: 28 }), goldNum, incomeTxt),
       clock, goBtn, speedBtn, pauseBtn, closeBtn,
       el('div', { className: 'sg-castles' }, castles[0].wrap, castles[1].wrap)),
-    el('div', { className: 'sg-field' }, canvas, followBtn, ageBtn, armoryBtn, blastBtn, aimBar, banner, notices),
+    el('div', { className: 'sg-field' }, canvas, followBtn, ageBtn, armoryBtn, blastBtn, chatBtn, chatFeed, aimBar, banner, notices),
     mini,
-    dock);
+    dock,
+    tipBox);
   document.body.append(screen);
   screen.world = world; // handy when debugging in the browser console
   document.body.classList.add('sg-open');
@@ -310,12 +347,24 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   screen.view = view;
   view.resize();
   followBtn.addEventListener('click', () => view.jumpToFight());
+  flagBtn.addEventListener('click', () => setMode(pmode.kind === 'civ' ? { kind: 'hint' } : { kind: 'civ', who: ME }));
+  chatBtn.addEventListener('click', () => setMode(pmode.kind === 'chat' ? { kind: 'hint' } : { kind: 'chat' }));
+  tip(flagBtn, `You: ${players[ME].civName || ''}`, 'Tap to see what your civ is good and bad at in Wonder Wars, and the other players\' civs.');
+  tip(chatBtn, 'Chat', 'Emotes and messages. Everyone in the game sees them, allies and enemies.');
+  tip(ageBtn, 'Ages', 'Advance to the next age for gold. Each age unlocks units, upgrades and Armory techs; everyone is told when you advance.');
+  tip(armoryBtn, 'Armory', 'Blacksmith and unit techs. Each one reaches every unit it applies to, including those already fighting. One at a time.');
+  tip(blastBtn, 'Explosion', `Once per game. Drag the circle onto enemies inside your own third of the field (up to the dashed line), then Drop. It hits enemies only.`);
+  tip(followBtn, 'To the fight', 'Moves the view to where the fighting is. The view never moves on its own.');
+  tip(goBtn, 'GO', 'Sends out every unit your buildings are holding, all at once.');
   armoryBtn.addEventListener('click', () => setMode(pmode.kind === 'armory' ? { kind: 'hint' } : { kind: 'armory' }));
   ageBtn.addEventListener('click', () => setMode(pmode.kind === 'age' ? { kind: 'hint' } : { kind: 'age' }));
   goBtn.addEventListener('click', () => { act('go'); navigator.vibrate?.(30); refresh(true); });
 
   function setMode(m) {
     pmode = m;
+    chatBtn.classList.toggle('on', m.kind === 'chat');
+    flagBtn.classList.toggle('on', m.kind === 'civ');
+    if (m.kind === 'chat') chatBtn.querySelector('.sg-chat-dot').hidden = true;
     view.selected = m.kind === 'building' ? m.id : null;
     view.selectedPlot = m.kind === 'build' ? m.plot : null;
     armoryBtn.classList.toggle('on', m.kind === 'armory');
@@ -323,6 +372,61 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     lastKey = '';
     refresh(true);
   }
+
+  // ---------- Press and hold any button: a little pop-up saying what it does ----------
+  function tip(node, title, ...lines) {
+    node.setAttribute('data-tip', lines.filter(Boolean).join('\n'));
+    node.setAttribute('data-tip-title', title);
+    return node;
+  }
+  let tipTimer = 0;
+  let tipHide = 0;
+  let tipDown = null;
+  let swallowClick = false;
+  // Found by position, so disabled (unaffordable or locked) buttons explain themselves too.
+  const tipAt = (x, y) => [...screen.querySelectorAll('[data-tip]')].reverse().find((n) => {
+    if (!n.getClientRects().length) return false;
+    const r = n.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  });
+  function showTip(n) {
+    tipBox.replaceChildren(el('b', { textContent: n.dataset.tipTitle || '' }), ...n.dataset.tip.split('\n').map((l) => el('p', { textContent: l })));
+    tipBox.hidden = false;
+    const r = n.getBoundingClientRect();
+    const w = tipBox.offsetWidth;
+    const h = tipBox.offsetHeight;
+    tipBox.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
+    tipBox.style.top = `${r.top - h - 8 >= 8 ? r.top - h - 8 : Math.min(innerHeight - h - 8, r.bottom + 8)}px`;
+    navigator.vibrate?.(12);
+  }
+  const hideTip = () => { clearTimeout(tipHide); tipBox.hidden = true; };
+  screen.addEventListener('pointerdown', (e) => {
+    swallowClick = false;
+    hideTip();
+    const n = tipAt(e.clientX, e.clientY);
+    if (!n) return;
+    tipDown = { x: e.clientX, y: e.clientY };
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(() => { showTip(n); swallowClick = true; }, 450);
+  }, true);
+  screen.addEventListener('pointermove', (e) => {
+    if (tipDown && Math.hypot(e.clientX - tipDown.x, e.clientY - tipDown.y) > 12) { clearTimeout(tipTimer); tipDown = null; }
+  }, true);
+  const endPress = () => {
+    clearTimeout(tipTimer);
+    tipDown = null;
+    if (!tipBox.hidden) { clearTimeout(tipHide); tipHide = setTimeout(hideTip, 4000); }
+  };
+  screen.addEventListener('pointerup', endPress, true);
+  screen.addEventListener('pointercancel', endPress, true);
+  // The press that showed a pop-up doesn't also buy the thing
+  screen.addEventListener('click', (e) => { if (swallowClick) { swallowClick = false; e.preventDefault(); e.stopPropagation(); } }, true);
+  screen.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-tip]') || !tipBox.hidden) e.preventDefault(); }, true);
+  const statLine = (f) => {
+    const r = (x) => Math.round(x * 10) / 10;
+    const atk = f.projectile ? f.attacks.get(3) : f.attacks.get(4);
+    return `${Math.floor(f.hp)} HP · ${r(atk ?? 0)} attack · ${r(f.armours.get(4) ?? 0)}/${r(f.armours.get(3) ?? 0)} armour${f.range > 1 ? ` · range ${r(f.range)}` : ''}`;
+  };
 
   // Buttons that cost gold: enabled/disabled in place as gold changes, without rebuilding the dock.
   const priced = (btn, price, blocked) => { btn.dataset.price = String(price); btn.dataset.blocked = blocked ? '1' : ''; btn.disabled = blocked || world.sides[ME].gold < price; return btn; };
@@ -340,7 +444,8 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         el('li', {}, el('b', { textContent: 'Tap an empty plot' }), ' to build.'),
         el('li', {}, el('b', { textContent: 'Tap a building' }), ' to hold its next unit (blue bar); ', el('b', { textContent: 'GO' }), ' sends all held units together.'),
         el('li', {}, el('b', { textContent: 'Press and hold a building' }), ' to upgrade or sell it.'),
-        el('li', {}, 'The ', el('b', { textContent: 'anvil' }), ' opens the Armory for upgrades that reach your whole army.')),
+        el('li', {}, 'The ', el('b', { textContent: 'anvil' }), ' opens the Armory for upgrades that reach your whole army.'),
+        el('li', {}, el('b', { textContent: 'Press and hold any button' }), ' to see what it does. Your ', el('b', { textContent: 'flag' }), ' shows your civ\'s strengths.')),
       held ? el('p', { className: 'sg-note', textContent: `${held} building${held > 1 ? 's' : ''} on hold.` }) : null,
     ];
   }
@@ -369,6 +474,12 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
           kit.linePrice(line, s.age), () => { if (world.canBuy(ME, 'build', line.key, plot) && act('build', { key: line.key, plot })) setMode({ kind: 'hint' }); },
           p === null, needs);
         if (locked) btn.classList.add('locked');
+        const t0 = line.tiers[0];
+        tip(btn, `${t0.name} (${BUILDING_NAMES[line.building] || 'building'})`, t0.help,
+          statLine(kit.fighter(line.key, 0, s.researched, s.researchKey, s.age)),
+          `Trains 1 every ${Math.round(t0.every / GAME_SPEED)}s and sends it down your lane.`,
+          line.tiers.length > 1 ? `Upgrades here: ${line.tiers.map((t) => t.name).join(' → ')}` : 'No upgrades for this one.',
+          locked ? `Needs the ${AGES[line.age].name}.` : needs ? `${needs}.` : '');
         return btn;
       })));
     }
@@ -377,6 +488,8 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     const mkt = option('Market', `+${MARKET.income} gold every 4s · ${s.markets}/${MARKET.max} built`, bldIcon(84), MARKET.cost,
       () => { if (world.canBuy(ME, 'market', null, plot) && act('market', { plot })) setMode({ kind: 'hint' }); }, mp === null, s.age < MARKET.age ? AGES[MARKET.age].name : null);
     if (s.age < MARKET.age) mkt.classList.add('locked');
+    tip(mkt, 'Market', `Earns you ${MARKET.income} more gold every 4 seconds, on top of your income. Up to ${MARKET.max}.`,
+      'Selling it later gives back part of the price.', s.age < MARKET.age ? `Needs the ${AGES[MARKET.age].name}.` : '');
     out.push(el('div', { className: 'sg-opts' }, mkt));
     return out;
   }
@@ -388,6 +501,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     const sellBtn = el('button', { type: 'button', className: 'sg-sell', onclick: () => { act('sell', { id: b.id }); setMode({ kind: 'hint' }); } },
       'Sell for ', goldImg(), String(world.sellValue(b.id)));
     if (b.line === 'market') {
+      tip(sellBtn, 'Sell', `Gives back ${world.sellValue(b.id)} gold and frees the plot.`);
       return [closeRow('Market'), el('p', { className: 'sg-note', textContent: `Adds ${MARKET.income} gold every 4 seconds.` }), sellBtn];
     }
     const line = world.line(ME, b.line);
@@ -399,16 +513,26 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     const steps = el('div', { className: 'sg-steps' }, line.tiers.map((t, i) => el('span', { className: `sg-step${i === b.tier ? ' now' : i < b.tier ? ' done' : ''}` },
       el('img', { src: unitIcon(t.unitId, t.picture), alt: '' }), el('small', { textContent: t.name }))));
     const upPrice = world.price(ME, 'upgrade', b.id);
+    let upBtn = null;
+    if (next) {
+      upBtn = priced(el('button', { type: 'button', className: `sg-buy${next.age > s.age ? ' locked' : ''}`, onclick: () => { act('upgrade', { id: b.id }); refresh(true); } },
+        el('span', { className: 'sg-buy-label', textContent: next.age > s.age ? `${next.name}: needs the ${AGES[next.age].name}` : `Upgrade to ${next.name}` }), priceTag(next.upgrade)), next.upgrade, upPrice === null);
+      const f2 = kit.fighter(b.line, b.tier + 1, s.researched, s.researchKey, Math.max(s.age, next.age));
+      tip(upBtn, `Upgrade to ${next.name}`, `Now: ${statLine(f)}`, `After: ${statLine(f2)}`,
+        `This building trains ${next.name}s from then on (1 every ${Math.round(next.every / GAME_SPEED)}s). Units already on the field keep their old stats.`,
+        next.age > s.age ? `Needs the ${AGES[next.age].name}.` : '');
+    }
+    const holdBtn = el('button', { type: 'button', className: `sg-hold${b.hold ? ' on' : ''}`, onclick: () => { act('hold', { id: b.id }); refresh(true); },
+      textContent: b.hold ? (b.waiting ? 'Release now' : 'Stop holding') : 'Hold next unit' });
+    tip(holdBtn, 'Hold', 'Keeps this building\'s next unit inside once it\'s ready, so you can send several together with GO. Tapping the building on the field does the same.');
+    tip(sellBtn, 'Sell', `Gives back ${world.sellValue(b.id)} gold (part of what you spent on it) and frees the plot. Units already out keep fighting.`);
     return [
       closeRow(`${BUILDING_NAMES[line.building]}: ${cur.name}`),
       steps,
       el('p', { className: 'sg-note', textContent: `${Math.floor(f.hp)} HP · ${stat(atk ?? 0)} attack · ${stat(f.armours.get(4) ?? 0)}/${stat(f.armours.get(3) ?? 0)} armour · 1 every ${Math.round(b.every / GAME_SPEED)}s` }),
       el('div', { className: 'sg-acts' },
-        next ? priced(el('button', { type: 'button', className: `sg-buy${next.age > s.age ? ' locked' : ''}`, onclick: () => { act('upgrade', { id: b.id }); refresh(true); } },
-          el('span', { className: 'sg-buy-label', textContent: next.age > s.age ? `${next.name}: needs the ${AGES[next.age].name}` : `Upgrade to ${next.name}` }), priceTag(next.upgrade)), next.upgrade, upPrice === null)
-          : el('p', { className: 'sg-note', textContent: 'Fully upgraded.' }),
-        el('button', { type: 'button', className: `sg-hold${b.hold ? ' on' : ''}`, onclick: () => { act('hold', { id: b.id }); refresh(true); },
-          textContent: b.hold ? (b.waiting ? 'Release now' : 'Stop holding') : 'Hold next unit' }),
+        upBtn || el('p', { className: 'sg-note', textContent: 'Fully upgraded.' }),
+        holdBtn,
         sellBtn),
     ];
   }
@@ -461,6 +585,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         el('span', { className: 'sg-opt-text' }, el('b', { textContent: a.name }),
           el('small', { textContent: done ? (age === s.age ? 'Your age now' : 'Done') : going ? 'Advancing…' : `${Math.round(a.time / GAME_SPEED)}s · ${unlocks(age)}` })),
         done ? el('span', { className: 'sg-tick', textContent: '✓' }) : a.cost ? priceTag(a.cost) : null);
+      tip(card, a.name, unlocks(age) || 'Where everyone starts.', age > 1 ? `Takes ${Math.round(a.time / GAME_SPEED)}s; you can keep building meanwhile. Everyone is told when you get there.` : '');
       out.push(done || !next ? Object.assign(card, { disabled: !going && !done }) : priced(card, a.cost, p === null));
     }
     out.push(el('p', { className: 'sg-note', textContent: 'Everyone sees when a player advances. Ages are separate from the Armory, so you can do both at once.' }));
@@ -492,14 +617,71 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         const blocked = (t.after && !s.researched.has(t.after)) || ageLock;
         const now = s.research?.id === t.id;
         const note = done ? 'Researched' : now ? 'Researching…' : ageLock ? AGES[t.age].name : blocked ? `After ${kit.techs.find((x) => x.id === t.after)?.name}` : `${Math.round(t.time / GAME_SPEED)}s to research`;
-        return priced(el('button', { type: 'button', className: `sg-opt${done ? ' done' : ''}${now ? ' researching' : ''}${ageLock ? ' locked' : ''}`,
+        return priced(tip(el('button', { type: 'button', className: `sg-opt${done ? ' done' : ''}${now ? ' researching' : ''}${ageLock ? ' locked' : ''}`,
           onclick: () => { act('research', { id: t.id }); refresh(true); } },
           now ? el('i', { className: 'sg-opt-fill', style: `width:${Math.round((researchState()?.frac || 0) * 100)}%` }) : null,
           el('img', { className: 'sg-opt-ic', src: t.picture !== undefined ? imageUrl('Tech', t.picture) : '', alt: '' }),
           el('span', { className: 'sg-opt-text' }, el('b', { textContent: t.name }), el('small', { textContent: note })),
-          done ? el('span', { className: 'sg-tick', textContent: '✓' }) : priceTag(t.cost)), t.cost, done || p === null);
+          done ? el('span', { className: 'sg-tick', textContent: '✓' }) : priceTag(t.cost)), t.name, t.help,
+          'Reaches every unit of yours it applies to, including those already fighting.',
+          `${Math.round(t.time / GAME_SPEED)}s to research; one Armory tech at a time.`, ageLock ? `Needs the ${AGES[t.age].name}.` : ''), t.cost, done || p === null);
       })));
     }
+    return out;
+  }
+
+  // ---------- Chat ----------
+  const say = (text) => { const t = String(text || '').trim(); if (t) act('chat', { text: t }); };
+  const chatInput = el('input', { type: 'text', className: 'sg-chat-input', maxLength: 80, placeholder: 'Message everyone', enterKeyHint: 'send', autocomplete: 'off' });
+  const chatForm = el('form', { className: 'sg-chat-form', onsubmit: (e) => { e.preventDefault(); say(chatInput.value); chatInput.value = ''; } },
+    chatInput, el('button', { type: 'submit', className: 'sg-btn', textContent: 'Send' }));
+  const chatLog = el('div', { className: 'sg-chat-log' }, el('p', { className: 'sg-note', textContent: 'Nothing said yet.' }));
+  const chatEmotes = el('div', { className: 'sg-emotes' }, [...EMOTES, ...PHRASES].map((t) => el('button', { type: 'button', className: `sg-emote${EMOTES.includes(t) ? ' big' : ''}`, textContent: t, onclick: () => say(t) })));
+  let chatN = 0;
+  const who = (p) => (p === ME ? 'You' : players[p]?.name || 'Player');
+  function showChat(e) {
+    const colour = players[e.owner]?.colour || '#ffe9a8';
+    const big = EMOTES.includes(e.text);
+    // In the panel's log
+    if (chatLog.querySelector('.sg-note')) chatLog.replaceChildren();
+    chatLog.append(el('p', {}, el('b', { style: `color:${colour}`, textContent: who(e.owner) }), ' ', e.text));
+    while (chatLog.children.length > 40) chatLog.firstChild.remove();
+    chatLog.scrollTop = chatLog.scrollHeight;
+    // And over the field for a few seconds
+    const bubble = el('div', { className: `sg-bubble${big ? ' big' : ''}`, style: `--pc:${colour}` }, el('b', { textContent: who(e.owner) }), el('span', { textContent: e.text }));
+    chatFeed.append(bubble);
+    while (chatFeed.children.length > 4) chatFeed.firstChild.remove();
+    setTimeout(() => bubble.remove(), 6500);
+    if (e.owner !== ME && pmode.kind !== 'chat') chatBtn.querySelector('.sg-chat-dot').hidden = false;
+  }
+  function chatView() {
+    return [closeRow('Chat: everyone sees it'), chatEmotes, chatForm, chatLog];
+  }
+
+  // ---------- Civs: strengths and weaknesses in Wonder Wars ----------
+  const summaries = new Map();
+  function civView(p) {
+    const pl = players[p];
+    const k = kits[p];
+    if (!summaries.has(p)) summaries.set(p, { sum: k.summary(), help: parseCivHelp(k.help) });
+    const { sum, help } = summaries.get(p);
+    const list = (title, items, cls = '') => (items.length ? [el('h4', { className: 'sg-group', textContent: title }),
+      el('ul', { className: `sg-civ-list ${cls}` }, items.map((i) => (typeof i === 'string' ? el('li', { textContent: i }) : i)))] : []);
+    const tagged = (line, here) => el('li', { className: here ? '' : 'off' }, line, el('small', { className: 'sg-tag', textContent: here ? 'counts here' : 'not in Wonder Wars' }));
+    const utsHere = new Set(k.techs.filter((t) => t.group === 'Unique techs').map((t) => t.name.toLowerCase()));
+    const out = [
+      closeRow(p === ME ? `Your civ: ${pl.civName}` : pl.name && pl.name !== pl.civName ? `${pl.name}: ${pl.civName}` : pl.civName),
+      players.length > 1 ? el('div', { className: 'sg-civ-chips' }, players.map((q, i) => el('button', {
+        type: 'button', className: `sg-civ-chip${i === p ? ' on' : ''}`, style: `--pc:${q.colour}`, onclick: () => setMode({ kind: 'civ', who: i }),
+      }, el('img', { src: q.civ ? civIconUrl(q.civ) : '', alt: '' }), el('span', { textContent: i === ME ? 'You' : q.name })))) : null,
+      help.tagline ? el('p', { className: 'sg-civ-tag', textContent: help.tagline }) : null,
+      ...list('Strong at', sum.strengths, 'good'),
+      ...list('Weak at', sum.weaknesses, 'bad'),
+      ...list('Civ bonuses', help.bonuses.map((b) => tagged(b, countsHere(b)))),
+      ...list('Unique techs', help.uts.map((u) => tagged(u, [...utsHere].some((n) => u.toLowerCase().startsWith(n))))),
+      ...list('Team bonus', help.team.map((b) => tagged(b, countsHere(b)))),
+      el('p', { className: 'sg-note', textContent: 'Bonus text is the game\'s own. "Counts here" is sorted by what each bonus mentions, so treat it as a guide.' }),
+    ];
     return out;
   }
 
@@ -525,8 +707,10 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     ageBtn.style.setProperty('--p', s.aging ? String(agingState()?.frac ?? 0) : '0');
     // Rebuild the dock only when something it shows has changed.
     const b = pmode.kind === 'building' ? world.building(pmode.id) : null;
-    const key = [pmode.kind, pmode.plot, pmode.id, s.plots.join(), s.markets, s.researched.size, s.research?.id, s.age, s.aging?.to,
-      b ? `${b.tier}${b.hold}${b.waiting}` : '', held.length, world.winner].join('|');
+    // Chat and civ panels don't depend on the game's state: left alone so typing isn't interrupted.
+    const key = pmode.kind === 'chat' || pmode.kind === 'civ' ? [pmode.kind, pmode.who, s.research?.id, s.aging?.to].join('|')
+      : [pmode.kind, pmode.plot, pmode.id, s.plots.join(), s.markets, s.researched.size, s.research?.id, s.age, s.aging?.to,
+        b ? `${b.tier}${b.hold}${b.waiting}` : '', held.length, world.winner].join('|');
     if (!force && key === lastKey) {
       // Same content: just keep prices and the research bar current.
       for (const btn of dock.querySelectorAll('[data-price]')) btn.disabled = btn.dataset.blocked === '1' || s.gold < Number(btn.dataset.price);
@@ -547,7 +731,8 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       return;
     }
     lastKey = key;
-    const content = pmode.kind === 'build' ? buildView(pmode.plot) : pmode.kind === 'building' ? buildingView(pmode.id) : pmode.kind === 'armory' ? armoryView() : pmode.kind === 'age' ? ageView() : hintView();
+    const views = { build: () => buildView(pmode.plot), building: () => buildingView(pmode.id), armory: armoryView, age: ageView, chat: chatView, civ: () => civView(pmode.who), hint: hintView };
+    const content = (views[pmode.kind] || hintView)();
     const scroll = dock.scrollTop;
     dock.replaceChildren(...[agingBar(), researchBar(), ...content].flat().filter(Boolean));
     dock.scrollTop = scroll;
@@ -647,6 +832,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       const ot = world.overtime();
       // "Rob advanced to the Castle Age", for everyone, as in the game
       for (const e of world.events) {
+        if (e.type === 'chat' && e.n > chatN) { chatN = e.n; showChat(e); continue; }
         if (e.type !== 'aged') continue;
         const k = `${e.owner}-${e.age}`;
         if (seenAges.has(k)) continue;

@@ -101,6 +101,7 @@ export class World {
     this.alive = [0, 0];       // living units per team
     this.territory = [false, false];   // team holding the enemy's third of the map this tick
     this.effects = [];         // explosions, for drawing: { t, x, y, side }
+    this.chatSeq = 0;          // chat and emotes go out as events: { type: 'chat', owner, text, n }
     this.bins = [];            // living units by lane position, rebuilt each step
     this.teams = [0, 1].map((t) => ({ players: teams.map((x, i) => (x === t ? i : -1)).filter((i) => i >= 0), castle: null }));
     this.sides = kits.map((_, s) => ({
@@ -265,6 +266,19 @@ export class World {
    * The explosion (once per player, like Castle Fight's comeback ability): hurts
    * every enemy soldier within BLAST.radius of (x, y) for 60% of its full HP + 25.
    */
+  /**
+   * A chat line or emote from player p, seen by everyone (allies and enemies).
+   * Spam guard by the clock, not game time, so chat still works while paused.
+   */
+  chat(p, text, now = Date.now()) {
+    const s = this.sides[p];
+    const clean = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!clean || !s || (s.chatAt !== undefined && now - s.chatAt < 500)) return false;
+    s.chatAt = now;
+    this.events.push({ t: this.t, type: 'chat', owner: p, text: clean, n: ++this.chatSeq });
+    return true;
+  }
+
   /** Where team `team` may drop its explosion: its own third of the map (to defend, not to push). */
   blastZone(team) {
     const edge = LANE.length * TERRITORY.share;
@@ -481,7 +495,7 @@ export class World {
       if (target.line === 'market') o.markets -= 1;
       const bounty = 50;
       s.gold += bounty; s.stats.earned += bounty;
-      this.events.push({ t: this.t, type: 'razed', side, owner: by?.owner, key: target.line, x: target.x, y: target.y, bounty });
+      this.events.push({ t: this.t, type: 'razed', side, owner: by?.owner, lost: target.owner, key: target.line, x: target.x, y: target.y, bounty });
     } else {
       s.stats.kills += 1;
       o.stats.lost += 1;
@@ -864,12 +878,38 @@ const BEATS = {
 // How good a kind of unit is on its own, before counters (spearmen and skirmishers are cheap specialists).
 const BASE = { cavalry: 1.1, infantry: 1.1, archer: 1, spear: 0.8, skirm: 0.7, siege: 0.8, ram: 0.6 };
 
+// What the computer says now and then (rarely, so it doesn't spam the chat).
+const BANTER = {
+  razedYou: ['😏', 'Oops, was that yours?', '🔥'],
+  lostOne: ['😠', 'Hey!', '😤'],
+  aged: ['⏫', 'Upgrades incoming', '💪'],
+  losing: ['😰', 'Help!', '🙏'],
+};
+
 export class Computer {
   constructor(world, side, { level = 'normal' } = {}) {
     this.w = world;
     this.side = side;
     this.level = level;
     this.next = 1;
+  }
+
+  banter(s, team) {
+    const w = this.w;
+    if (w.t - (this.saidAt ?? -60) < 40) return;
+    const say = (kind) => {
+      const lines = BANTER[kind];
+      if (w.rand() < 0.35 && w.chat(this.side, lines[Math.floor(w.rand() * lines.length)])) this.saidAt = w.t;
+      else this.saidAt = w.t - 30;   // don't keep re-rolling every think
+    };
+    for (let i = w.events.length - 1; i >= 0 && w.events[i].t > w.t - 3; i--) {
+      const e = w.events[i];
+      if (e.type === 'razed' && e.owner === this.side) return say('razedYou');
+      if (e.type === 'razed' && e.lost === this.side) return say('lostOne');
+      if (e.type === 'aged' && e.owner === this.side) return say('aged');
+    }
+    const c = w.teams[team].castle;
+    if (c.hp < c.maxHp * 0.3 && !this.panicked) { this.panicked = true; say('losing'); }
   }
 
   think() {
@@ -887,6 +927,7 @@ export class Computer {
       const need = this.level === 'easy' ? 22 : this.level === 'hard' ? 11 : 15;
       if (spot && (spot[2] >= need || (nearCastle >= 10 && spot[2] >= 6))) { w.blast(side, spot[0], spot[1]); return; }
     }
+    this.banter(s, team);
     const foe = w.mix(1 - team);
     const foeTotal = 1 + Object.values(foe).reduce((a, b) => a + b, 0);
     const kit = w.kits[side];

@@ -60,7 +60,46 @@ const TECH_TIME = 0.3;       // and this share of the real research time
 const upgradePrice = (c) => round5(30 + UPGRADE_SHARE * Math.min(c, 600) + 0.1 * Math.max(0, c - 600));
 const total = (cost) => Object.values(cost || {}).reduce((a, b) => a + b, 0);
 const round5 = (n) => Math.round(n / 5) * 5;
+/** The game's help text, without the "Create <b>X</b> (cost)" opening and the list of upgrades. */
+const helpText = (s) => clean(String(s || '').replace(/^.*?\(‹cost›\)\s*(<br>)?/s, '').replace(/<i>.*?<\/i>/gs, '').replace(/‹[^›]*›/g, ''));
 const clean = (s) => String(s || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+// The usual top of each common unit line, and lines most civs have, to say what a civ lacks.
+const TOPS = { 74: 567, 93: 359, 4: 492, 7: 6, 448: 441, 38: 569, 329: 330, 39: 474, 1258: 548, 280: 588, 279: 542, 751: 752, 1132: 1134 };
+const COMMON_LINES = { 38: 'Knights', 39: 'Cavalry Archers', 5: 'Hand Cannoneers', 36: 'Bombard Cannons', 280: 'Mangonels', 279: 'Scorpions', 448: 'Scout Cavalry', 4: 'Archers', 93: 'Spearmen', 74: 'Militia' };
+const KEY_TECHS = { 75: 'Blast Furnace', 77: 'Plate Mail Armor', 82: 'Plate Barding Armor', 201: 'Bracer', 219: 'Ring Archer Armor', 435: 'Bloodlines', 437: 'Thumb Ring', 47: 'Chemistry', 93: 'Ballistics', 39: 'Husbandry', 215: 'Squires' };
+
+function civSummary({ lines, techs, U, techOk, civStats, linePrice, name }) {
+  const strengths = [];
+  const weaknesses = [];
+  const rootOf = (l) => Number(l.key.split('-')[1]);
+  const uniques = lines.filter((l) => l.unique && l.tiers[0].unitId !== TREB.id);
+  if (uniques.length) strengths.push(`Unique: ${uniques.map((l) => l.tiers.at(-1).name).join(', ')}`);
+  const full = [];
+  for (const l of lines) {
+    const top = TOPS[rootOf(l)];
+    if (!top) continue;
+    if (l.tiers.some((t) => t.unitId === top)) full.push(l.tiers.at(-1).name);
+    else weaknesses.push(`No ${name(top)} (${l.tiers[0].name} line stops at ${l.tiers.at(-1).name})`);
+  }
+  if (full.length) strengths.push(`Fully upgraded: ${full.join(', ')}`);
+  const roots = new Set(lines.map(rootOf));
+  for (const [id, label] of Object.entries(COMMON_LINES)) if (!roots.has(Number(id))) weaknesses.push(`No ${label}`);
+  const missing = Object.entries(KEY_TECHS).filter(([id]) => !techOk.has(Number(id))).map(([, n]) => n);
+  if (missing.length) weaknesses.push(`Missing ${missing.join(', ')}`);
+  // Cheaper or quicker than everyone else's version, by the Imperial Age
+  const unitPriceOf = (id) => unitPrice((U[id].Cost.Food || 0) + (U[id].Cost.Wood || 0) + 2 * ((U[id].Cost.Gold || 0) + (U[id].Cost.Stone || 0)));
+  for (const l of lines) {
+    const base = round5(unitPriceOf(l.tiers[0].unitId) * l.markup);
+    const now = linePrice(l, 4);
+    if (now < base - 2) strengths.push(`${l.tiers[0].name} buildings ${Math.round((1 - now / base) * 100)}% cheaper (${now} vs ${base} gold)`);
+    const t = l.tiers.at(-1);
+    const real = U[t.unitId].TrainTime;
+    const mine = civStats(t.unitId, 4).trainTime;
+    if (real && mine < real - 0.5) strengths.push(`${t.name} train ${Math.round((1 - mine / real) * 100)}% faster`);
+  }
+  return { strengths, weaknesses, uniqueTechs: techs.filter((t) => t.group === 'Unique techs').map((t) => t.name) };
+}
 
 /**
  * data: aoe2techtree data.json; strings: names; tree: the civ's tech tree; civ: civ key.
@@ -110,6 +149,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
           picture: n.picture_index,
           age: n.age_id || 1,
           realUpgrade: i ? total(up?.Cost || { Gold: 500 }) : 0,
+          help: helpText(strings[(U[FIGHTS_AS[n.node_id] ?? n.node_id]?.LanguageNameId ?? -1e9) + 21000]),
         };
       });
       lines.push({
@@ -136,7 +176,8 @@ export function buildKit({ data, strings = {}, tree, civ }) {
   const techRec = (id, group, label, extra = {}) => {
     const n = techNode.get(id);
     const age = n?.age_id || PLAYER_TECHS[id]?.age || (CIV_EFFECTS[civ]?.uts || []).find((u) => u.id === id)?.age || 2;
-    return { id, group, name: n ? clean(strings[n.name_string_id] || n.name) : label, picture: n?.picture_index, age, ...techCost(id), ...extra };
+    return { id, group, name: n ? clean(strings[n.name_string_id] || n.name) : label, picture: n?.picture_index, age,
+      help: helpText(strings[(data.data.Tech[id]?.LanguageNameId ?? -1e9) + 21000]), ...techCost(id), ...extra };
   };
   const techs = [];
   // Blacksmith: each line in order (Forging before Iron Casting)
@@ -187,6 +228,13 @@ export function buildKit({ data, strings = {}, tree, civ }) {
     buildingPicture: (id) => buildingPicture.get(id),
     /** Icon of an age's tech (Feudal, Castle, Imperial). */
     agePicture: (age) => techNode.get(AGES[age]?.tech)?.picture_index,
+    /** The civ's description from the game (bullets of bonuses, unique units and techs). */
+    help: strings[data.civs[civ]?.help_string_id] || '',
+    /** What this civ has and lacks, for Wonder Wars: see civSummary(). */
+    summary: () => civSummary({ lines, techs, U, techOk, civStats, linePrice, name: (id) => {
+      const n = nodes.find((x) => x.node_id === id);
+      return n ? clean(strings[n.name_string_id] || n.name) : clean(strings[U[id]?.LanguageNameId] || strings[U[id]?.LanguageNameId + 9000] || `Unit ${id}`);
+    } }),
     line: (key) => lines.find((l) => l.key === key),
     /** Fighter stats for a line at a tier with the researched techs (a Set of tech ids). */
     linePrice,

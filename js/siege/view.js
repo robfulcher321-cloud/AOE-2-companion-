@@ -3,7 +3,7 @@
 // with their in-game animations, and a minimap. Also turns touches into
 // actions: drag to look around, tap a plot or building, press and hold a building.
 
-import { LANE, CASTLE_X, RIVER, BLAST } from './world.js';
+import { LANE, CASTLE_X, RIVER, BLAST, TERRITORY } from './world.js';
 import { TEAM_RGB } from '../duel/spritepack.js';
 
 const TILE = 96 / Math.SQRT2;   // screen px per tile at zoom 1 (same as the Test arena)
@@ -278,6 +278,7 @@ export class SiegeView {
     ctx.setLineDash([6, 8]);
     ctx.beginPath(); ctx.moveTo(mx, top); ctx.lineTo(mx, bottom); ctx.stroke();
     ctx.setLineDash([]);
+    this.drawThirds(top, bottom);
     this.drawRiver(t);
     this.drawScorch(t);
 
@@ -317,6 +318,37 @@ export class SiegeView {
     this.drawBlasts(t);
     this.drawFloaters(t, zoom);
     this.drawMini();
+  }
+
+  /** A team's colour: its first player's. */
+  teamColour(team) {
+    const p = this.w.sides.findIndex((s) => s.team === team);
+    return this.colours[p] || SIDE[team];
+  }
+
+  /**
+   * Where each team's third ends (the explosion zone; holding the enemy's earns
+   * the territory bonus): a faint dashed line in the team's colour, a small label at the top.
+   */
+  drawThirds(top, bottom) {
+    const { ctx } = this;
+    const edge = LANE.length * TERRITORY.share;
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 10]);
+    ctx.font = '600 11px sans-serif';
+    ctx.textAlign = 'center';
+    for (const team of [0, 1]) {
+      const [x] = this.toScreen(team === 0 ? edge : LANE.length - edge, 0);
+      if (x < -40 || x > this.vw + 40) continue;
+      ctx.globalAlpha = 0.32;
+      ctx.strokeStyle = this.teamColour(team);
+      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#fff4d6';
+      ctx.fillText(team === this.myTeam ? 'Your third' : 'Enemy third', x + (team === 0 ? -1 : 1) * 38, Math.max(14, top - 4));
+    }
+    ctx.restore();
   }
 
   // The river splitting the middle of the map into two lanes
@@ -417,12 +449,12 @@ export class SiegeView {
     const add = (x, y, names) => {
       if (!names.length) return;
       const n = names[Math.floor(rnd() * names.length)];
-      out.push({ x, y, name: n, frame: Math.floor(rnd() * all[n].frames.length) });
+      out.push({ x, y, name: n, big: names === big, frame: Math.floor(rnd() * all[n].frames.length) });
     };
     for (const side of [-1, 1]) {
       // reeds and bushes right at the water's edge, a few trees just behind
       for (let x = RIVER.x0 + 0.5; x < RIVER.x1 - 0.5; x += 1.1 + rnd() * 1.6) add(x, side * (RIVER.half + 0.35 + rnd() * 0.35), near);
-      for (let x = RIVER.x0 + 1.5; x < RIVER.x1 - 1.5; x += 3.5 + rnd() * 3) add(x, side * (RIVER.half + 1.1 + rnd() * 0.4), big);
+      for (let x = RIVER.x0 + 1.5; x < RIVER.x1 - 1.5; x += 5 + rnd() * 4) add(x, side * (RIVER.half + 0.9 + rnd() * 0.3), big);
     }
     // small groves at both ends of the river
     for (const ex of [RIVER.x0 - 0.6, RIVER.x1 + 0.6]) for (let i = 0; i < 3; i++) add(ex + (rnd() - 0.5) * 0.8, (rnd() - 0.5) * 1.6, i ? near : big);
@@ -436,7 +468,9 @@ export class SiegeView {
     const [sx, sy] = this.toScreen(tr.x, tr.y);
     if (sx < -120 || sx > this.vw + 120) return;
     const [fx, fy, fw, fh, ax, ay] = sp.frames[tr.frame];
-    this.ctx.drawImage(sp.atlas, fx, fy, fw, fh, sx - ax * zoom, sy - ay * zoom, fw * zoom, fh * zoom);
+    // Smaller than in the game, so they decorate the banks without hiding the fighting
+    const z = zoom * (tr.big ? 0.36 : 0.5);
+    this.ctx.drawImage(sp.atlas, fx, fy, fw, fh, sx - ax * z, sy - ay * z, fw * z, fh * z);
   }
 
   ellipse(x, y, r, fill) {
@@ -877,6 +911,14 @@ export class SiegeView {
     c.fillRect(0, 0, mw, mh);
     c.fillStyle = '#3d7590';
     c.fillRect(sx(RIVER.x0), sy(-RIVER.half), sx(RIVER.x1) - sx(RIVER.x0), sy(RIVER.half) - sy(-RIVER.half));
+    // Where each team's third ends
+    const edge = LANE.length * TERRITORY.share;
+    c.globalAlpha = 0.75;
+    for (const team of [0, 1]) {
+      c.fillStyle = this.teamColour(team);
+      c.fillRect(Math.round(sx(team === 0 ? edge : LANE.length - edge)) - 0.5, 0, 1, mh);
+    }
+    c.globalAlpha = 1;
     for (const b of this.w.structures) {
       if (b.hp <= 0) continue;
       const s = b.kind === 'castle' ? 9 : 5;
