@@ -1,0 +1,35 @@
+name: Publish web version
+
+# The same app as the APK, published to the gh-pages branch for GitHub Pages so iPhones
+# (and any browser) can use it: open the link in Safari, then Share > Add to Home Screen.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+      - name: Prepare web app
+        run: npm run build:web
+      - name: Push to the gh-pages branch
+        run: |
+          cp -r www /tmp/site && touch /tmp/site/.nojekyll
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git checkout --orphan gh-pages
+          git rm -rfq . && git clean -fdxq
+          cp -r /tmp/site/. .
+          git add -A && git commit -qm "Web version from $(git rev-parse --short main 2>/dev/null || echo main)"
+          git push -f origin gh-pages
