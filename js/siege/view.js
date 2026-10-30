@@ -1,5 +1,7 @@
 // Draws an AOSiege game: the lane on the game's grass, buildings as their
-// icons on stone platforms, units with their in-game animations, and a minimap.
+// icons on stone platforms (with the unit they train on a badge above), units
+// with their in-game animations, and a minimap. Also turns touches into
+// actions: drag to look around, tap a plot or building, press and hold a building.
 
 import { LANE, PLOTS, plotPos } from './world.js';
 
@@ -9,7 +11,11 @@ const SIDE = ['#4a8de3', '#d5473d'];
 const SIDE_DARK = ['#1f3f73', '#6e1f19'];
 
 export class SiegeView {
-  constructor(canvas, mini) {
+  /** handlers: { tapPlot(i), tapBuilding(b), holdBuilding(b) } */
+  constructor(canvas, mini, handlers = {}) {
+    this.handlers = handlers;
+    this.selected = null;     // building id highlighted while its menu is open
+    this.selectedPlot = null;
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.mini = mini;
@@ -53,19 +59,45 @@ export class SiegeView {
   // ---------- Camera ----------
 
   bindPan() {
-    let drag = null;
-    const start = (x) => { drag = { x, camX: this.cam.x }; this.follow = false; this.lastTouch = performance.now(); };
-    const move = (x) => {
-      if (!drag) return;
-      this.cam.x = drag.camX - (x - drag.x) / (TILE * this.cam.zoom);
-      this.clampCam();
-      this.lastTouch = performance.now();
+    // One finger: a short tap acts on what's under it, holding still for half a
+    // second opens a building's menu, and moving pans the view.
+    let p = null;
+    const HOLD_MS = 450;
+    const SLOP = 10;
+    this.canvas.addEventListener('pointerdown', (e) => {
+      this.canvas.setPointerCapture(e.pointerId);
+      const r = this.canvas.getBoundingClientRect();
+      p = { x0: e.clientX, y0: e.clientY, sx: e.clientX - r.left, sy: e.clientY - r.top, camX: this.cam.x, moved: false, used: false };
+      const hit = this.hitTest(p.sx, p.sy);
+      if (hit?.b) {
+        p.timer = setTimeout(() => {
+          if (p && !p.moved) { p.used = true; navigator.vibrate?.(20); this.handlers.holdBuilding?.(hit.b); }
+        }, HOLD_MS);
+      }
+    });
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (!p) return;
+      if (!p.moved && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) > SLOP) { p.moved = true; clearTimeout(p.timer); this.follow = false; }
+      if (p.moved) {
+        this.cam.x = p.camX - (e.clientX - p.x0) / (TILE * this.cam.zoom);
+        this.clampCam();
+        this.lastTouch = performance.now();
+      }
+    });
+    const end = (e, cancelled) => {
+      if (!p) return;
+      clearTimeout(p.timer);
+      if (!cancelled && !p.moved && !p.used) {
+        const hit = this.hitTest(p.sx, p.sy);
+        if (hit?.b) this.handlers.tapBuilding?.(hit.b);
+        else if (hit?.plot !== undefined) this.handlers.tapPlot?.(hit.plot);
+        else this.handlers.tapEmpty?.();
+      }
+      p = null;
     };
-    this.canvas.addEventListener('pointerdown', (e) => { this.canvas.setPointerCapture(e.pointerId); start(e.clientX); });
-    this.canvas.addEventListener('pointermove', (e) => move(e.clientX));
-    const end = () => { drag = null; };
-    this.canvas.addEventListener('pointerup', end);
-    this.canvas.addEventListener('pointercancel', end);
+    this.canvas.addEventListener('pointerup', (e) => end(e, false));
+    this.canvas.addEventListener('pointercancel', (e) => end(e, true));
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     // Minimap: tap or drag to look somewhere.
     const jump = (e) => {
       const r = this.mini.getBoundingClientRect();
@@ -78,6 +110,43 @@ export class SiegeView {
     this.mini.addEventListener('pointerdown', (e) => { mdown = true; this.mini.setPointerCapture(e.pointerId); jump(e); });
     this.mini.addEventListener('pointermove', (e) => { if (mdown) jump(e); });
     this.mini.addEventListener('pointerup', () => { mdown = false; });
+  }
+
+  /** Your building or empty plot under a screen point (CSS px in the canvas). */
+  hitTest(px, py) {
+    if (!this.w) return null;
+    // Buildings: their platform and the icon standing on it
+    let best = null;
+    for (const b of this.w.structures) {
+      if (b.side !== this.me || b.kind !== 'building' || b.hp <= 0) continue;
+      const box = this.boxOf(b);
+      if (px >= box.x0 - 6 && px <= box.x1 + 6 && py >= box.y0 - 6 && py <= box.y1 + 6) {
+        if (!best || box.y1 > best.box.y1) best = { b, box };
+      }
+    }
+    if (best) return { b: best.b };
+    for (let i = 0; i < PLOTS; i++) {
+      if (this.w.sides[this.me].plots[i]) continue;
+      const [x, y] = plotPos(this.me, i);
+      const [lx, ty] = this.toScreen(x - 1.5, y - 1.5);
+      const [rx, by] = this.toScreen(x + 1.5, y + 1.5);
+      if (px >= lx && px <= rx && py >= ty - 10 && py <= by + 4) return { plot: i };
+    }
+    return null;
+  }
+
+  /** Screen box covering a building's platform, icon and badge. */
+  boxOf(b) {
+    const ppt = TILE * this.cam.zoom;
+    const half = b.r * 0.95;
+    const [lx, ty] = this.toScreen(b.x - half, b.y - half);
+    const [rx, by] = this.toScreen(b.x + half, b.y + half);
+    const [, sy] = this.toScreen(b.x, b.y);
+    const castle = b.kind === 'castle';
+    const lift = Math.max(5, (castle ? 16 : 10) * this.cam.zoom);
+    const size = Math.max(22, b.r * 2 * ppt * (castle ? 0.62 : 0.4));
+    const iy = sy - lift - size * 0.8;
+    return { x0: lx, x1: rx, y0: iy - size * 0.5, y1: by, size, iy, lift, lx, rx, ty, by };
   }
 
   clampCam() {
@@ -146,7 +215,16 @@ export class SiegeView {
     for (let i = 0; i < PLOTS; i++) {
       if (used.has(i)) continue;
       const [x, y] = plotPos(this.me, i);
-      this.diamond(x, y, 1.4, 'rgb(255 248 220 / .06)', 'rgb(255 248 220 / .22)');
+      const sel = this.selectedPlot === i;
+      this.diamond(x, y, 1.4, sel ? 'rgb(255 217 122 / .25)' : 'rgb(255 248 220 / .06)', sel ? '#ffd97a' : 'rgb(255 248 220 / .22)');
+      if (!this.w.t || this.w.sides[this.me].plots.every((p) => !p)) {
+        // Before the first building: a "+" on each plot says what to tap
+        const [px, py] = this.toScreen(x, y);
+        this.ctx.fillStyle = 'rgb(255 248 220 / .35)';
+        this.ctx.font = `700 ${Math.round(18 + 10 * this.cam.zoom)}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('+', px, py + 8);
+      }
     }
 
     // Everything that stands, back to front
@@ -179,26 +257,22 @@ export class SiegeView {
 
   drawStructure(b, t, ppt) {
     const { ctx } = this;
-    const [sx, sy] = this.toScreen(b.x, b.y);
+    const [sx] = this.toScreen(b.x, b.y);
     if (sx < -200 || sx > this.vw + 200) return;
     const dead = b.hp <= 0;
-    const castle = b.kind === 'castle';
-    const half = b.r * 0.95;
+    const { size, iy, lift, lx, rx, ty, by } = this.boxOf(b);
+    const zoom = this.cam.zoom;
     ctx.globalAlpha = dead ? Math.max(0, 1 - (t - b.diedAt) / 3) : 1;
     // A raised stone platform: front face, then the top in the side's trim
-    const [lx, ty] = this.toScreen(b.x - half, b.y - half);
-    const [rx, by] = this.toScreen(b.x + half, b.y + half);
-    const lift = Math.max(5, (castle ? 16 : 10) * this.cam.zoom);
     ctx.fillStyle = dead ? '#2a241c' : '#4b4335';
     ctx.fillRect(lx, by - lift, rx - lx, lift + 2);
     ctx.fillStyle = dead ? '#3a3328' : '#7a7160';
     ctx.fillRect(lx, ty - lift, rx - lx, by - ty);
-    ctx.strokeStyle = SIDE[b.side]; ctx.lineWidth = 2;
+    const selected = this.selected === b.id;
+    ctx.strokeStyle = selected ? '#ffd97a' : SIDE[b.side]; ctx.lineWidth = selected ? 3 : 2;
     ctx.strokeRect(lx, ty - lift, rx - lx, by - ty);
     // The building's icon standing on its platform, framed in the side's colour
-    const size = Math.max(24, b.r * 2 * ppt * (castle ? 0.7 : 0.5));
     const ix = sx - size / 2;
-    const iy = sy - lift - size * 0.8;
     ctx.fillStyle = SIDE_DARK[b.side];
     ctx.fillRect(ix - 3, iy - 3, size + 6, size + 6);
     const img = this.buildingIcons[b.building];
@@ -210,25 +284,52 @@ export class SiegeView {
       ctx.fillStyle = '#8a7a5a';
       ctx.fillRect(ix, iy, size, size);
     }
-    ctx.strokeStyle = SIDE[b.side]; ctx.lineWidth = 2;
+    ctx.strokeStyle = selected ? '#ffd97a' : SIDE[b.side]; ctx.lineWidth = 2;
     ctx.strokeRect(ix - 2, iy - 2, size + 4, size + 4);
     ctx.globalAlpha = 1;
     if (dead) return;
+    const trains = b.kind === 'building' && b.line !== 'market';
+    // The unit it trains, on a round badge above it (the castle has none)
+    let top = iy - 12;
+    if (trains) {
+      const line = this.w.line(b.side, b.line);
+      const unitId = line.tiers[b.tier].unitId;
+      const r = Math.max(10, size * 0.34);
+      const cx = sx, cy = iy - r - 4;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = SIDE_DARK[b.side]; ctx.fill();
+      const ui = this.unitIcons[unitId];
+      if (ui?.complete && ui.naturalWidth) { ctx.save(); ctx.clip(); ctx.drawImage(ui, cx - r, cy - r, r * 2, r * 2); ctx.restore(); }
+      ctx.lineWidth = 2; ctx.strokeStyle = b.hold ? '#6cc3ff' : '#ffd97a'; ctx.stroke();
+      // Upgrade step: Roman numeral under the badge
+      if (b.tier > 0) {
+        const label = ['I', 'II', 'III', 'IV', 'V', 'VI'][b.tier];
+        ctx.font = `700 ${Math.round(9 + 4 * zoom)}px "Merriweather", Georgia, serif`;
+        ctx.textAlign = 'center';
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgb(0 0 0 / .8)';
+        ctx.strokeText(label, cx + r * 0.85, cy + r * 0.9);
+        ctx.fillStyle = '#ffd97a';
+        ctx.fillText(label, cx + r * 0.85, cy + r * 0.9);
+      }
+      top = cy - r - 10;
+    }
     // HP bar
     const bw = Math.max(40, size + 6);
-    this.bar(sx - bw / 2, iy - 12, bw, 6, b.hp / b.maxHp);
-    // Tier pips and training progress on your own buildings
-    if (b.kind === 'building' && b.line !== 'market') {
-      const tier = this.w.tier(b.side, b.line);
-      ctx.fillStyle = '#ffd97a';
-      for (let k = 0; k <= tier; k++) ctx.fillRect(ix + 2 + k * 8, iy + size - 8, 6, 6);
-      if (b.every) {
-        const frac = 1 - Math.max(0, b.timer) / b.every;
-        ctx.fillStyle = 'rgb(0 0 0 / .55)';
-        ctx.fillRect(ix, iy + size + 4, size, 4);
-        ctx.fillStyle = '#e8d9a8';
-        ctx.fillRect(ix, iy + size + 4, size * frac, 4);
+    this.bar(sx - bw / 2, top, bw, 5, b.hp / b.maxHp);
+    // Training bar: fills until the next unit comes out. Held: blue, and glowing when the unit is waiting.
+    if (trains && b.every) {
+      const frac = b.waiting ? 1 : 1 - Math.max(0, b.timer) / b.every;
+      const h = Math.max(5, 6 * zoom);
+      const y = iy + size + 5;
+      ctx.fillStyle = 'rgb(0 0 0 / .6)';
+      ctx.fillRect(ix - 3, y - 1, size + 6, h + 2);
+      if (b.waiting) {
+        ctx.shadowColor = '#6cc3ff';
+        ctx.shadowBlur = 8 + 6 * Math.sin(performance.now() / 160);
       }
+      ctx.fillStyle = b.hold ? '#4fb0ff' : '#e8d9a8';
+      ctx.fillRect(ix - 2, y, (size + 4) * frac, h);
+      ctx.shadowBlur = 0;
     }
   }
 

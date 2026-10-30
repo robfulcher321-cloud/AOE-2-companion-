@@ -13,19 +13,35 @@ const data = await get('data.json');
 const strings = await get('locales/en/strings.json');
 const kitFor = async (civ) => buildKit({ data, strings, tree: await get(`trees/${civ.toUpperCase()}.json`), civ });
 
-// Every civ gets lines it can actually build, each with three tiers.
+// Every civ gets the lines from its tech tree, each with working fighters at every step.
+const noUnique = [];
 for (const civ of Object.keys(data.civs)) {
   const kit = await kitFor(civ);
-  assert.ok(kit.lines.length >= 5, `${civ}: has unit lines (${kit.lines.map((l) => l.key)})`);
+  assert.ok(kit.lines.length >= 5, `${civ}: has unit lines (${kit.lines.map((l) => l.label)})`);
+  if (!kit.lines.some((l) => l.unique)) noUnique.push(civ);
+  const names = kit.lines.map((l) => l.label);
+  assert.equal(new Set(names).size, names.length, `${civ}: no line twice`);
+  const all = new Set(kit.techs.map((t) => t.id));
   for (const l of kit.lines) {
-    assert.equal(l.tiers.length, 3, `${civ} ${l.key}: three tiers`);
-    for (let t = 0; t < 3; t++) {
-      const f = kit.fighter(l.key, t, { attack: t, armour: t });
-      assert.ok(f.hp > 0 && f.speed > 0, `${civ} ${l.key} tier ${t}: a working fighter`);
+    for (let t = 0; t < l.tiers.length; t++) {
+      const f = kit.fighter(l.key, t, all);
+      assert.ok(f.hp > 0 && f.speed > 0, `${civ} ${l.tiers[t].name}: a working fighter`);
+      if (t) assert.ok(l.tiers[t].upgrade > 0, `${civ} ${l.tiers[t].name}: upgrade priced`);
     }
-    assert.ok(l.cost > 0 && l.upgrade.every((c) => c > 0), `${civ} ${l.key}: priced`);
   }
+  assert.ok(kit.techs.length >= 10, `${civ}: Armory techs`);
 }
+console.log(`No lane unique unit (siege or ships only): ${noUnique.join(', ')}`);
+assert.ok(noUnique.length <= 5);
+const per = await kitFor('Persians');
+assert.ok(per.lines.some((l) => l.tiers.some((t) => t.unitId === 239)), 'Persians train War Elephants');
+assert.ok(!per.lines.some((l) => l.tiers.some((t) => t.unitId === 567)), 'Persians have no Champions');
+const arm = await kitFor('Armenians');
+assert.ok(arm.techs.some((t) => t.name === 'Fereters'), 'Armenians can research Fereters');
+const lsw = arm.lines.find((l) => l.tiers[0].unitId === 74);
+const before = arm.fighter(lsw.key, 2, new Set());
+const after = arm.fighter(lsw.key, 2, new Set(arm.techs.filter((t) => t.name === 'Fereters').map((t) => t.id)));
+assert.equal(after.hp - before.hp, 30, 'Fereters: +30 HP for Long Swordsmen');
 
 // Computer-vs-computer games end with a castle down, at a reasonable pace.
 const games = [['Franks', 'Britons'], ['Goths', 'Mongols'], ['Aztecs', 'Teutons'], ['Inca', 'Chinese']];
@@ -56,18 +72,38 @@ for (const [i, [a, b]] of games.entries()) {
   while (w.winner === null && w.t < 3600) w.step();
   assert.notEqual(w.winner, null, 'overtime ends an idle game');
   assert.ok(w.t > 25 * 60 && w.t < 40 * 60, `idle game ends in overtime (${(w.t / 60).toFixed(1)} min)`);
-  // Buying, upgrading and selling
+  // Buying, upgrading one building, holding and GO, selling, research
   const v = new World([k, k], data, { seed: 3 });
-  v.sides[0].gold = 2000;
-  assert.ok(v.buy(0, 'build', 'knights'));
-  assert.ok(v.buy(0, 'upgrade', 'knights'));
-  assert.equal(v.tier(0, 'knights'), 1);
+  v.sides[0].gold = 5000;
+  const knights = k.lines.find((l) => l.tiers[0].unitId === 38).key;
+  assert.ok(v.buy(0, 'build', knights, 4));
+  assert.ok(v.buy(0, 'build', knights, 5));
+  const [b1, b2] = v.buildings(0);
+  assert.equal(b1.plot, 4);
+  assert.ok(v.buy(0, 'upgrade', b1.id));
+  assert.equal(b1.tier, 1);
+  assert.equal(b2.tier, 0, 'upgrades are per building');
+  assert.ok(!v.canBuy(0, 'build', knights, 4), 'a used plot can\'t be built on');
+  assert.ok(v.toggleHold(0, b1.id) && v.toggleHold(0, b2.id));
+  for (let i = 0; i < 40 * 30; i++) v.step();
+  assert.equal(v.units.filter((u) => u.side === 0).length, 0, 'held buildings wait');
+  assert.ok(b1.waiting && b2.waiting);
+  assert.equal(v.go(0), 2);
+  assert.deepEqual(v.units.filter((u) => u.side === 0).map((u) => u.f.name).sort(), ['Cavalier', 'Knight'], 'GO lets them out together');
   assert.ok(v.buy(0, 'market'));
   assert.equal(v.income(0), 15);
-  const b = v.structures.find((x) => x.side === 0 && x.line === 'knights');
-  const before = v.sides[0].gold;
-  assert.ok(v.sell(0, b.id));
-  assert.equal(v.sides[0].gold, before + 75, 'selling gives half back');
-  assert.equal(v.freePlot(0), 0, 'the plot is free again');
+  const gold = v.sides[0].gold;
+  const back = v.sellValue(b1.id);
+  assert.ok(v.sell(0, b1.id));
+  assert.equal(v.sides[0].gold, gold + back);
+  assert.equal(back, Math.round((150 + k.lines.find((l) => l.key === knights).tiers[1].upgrade) / 2), 'selling gives half of what went in');
+  const forging = k.techs.find((t) => t.name === 'Forging');
+  const hp0 = v.units.find((u) => u.side === 0).f;
+  assert.ok(v.buy(0, 'research', forging.id));
+  assert.ok(!v.canBuy(0, 'research', k.techs.find((t) => t.name === 'Iron Casting').id), 'Iron Casting waits for Forging');
+  for (let i = 0; i < (forging.time + 1) * 30; i++) v.step();
+  assert.ok(v.sides[0].researched.has(forging.id));
+  const knight = v.units.find((u) => u.side === 0 && u.hp > 0);
+  if (knight) assert.notEqual(knight.f, hp0, 'research reaches units on the field');
 }
 console.log('AOSiege checks passed.');

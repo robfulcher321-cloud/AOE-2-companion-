@@ -4,12 +4,12 @@ import { loadCore, loadTree, imageUrl, nameText } from '../data.js';
 import { Picker } from '../picker.js';
 import { civOptions } from '../techtree.js';
 import { loadPack } from '../duel/spritepack.js';
-import { buildKit, MARKET, TIER_NAMES } from './kit.js';
+import { buildKit, MARKET, BUILDING_NAMES } from './kit.js';
 import { World, Computer, DT, PLOTS, OVERTIME, START_GOLD } from './world.js';
 import { SiegeView } from './view.js';
 
 const GAME_SPEED = 1.7;
-const UNIQUE_TIERS = ['Castle', 'Elite', 'Elite + unique techs'];   // game seconds per real second at Normal speed
+// game seconds per real second at Normal speed
 const LEVELS = { easy: { income: 0.8, label: 'Easy' }, normal: { income: 1, label: 'Normal' }, hard: { income: 1.25, label: 'Hard' } };
 
 const el = (tag, props = {}, ...children) => {
@@ -57,10 +57,11 @@ export async function initSiege(root) {
       el('summary', { textContent: 'How to play' }),
       el('ul', {},
         el('li', { textContent: 'Each side has a Castle at the end of one lane. Destroy the enemy Castle to win.' }),
-        el('li', { textContent: `You don't control units. Spend gold on buildings (up to ${PLOTS}); each one trains its unit on a timer, and units march down the lane and fight on their own.` }),
-        el('li', { textContent: 'Upgrade a unit line to its Castle and Imperial Age versions. Upgrades reach units already on the field.' }),
+        el('li', { textContent: `You don't control units. Tap an empty plot (up to ${PLOTS}) to build: each building trains one unit line on a timer, and the units march down the lane and fight on their own. Your civ gets every unit its Barracks, Archery Range, Stable and Castle can train.` }),
+        el('li', { textContent: 'Press and hold a building to upgrade it to the next unit in its line (Militia → Man-at-Arms → … → Champion), or to sell it for half of what you put in. Each building upgrades on its own: lots of cheap units, or fewer strong ones?' }),
+        el('li', { textContent: 'Tap a building to hold it: its bar turns blue and the unit waits when ready. Tap GO to send every waiting unit out at once.' }),
+        el('li', { textContent: 'The Armory (anvil, bottom left) has Blacksmith upgrades, Ballistics, Chemistry, Bloodlines and your civ\'s unique techs. One at a time; each one reaches all your units, even those already fighting.' }),
         el('li', { textContent: 'Gold comes in every few seconds; Markets add more, and kills pay a bounty.' }),
-        el('li', { textContent: 'Blacksmith upgrades raise attack and armour for your whole army.' }),
         el('li', { textContent: 'Counter what the computer builds: spearmen beat cavalry, skirmishers beat archers, cavalry and infantry beat archers.' }),
         el('li', { textContent: 'Drag the battlefield or tap the minimap to look around; it follows the fighting again after a few seconds.' }),
         el('li', { textContent: `After ${OVERTIME / 60} game minutes (about ${Math.round(OVERTIME / 60 / 1.7)} real minutes) it's overtime: both castles crumble and buildings take more damage every minute, so games always end.` }))),
@@ -97,7 +98,7 @@ async function loadAssets(kits) {
   const jobs = [];
   for (const kit of kits) {
     for (const line of kit.lines) {
-      for (let t = 0; t < 3; t++) {
+      for (let t = 0; t < line.tiers.length; t++) {
         const f = kit.fighter(line.key, t);
         unitIds.add(f.unitId);
         if (f.projectile?.sprite) shotNames.add(f.projectile.sprite);
@@ -105,7 +106,7 @@ async function loadAssets(kits) {
         if (pic !== undefined && !unitIcons[f.unitId]) jobs.push(loadImg(imageUrl('Unit', pic)).then((img) => { unitIcons[f.unitId] = img; }));
       }
     }
-    for (const id of [82, 84, ...kit.lines.map((l) => l.building)]) {
+    for (const id of [82, 84, 103, ...kit.lines.map((l) => l.building)]) {
       const pic = kit.buildingPicture(id);
       if (pic !== undefined && !buildingIcons[id]) { buildingIcons[id] = null; jobs.push(loadImg(imageUrl('Building', pic)).then((img) => { buildingIcons[id] = img; })); }
     }
@@ -125,6 +126,10 @@ function openGame({ data, kits, assets, level, civNames }) {
   const world = new World(kits, data, { seed, income: [1, LEVELS[level].income] });
   const ai = new Computer(world, 1, { level });
   const ME = 0;
+  const kit = kits[ME];
+  const unitIcon = (id, pic) => (pic !== undefined ? imageUrl('Unit', pic) : assets.unitIcons[id]?.src || '');
+  const bldIcon = (id) => { const pic = kit.buildingPicture(id); return pic !== undefined ? imageUrl('Building', pic) : ''; };
+  const goldImg = () => el('img', { src: 'img/res/gold.webp', alt: 'gold', width: 16, height: 16 });
 
   // ---------- Layout ----------
   const goldNum = el('b', { className: 'sg-gold-num', textContent: String(START_GOLD) });
@@ -136,123 +141,204 @@ function openGame({ data, kits, assets, level, civNames }) {
     return { wrap, fill };
   };
   const castles = [castleBar(0), castleBar(1)];
-  const pauseBtn = el('button', { type: 'button', className: 'sg-btn', textContent: 'Pause' });
+  const goBtn = el('button', { type: 'button', className: 'sg-go', textContent: 'GO', disabled: true, title: 'Send out every held unit at once' });
+  const pauseBtn = el('button', { type: 'button', className: 'sg-btn', textContent: '❚❚', 'aria-label': 'Pause' });
   const speedBtn = el('button', { type: 'button', className: 'sg-btn', textContent: '1×' });
   const closeBtn = el('button', { type: 'button', className: 'sg-btn sg-close', textContent: '×', 'aria-label': 'Quit game' });
-  const canvas = el('canvas', { className: 'sg-canvas', 'aria-label': 'Battlefield' });
+  const canvas = el('canvas', { className: 'sg-canvas', 'aria-label': 'Battlefield: tap a plot to build, tap a building to hold it, press and hold a building for upgrades' });
   const mini = el('canvas', { className: 'sg-mini', 'aria-label': 'Minimap: tap to look there' });
   const followBtn = el('button', { type: 'button', className: 'sg-follow', textContent: 'Follow fight', hidden: true });
+  const armoryBtn = el('button', { type: 'button', className: 'sg-armory-btn', 'aria-label': 'Armory' },
+    el('img', { src: bldIcon(103), alt: '' }), el('span', { className: 'sg-armory-dot', hidden: true }));
   const banner = el('div', { className: 'sg-banner', hidden: true });
-  const panel = el('section', { className: 'sg-panel' });
-  const plotsTxt = el('span', { className: 'sg-plots' });
+  const dock = el('section', { className: 'sg-dock' });
 
   const screen = el('div', { className: 'sg-run', role: 'dialog', 'aria-label': 'AOSiege game' },
     el('header', { className: 'sg-head' },
       el('div', { className: 'sg-gold' }, el('img', { src: 'img/res/gold.webp', alt: 'Gold', width: 28, height: 28 }), goldNum, incomeTxt),
-      clock, speedBtn, pauseBtn, closeBtn,
+      clock, goBtn, speedBtn, pauseBtn, closeBtn,
       el('div', { className: 'sg-castles' }, castles[0].wrap, castles[1].wrap)),
-    el('div', { className: 'sg-field' }, canvas, followBtn, banner),
+    el('div', { className: 'sg-field' }, canvas, followBtn, armoryBtn, banner),
     mini,
-    panel);
+    dock);
   document.body.append(screen);
   screen.world = world; // handy when debugging in the browser console
   document.body.classList.add('sg-open');
 
-  const view = new SiegeView(canvas, mini);
+  // ---------- The dock: what you can do right now ----------
+  // mode: { kind: 'hint' } | { kind: 'build', plot } | { kind: 'building', id } | { kind: 'armory' }
+  let mode = { kind: 'hint' };
+  let lastKey = '';
+  const view = new SiegeView(canvas, mini, {
+    tapPlot: (i) => setMode({ kind: 'build', plot: i }),
+    tapBuilding: (b) => {
+      if (b.line === 'market') { setMode({ kind: 'building', id: b.id }); return; }
+      world.toggleHold(ME, b.id);
+      navigator.vibrate?.(10);
+      refresh(true);
+    },
+    holdBuilding: (b) => setMode({ kind: 'building', id: b.id }),
+    tapEmpty: () => setMode({ kind: 'hint' }),
+  });
   view.setup(world, { ...assets, mySide: ME });
+  screen.view = view;
   view.resize();
   followBtn.addEventListener('click', () => { view.follow = true; });
+  armoryBtn.addEventListener('click', () => setMode(mode.kind === 'armory' ? { kind: 'hint' } : { kind: 'armory' }));
+  goBtn.addEventListener('click', () => { world.go(ME); navigator.vibrate?.(30); refresh(true); });
 
-  // ---------- Build panel ----------
-  const cards = [];
-  const kit = kits[ME];
-  const iconOf = (line, tier) => {
-    const pic = line.tiers[tier].picture;
-    return pic !== undefined ? imageUrl('Unit', pic) : '';
-  };
-  const buyBtn = (label, onClick) => {
-    const b = el('button', { type: 'button', className: 'sg-buy' }, el('span', { className: 'sg-buy-label', textContent: label }),
-      el('span', { className: 'sg-price' }, el('img', { src: 'img/res/gold.webp', alt: '', width: 16, height: 16 }), el('b')));
-    b.addEventListener('click', onClick);
-    return b;
-  };
-  for (const line of kit.lines) {
-    const img = el('img', { className: 'sg-card-ic', alt: '', src: iconOf(line, 0) });
-    const name = el('b', { className: 'sg-card-name' });
-    const meta = el('small', { className: 'sg-card-meta' });
-    const next = el('small', { className: 'sg-card-next' });
-    const build = buyBtn('Build', () => { world.buy(ME, 'build', line.key); refresh(true); });
-    const up = buyBtn('Upgrade', () => { world.buy(ME, 'upgrade', line.key); refresh(true); });
-    const sell = el('button', { type: 'button', className: 'sg-sell', textContent: 'Sell', title: 'Sell one building for half its price' });
-    sell.addEventListener('click', () => {
-      const mine = world.structures.filter((b) => b.side === ME && b.line === line.key && b.hp > 0).sort((a, b) => b.builtAt - a.builtAt)[0];
-      if (mine) world.sell(ME, mine.id);
-      refresh(true);
-    });
-    const card = el('div', { className: `sg-card${line.unique ? ' sg-card-unique' : ''}` },
-      el('div', { className: 'sg-card-top' }, img, el('div', {}, name, meta, next), sell),
-      el('div', { className: 'sg-card-acts' }, build, up));
-    cards.push({ line, card, img, name, meta, next, build, up, sell, kind: 'line' });
+  function setMode(m) {
+    mode = m;
+    view.selected = m.kind === 'building' ? m.id : null;
+    view.selectedPlot = m.kind === 'build' ? m.plot : null;
+    armoryBtn.classList.toggle('on', m.kind === 'armory');
+    lastKey = '';
+    refresh(true);
   }
-  const market = (() => {
-    const meta = el('small', { className: 'sg-card-meta' });
-    const build = buyBtn('Build', () => { world.buy(ME, 'market'); refresh(true); });
-    const pic = kit.buildingPicture(84);
-    const card = el('div', { className: 'sg-card' },
-      el('div', { className: 'sg-card-top' }, el('img', { className: 'sg-card-ic', alt: '', src: pic !== undefined ? imageUrl('Building', pic) : '' }),
-        el('div', {}, el('b', { className: 'sg-card-name', textContent: 'Market' }), meta)),
-      el('div', { className: 'sg-card-acts' }, build));
-    return { card, meta, build, kind: 'market' };
-  })();
-  const smith = ['attack', 'armour'].map((k) => {
-    const meta = el('small', { className: 'sg-card-meta' });
-    const build = buyBtn(k === 'attack' ? 'Attack +1' : 'Armour +1', () => { world.buy(ME, k); refresh(true); });
-    const pic = kit.buildingPicture(103);
-    const card = el('div', { className: 'sg-card' },
-      el('div', { className: 'sg-card-top' }, el('img', { className: 'sg-card-ic', alt: '', src: pic !== undefined ? imageUrl('Building', pic) : '' }),
-        el('div', {}, el('b', { className: 'sg-card-name', textContent: k === 'attack' ? 'Blacksmith: attack' : 'Blacksmith: armour' }), meta)),
-      el('div', { className: 'sg-card-acts' }, build));
-    return { card, meta, build, key: k };
-  });
-  panel.append(
-    el('div', { className: 'sg-panel-head' }, el('b', { textContent: 'Build and upgrade' }), plotsTxt),
-    el('div', { className: 'sg-cards' }, cards.map((c) => c.card), market.card, smith.map((s) => s.card)));
 
-  const setPrice = (btn, price) => {
-    btn.hidden = price === null;
-    if (price === null) return;
-    btn.querySelector('b').textContent = String(price);
-    btn.disabled = world.sides[ME].gold < price;
-  };
-  let lastKey = '';
+  // Buttons that cost gold: enabled/disabled in place as gold changes, without rebuilding the dock.
+  const priced = (btn, price, blocked) => { btn.dataset.price = String(price); btn.dataset.blocked = blocked ? '1' : ''; btn.disabled = blocked || world.sides[ME].gold < price; return btn; };
+  const priceTag = (p) => el('span', { className: 'sg-price' }, goldImg(), el('b', { textContent: String(p) }));
+  const closeRow = (title) => el('div', { className: 'sg-dock-head' }, el('b', { textContent: title }),
+    el('button', { type: 'button', className: 'sg-x', textContent: '×', 'aria-label': 'Close', onclick: () => setMode({ kind: 'hint' }) }));
+
+  function hintView() {
+    const s = world.sides[ME];
+    const held = world.held(ME).length;
+    return [
+      el('div', { className: 'sg-dock-head' }, el('b', { textContent: 'Your base' }),
+        el('span', { className: 'sg-plots', textContent: `${s.plots.filter(Boolean).length}/${PLOTS} plots` })),
+      el('ul', { className: 'sg-hints' },
+        el('li', {}, el('b', { textContent: 'Tap an empty plot' }), ' to build.'),
+        el('li', {}, el('b', { textContent: 'Tap a building' }), ' to hold its next unit (blue bar); ', el('b', { textContent: 'GO' }), ' sends all held units together.'),
+        el('li', {}, el('b', { textContent: 'Press and hold a building' }), ' to upgrade or sell it.'),
+        el('li', {}, 'The ', el('b', { textContent: 'anvil' }), ' opens the Armory for upgrades that reach your whole army.')),
+      held ? el('p', { className: 'sg-note', textContent: `${held} building${held > 1 ? 's' : ''} on hold.` }) : null,
+      s.research ? researchBar() : null,
+    ];
+  }
+
+  function buildView(plot) {
+    const s = world.sides[ME];
+    if (s.plots[plot]) { setTimeout(() => setMode({ kind: 'hint' })); return []; }
+    const groups = new Map();
+    for (const line of kit.lines) {
+      if (!groups.has(line.building)) groups.set(line.building, []);
+      groups.get(line.building).push(line);
+    }
+    const option = (label, sub, icon, price, onclick, blocked, note) => priced(el('button', { type: 'button', className: 'sg-opt', onclick },
+      el('img', { className: 'sg-opt-ic', src: icon, alt: '' }),
+      el('span', { className: 'sg-opt-text' }, el('b', { textContent: label }), el('small', { textContent: note || sub })),
+      priceTag(price)), price, blocked);
+    const out = [closeRow('Build here')];
+    for (const [building, lines] of groups) {
+      out.push(el('h4', { className: 'sg-group' }, el('img', { src: bldIcon(building), alt: '' }), BUILDING_NAMES[building] || 'Building'));
+      out.push(el('div', { className: 'sg-opts' }, lines.map((line) => {
+        const p = world.price(ME, 'build', line.key, plot);
+        const needs = line.needs && !world.unlocked(ME, line) ? `Needs ${kit.techs.find((t) => t.id === line.needs)?.name || 'a tech'} (Armory)` : null;
+        const steps = line.tiers.length > 1 ? `→ ${line.tiers.at(-1).name}` : 'no upgrades';
+        return option(line.tiers[0].name, `1 per ${Math.round(line.tiers[0].every / GAME_SPEED)}s · ${steps}`, unitIcon(line.tiers[0].unitId, line.tiers[0].picture),
+          line.cost, () => { if (world.buy(ME, 'build', line.key, plot)) setMode({ kind: 'hint' }); },
+          p === null, needs);
+      })));
+    }
+    const mp = world.price(ME, 'market', null, plot);
+    out.push(el('h4', { className: 'sg-group' }, el('img', { src: bldIcon(84), alt: '' }), 'Economy'));
+    out.push(el('div', { className: 'sg-opts' }, option('Market', `+${MARKET.income} gold every 4s · ${s.markets}/${MARKET.max} built`, bldIcon(84), MARKET.cost,
+      () => { if (world.buy(ME, 'market', null, plot)) setMode({ kind: 'hint' }); }, mp === null)));
+    return out;
+  }
+
+  function buildingView(id) {
+    const b = world.building(id);
+    if (!b || b.side !== ME) { setTimeout(() => setMode({ kind: 'hint' })); return []; }
+    const s = world.sides[ME];
+    const sellBtn = el('button', { type: 'button', className: 'sg-sell', onclick: () => { world.sell(ME, b.id); setMode({ kind: 'hint' }); } },
+      'Sell for ', goldImg(), String(world.sellValue(b.id)));
+    if (b.line === 'market') {
+      return [closeRow('Market'), el('p', { className: 'sg-note', textContent: `Adds ${MARKET.income} gold every 4 seconds.` }), sellBtn];
+    }
+    const line = world.line(ME, b.line);
+    const cur = line.tiers[b.tier];
+    const next = line.tiers[b.tier + 1];
+    const f = kit.fighter(b.line, b.tier, s.researched, s.researchKey);
+    const stat = (x) => Math.round(x * 10) / 10;
+    const atk = f.projectile ? f.attacks.get(3) : f.attacks.get(4);
+    const steps = el('div', { className: 'sg-steps' }, line.tiers.map((t, i) => el('span', { className: `sg-step${i === b.tier ? ' now' : i < b.tier ? ' done' : ''}` },
+      el('img', { src: unitIcon(t.unitId, t.picture), alt: '' }), el('small', { textContent: t.name }))));
+    const upPrice = world.price(ME, 'upgrade', b.id);
+    return [
+      closeRow(`${BUILDING_NAMES[line.building]}: ${cur.name}`),
+      steps,
+      el('p', { className: 'sg-note', textContent: `${Math.floor(f.hp)} HP · ${stat(atk ?? 0)} attack · ${stat(f.armours.get(4) ?? 0)}/${stat(f.armours.get(3) ?? 0)} armour · 1 every ${Math.round(b.every / GAME_SPEED)}s` }),
+      el('div', { className: 'sg-acts' },
+        next ? priced(el('button', { type: 'button', className: 'sg-buy', onclick: () => { world.buy(ME, 'upgrade', b.id); refresh(true); } },
+          el('span', { className: 'sg-buy-label', textContent: `Upgrade to ${next.name}` }), priceTag(next.upgrade)), next.upgrade, upPrice === null)
+          : el('p', { className: 'sg-note', textContent: 'Fully upgraded.' }),
+        el('button', { type: 'button', className: `sg-hold${b.hold ? ' on' : ''}`, onclick: () => { world.toggleHold(ME, b.id); refresh(true); },
+          textContent: b.hold ? (b.waiting ? 'Release now' : 'Stop holding') : 'Hold next unit' }),
+        sellBtn),
+    ];
+  }
+
+  function researchBar() {
+    const r = world.sides[ME].research;
+    const t = kit.techs.find((x) => x.id === r.id);
+    const frac = 1 - Math.max(0, r.endsAt - world.t) / r.time;
+    return el('div', { className: 'sg-research' }, el('span', { textContent: `Researching ${t?.name}` }),
+      el('div', { className: 'sg-rbar' }, el('i', { style: `width:${Math.round(frac * 100)}%` })));
+  }
+
+  function armoryView() {
+    const s = world.sides[ME];
+    const out = [closeRow('Armory')];
+    if (s.research) out.push(researchBar());
+    else out.push(el('p', { className: 'sg-note', textContent: 'One at a time. Each upgrade reaches all your units that it applies to, including those already fighting.' }));
+    for (const group of ['Blacksmith', 'Unit upgrades', 'Unique techs']) {
+      const list = kit.techs.filter((t) => t.group === group);
+      if (!list.length) continue;
+      out.push(el('h4', { className: 'sg-group', textContent: group }));
+      out.push(el('div', { className: 'sg-opts' }, list.map((t) => {
+        const done = s.researched.has(t.id);
+        const p = world.price(ME, 'research', t.id);
+        const blocked = t.after && !s.researched.has(t.after);
+        const note = done ? 'Researched' : s.research?.id === t.id ? 'Researching…' : blocked ? `After ${kit.techs.find((x) => x.id === t.after)?.name}` : `${Math.round(t.time / GAME_SPEED)}s to research`;
+        return priced(el('button', { type: 'button', className: `sg-opt${done ? ' done' : ''}`,
+          onclick: () => { world.buy(ME, 'research', t.id); refresh(true); } },
+          el('img', { className: 'sg-opt-ic', src: t.picture !== undefined ? imageUrl('Tech', t.picture) : '', alt: '' }),
+          el('span', { className: 'sg-opt-text' }, el('b', { textContent: t.name }), el('small', { textContent: note })),
+          done ? el('span', { className: 'sg-tick', textContent: '✓' }) : priceTag(t.cost)), t.cost, done || p === null);
+      })));
+    }
+    return out;
+  }
+
   function refresh(force = false) {
     const s = world.sides[ME];
-    const key = `${Math.floor(s.gold)}|${world.structures.length}|${JSON.stringify(s.tiers)}|${s.markets}|${s.smith.attack}${s.smith.armour}|${world.winner}`;
-    if (!force && key === lastKey) return;
-    lastKey = key;
     goldNum.textContent = String(Math.floor(s.gold));
     incomeTxt.textContent = `+${world.income(ME)} every 4s`;
-    plotsTxt.textContent = `${s.plots.filter(Boolean).length}/${PLOTS} plots used`;
-    for (const c of cards) {
-      const tier = world.tier(ME, c.line.key);
-      const n = world.count(ME, c.line.key);
-      const unit = c.line.tiers[tier];
-      c.name.textContent = unit.name;
-      c.img.src = iconOf(c.line, tier);
-      c.meta.textContent = `${(c.line.unique ? UNIQUE_TIERS : TIER_NAMES)[tier]} · ${n ? `${n} built` : 'none built'} · 1 per ${Math.round(c.line.every[tier] / GAME_SPEED)}s`;
-      setPrice(c.build, world.price(ME, 'build', c.line.key));
-      const upPrice = world.price(ME, 'upgrade', c.line.key);
-      setPrice(c.up, upPrice);
-      c.next.textContent = upPrice !== null ? `Upgrade to ${c.line.tiers[tier + 1].name}` : 'Fully upgraded';
-      c.sell.hidden = n === 0;
-      c.card.classList.toggle('owned', n > 0);
+    const held = world.held(ME);
+    const waiting = held.filter((b) => b.waiting).length;
+    goBtn.disabled = held.length === 0;
+    goBtn.replaceChildren('GO', held.length ? el('small', { textContent: `${waiting}/${held.length}` }) : '');
+    goBtn.classList.toggle('ready', waiting > 0);
+    armoryBtn.querySelector('.sg-armory-dot').hidden = !s.research;
+    // Rebuild the dock only when something it shows has changed.
+    const b = mode.kind === 'building' ? world.building(mode.id) : null;
+    const key = [mode.kind, mode.plot, mode.id, s.plots.join(), s.markets, s.researched.size, s.research?.id,
+      b ? `${b.tier}${b.hold}${b.waiting}` : '', held.length, world.winner].join('|');
+    if (!force && key === lastKey) {
+      // Same content: just keep prices and the research bar current.
+      for (const btn of dock.querySelectorAll('[data-price]')) btn.disabled = btn.dataset.blocked === '1' || s.gold < Number(btn.dataset.price);
+      const bar = dock.querySelector('.sg-rbar i');
+      if (bar && s.research) bar.style.width = `${Math.round((1 - Math.max(0, s.research.endsAt - world.t) / s.research.time) * 100)}%`;
+      return;
     }
-    market.meta.textContent = `${s.markets}/${MARKET.max} · +${MARKET.income} gold per tick each`;
-    setPrice(market.build, world.price(ME, 'market'));
-    for (const sm of smith) {
-      sm.meta.textContent = `Level ${s.smith[sm.key]}/3, all units`;
-      setPrice(sm.build, world.price(ME, sm.key));
-    }
+    lastKey = key;
+    const content = mode.kind === 'build' ? buildView(mode.plot) : mode.kind === 'building' ? buildingView(mode.id) : mode.kind === 'armory' ? armoryView() : hintView();
+    const scroll = dock.scrollTop;
+    dock.replaceChildren(...content.flat().filter(Boolean));
+    dock.scrollTop = scroll;
   }
 
   // ---------- Loop ----------
@@ -277,7 +363,7 @@ function openGame({ data, kits, assets, level, civNames }) {
       if (n === 40) acc = 0;
     }
     view.draw(running ? Math.min(1, acc / DT) : 1);
-    if (now - hudAt > 120) {
+    if (now - hudAt > 150) {
       hudAt = now;
       clock.textContent = fmt(world.t / GAME_SPEED);
       for (const s of [0, 1]) {
@@ -296,7 +382,8 @@ function openGame({ data, kits, assets, level, civNames }) {
 
   const setRunning = (on) => {
     running = on;
-    pauseBtn.textContent = on ? 'Pause' : 'Resume';
+    pauseBtn.textContent = on ? '❚❚' : '▶';
+    pauseBtn.setAttribute('aria-label', on ? 'Pause' : 'Resume');
     screen.classList.toggle('paused', !on);
     if (on) lockScreen(); else { wake?.release?.(); wake = null; }
   };
@@ -339,6 +426,7 @@ function openGame({ data, kits, assets, level, civNames }) {
         el('tbody', {},
           row('Units trained', (i) => S[i].stats.trained),
           row('Enemies killed', (i) => S[i].stats.kills),
+          row('Techs researched', (i) => S[i].researched.size),
           row('Gold earned', (i) => Math.round(S[i].stats.earned)),
           row('Gold spent', (i) => Math.round(S[i].stats.spent)))),
       el('div', { className: 'sg-end-acts' },

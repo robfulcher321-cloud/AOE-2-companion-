@@ -13,7 +13,7 @@
 // Times are game seconds (Normal speed runs 1.7 game seconds per real second).
 
 import { damagePerHit, CLASS } from '../duel/combat.js';
-import { MARKET, SMITH_COSTS, structureStats } from './kit.js';
+import { MARKET, structureStats } from './kit.js';
 
 export const DT = 1 / 30;
 export const LANE = { length: 70, half: 7.5 };
@@ -74,16 +74,14 @@ export class World {
     this.sides = [0, 1].map((s) => ({
       gold: START_GOLD,
       incomeMult: income[s],
-      tiers: {},              // line key -> tier 0..2
-      smith: { attack: 0, armour: 0 },
+      researched: new Set(),   // Armory techs done
+      researchKey: '',
+      research: null,          // { id, endsAt, time } being researched
       markets: 0,
       plots: Array(PLOTS).fill(null),
       stats: { trained: 0, kills: 0, lost: 0, earned: 0, spent: 0 },
     }));
-    for (const s of [0, 1]) {
-      const st = structureStats(data, 82);
-      this.castle(s, st);
-    }
+    for (const s of [0, 1]) this.castle(s, structureStats(data, 82));
     this.buildingStats = (id) => structureStats(data, id);
   }
 
@@ -104,47 +102,64 @@ export class World {
 
   // ---------- Spending ----------
 
-  line(side, key) { return this.kits[side].lines.find((l) => l.key === key); }
+  line(side, key) { return this.kits[side].line(key); }
   freePlot(side) { return this.sides[side].plots.indexOf(null); }
-  tier(side, key) { return this.sides[side].tiers[key] ?? 0; }
-  count(side, key) { return this.structures.filter((b) => b.side === side && b.line === key && b.hp > 0).length; }
+  building(id) { return this.structures.find((b) => b.id === id && b.kind === 'building' && b.hp > 0) || null; }
+  buildings(side) { return this.structures.filter((b) => b.side === side && b.kind === 'building' && b.hp > 0); }
+  count(side, key) { return this.buildings(side).filter((b) => b.line === key).length; }
+  tech(side, id) { return this.kits[side].techs.find((t) => t.id === id) || null; }
 
-  /** What a purchase costs, or null if it can't be bought now. kind: build | upgrade | market | attack | armour */
-  price(side, kind, key) {
+  /** Can this side's line be built yet? (Hand Cannoneers need Chemistry.) */
+  unlocked(side, line) { return !line.needs || this.sides[side].researched.has(line.needs); }
+
+  /** Is an Armory tech ready to research: not done, not under way, and the one before it done. */
+  techOpen(side, t) {
+    const s = this.sides[side];
+    return t && !s.researched.has(t.id) && s.research?.id !== t.id && (!t.after || s.researched.has(t.after));
+  }
+
+  /**
+   * What a purchase costs, or null if it can't be bought now.
+   * kind: build (key = line, plot = plot index) | market (plot) | upgrade (key = building id) | research (key = tech id)
+   */
+  price(side, kind, key, plot = null) {
     const s = this.sides[side];
     if (this.winner !== null) return null;
+    const plotFree = plot === null ? this.freePlot(side) >= 0 : s.plots[plot] === null;
     switch (kind) {
       case 'build': {
         const line = this.line(side, key);
-        if (!line || this.freePlot(side) < 0) return null;
-        return line.cost;
-      }
-      case 'upgrade': {
-        const line = this.line(side, key);
-        const t = this.tier(side, key);
-        return line && t < 2 ? line.upgrade[t] : null;
+        return line && plotFree && this.unlocked(side, line) ? line.cost : null;
       }
       case 'market':
-        return s.markets < MARKET.max && this.freePlot(side) >= 0 ? MARKET.cost : null;
-      case 'attack': case 'armour':
-        return s.smith[kind] < 3 ? SMITH_COSTS[s.smith[kind]] : null;
+        return s.markets < MARKET.max && plotFree ? MARKET.cost : null;
+      case 'upgrade': {
+        const b = this.building(key);
+        if (!b || b.side !== side || b.line === 'market') return null;
+        const line = this.line(side, b.line);
+        return b.tier + 1 < line.tiers.length ? line.tiers[b.tier + 1].upgrade : null;
+      }
+      case 'research': {
+        const t = this.tech(side, key);
+        return this.techOpen(side, t) && !s.research ? t.cost : null;
+      }
       default: return null;
     }
   }
 
-  canBuy(side, kind, key) {
-    const p = this.price(side, kind, key);
+  canBuy(side, kind, key, plot = null) {
+    const p = this.price(side, kind, key, plot);
     return p !== null && this.sides[side].gold >= p;
   }
 
-  buy(side, kind, key) {
-    if (!this.canBuy(side, kind, key)) return false;
+  buy(side, kind, key, plot = null) {
+    if (!this.canBuy(side, kind, key, plot)) return false;
     const s = this.sides[side];
-    const p = this.price(side, kind, key);
+    const p = this.price(side, kind, key, plot);
     s.gold -= p;
     s.stats.spent += p;
     if (kind === 'build' || kind === 'market') {
-      const i = this.freePlot(side);
+      const i = plot ?? this.freePlot(side);
       const [x, y] = plotPos(side, i);
       const isMarket = kind === 'market';
       const line = isMarket ? null : this.line(side, key);
@@ -152,28 +167,32 @@ export class World {
       const b = {
         id: this.nextId++, side, kind: 'building', building: isMarket ? MARKET.building : line.building,
         line: isMarket ? 'market' : key, plot: i, x, y, r: 1.5, hp: st.hp, maxHp: st.hp, f: st,
-        timer: isMarket ? 0 : Math.min(8, line.every[this.tier(side, key)] * 0.4), builtAt: this.t,
+        tier: 0, invested: p, hold: false, waiting: false,
+        timer: isMarket ? 0 : Math.min(8, line.tiers[0].every * 0.4), every: isMarket ? 0 : line.tiers[0].every, builtAt: this.t,
       };
       s.plots[i] = b.id;
       if (isMarket) s.markets += 1;
       this.structures.push(b);
     } else if (kind === 'upgrade') {
-      s.tiers[key] = this.tier(side, key) + 1;
-      this.refit(side, key);
-    } else {
-      s.smith[kind] += 1;
-      this.refit(side, null);
+      // Only this building: its next units are the new type. Units already out stay as they are.
+      const b = this.building(key);
+      b.tier += 1;
+      b.invested += p;
+      b.every = this.line(side, b.line).tiers[b.tier].every;
+    } else if (kind === 'research') {
+      const t = this.tech(side, key);
+      s.research = { id: t.id, endsAt: this.t + t.time, time: t.time };
     }
     this.events.push({ t: this.t, type: kind, side, key });
     return true;
   }
 
-  /** Knock down your own building for half its price back (frees the plot). */
+  /** Knock down your own building for half of what you put into it (frees the plot). */
   sell(side, id) {
-    const b = this.structures.find((x) => x.id === id && x.side === side && x.kind === 'building' && x.hp > 0);
-    if (!b || this.winner !== null) return false;
+    const b = this.building(id);
+    if (!b || b.side !== side || this.winner !== null) return false;
     const s = this.sides[side];
-    const back = Math.round((b.line === 'market' ? MARKET.cost : this.line(side, b.line).cost) * SELL_BACK);
+    const back = Math.round(b.invested * SELL_BACK);
     s.gold += back;
     s.plots[b.plot] = null;
     if (b.line === 'market') s.markets -= 1;
@@ -182,16 +201,46 @@ export class World {
     return true;
   }
 
-  /** Upgrades reach units already on the field, as in the game. */
-  refit(side, key) {
+  sellValue(id) { const b = this.building(id); return b ? Math.round(b.invested * SELL_BACK) : 0; }
+
+  /** Tap a building: hold its next unit (it waits when ready), or stop holding. */
+  toggleHold(side, id) {
+    const b = this.building(id);
+    if (!b || b.side !== side || b.line === 'market') return false;
+    b.hold = !b.hold;
+    if (!b.hold && b.waiting) this.releaseUnit(b);
+    return true;
+  }
+
+  /** GO: every held building lets its unit out now if it's ready, and stops holding. */
+  go(side) {
+    let n = 0;
+    for (const b of this.buildings(side)) {
+      if (!b.hold) continue;
+      b.hold = false;
+      if (b.waiting) { this.releaseUnit(b); n += 1; }
+    }
+    this.events.push({ t: this.t, type: 'go', side, n });
+    return n;
+  }
+
+  held(side) { return this.buildings(side).filter((b) => b.hold); }
+
+  releaseUnit(b) {
+    b.waiting = false;
+    b.timer = b.every;
+    this.spawn(b.side, b);
+  }
+
+  /** Researched techs reach units already on the field, as in the game. */
+  refit(side) {
+    const s = this.sides[side];
+    s.researchKey = [...s.researched].sort().join(',');
     for (const u of this.units) {
-      if (u.side !== side || u.hp <= 0 || (key && u.line !== key)) continue;
-      const tier = key ? this.tier(side, key) : u.tier;
-      const f = this.kits[side].fighter(u.line, tier, this.sides[side].smith);
-      if (f.unitId !== u.f.unitId && key) continue; // a new unit type: only new recruits get it
+      if (u.side !== side || u.hp <= 0) continue;
+      const f = this.kits[side].fighter(u.line, u.tier, s.researched, s.researchKey);
       u.hp += Math.max(0, f.hp - u.f.hp);
       u.f = f;
-      u.tier = tier;
     }
   }
 
@@ -200,8 +249,8 @@ export class World {
   spawn(side, b) {
     const s = this.sides[side];
     if (this.units.filter((u) => u.side === side && u.hp > 0).length >= CAP) return;
-    const tier = this.tier(side, b.line);
-    const f = this.kits[side].fighter(b.line, tier, s.smith);
+    const tier = b.tier;
+    const f = this.kits[side].fighter(b.line, tier, s.researched, s.researchKey);
     const dir = side === 0 ? 1 : -1;
     const u = {
       id: this.nextId++, side, line: b.line, tier, f, r: f.radius,
@@ -315,15 +364,22 @@ export class World {
       this.incomeAt += INCOME_EVERY;
       for (const side of [0, 1]) { const g = this.income(side); this.sides[side].gold += g; this.sides[side].stats.earned += g; }
     }
-    // Buildings train their units
+    // Armory research finishing
+    for (const side of [0, 1]) {
+      const s = this.sides[side];
+      if (s.research && t >= s.research.endsAt) {
+        s.researched.add(s.research.id);
+        this.events.push({ t, type: 'researched', side, key: s.research.id });
+        s.research = null;
+        this.refit(side);
+      }
+    }
+    // Buildings train their units; held ones wait when ready until GO (or tapped again).
     for (const b of this.structures) {
-      if (b.kind !== 'building' || b.hp <= 0 || b.line === 'market') continue;
+      if (b.kind !== 'building' || b.hp <= 0 || b.line === 'market' || b.waiting) continue;
       b.timer -= DT;
       if (b.timer <= 0) {
-        const line = this.line(b.side, b.line);
-        b.timer += line.every[this.tier(b.side, b.line)];
-        b.every = line.every[this.tier(b.side, b.line)];
-        this.spawn(b.side, b);
+        if (b.hold) { b.timer = 0; b.waiting = true; } else this.releaseUnit(b);
       }
     }
     // Castles shoot the nearest enemy in range
@@ -473,7 +529,7 @@ export class World {
     }
     for (const b of this.structures) {
       if (b.side !== side || b.kind !== 'building' || b.hp <= 0 || b.line === 'market') continue;
-      m[kindOf(b.line, this.kits[side].fighter(b.line, this.tier(side, b.line)))] += 2;
+      m[kindOf(b.line, this.kits[side].fighter(b.line, b.tier))] += 2;
     }
     return m;
   }
@@ -481,8 +537,9 @@ export class World {
 
 /** Rough role of a unit line: what counters what. */
 export function kindOf(line, f) {
-  if (line === 'spears') return 'spear';
-  if (line === 'skirms') return 'skirm';
+  const root = Number(String(line).split('-')[1]);
+  if (root === 93) return 'spear';     // Spearman line
+  if (root === 7) return 'skirm';      // Skirmisher line
   if (f.armours.has(CLASS.CAVALRY) || f.armours.has(CLASS.ELEPHANT)) return 'cavalry';
   if (f.projectile) return 'archer';
   return 'infantry';
@@ -498,9 +555,8 @@ const BEATS = {
   skirm: { archer: 3, spear: 1, skirm: 1, infantry: 0.2, cavalry: 0.2 },
   cavalry: { archer: 2.5, skirm: 2.5, infantry: 1, cavalry: 1, spear: 0.2 },
 };
-
-// How good a line is on its own, before counters (spearmen and skirmishers are cheap specialists).
-const BASE = { knights: 1.1, swords: 1.1, eagles: 1.1, champi: 1, archers: 1, cavarchers: 1, scouts: 0.9, spears: 0.8, skirms: 0.7 };
+// How good a kind of unit is on its own, before counters (spearmen and skirmishers are cheap specialists).
+const BASE = { cavalry: 1.1, infantry: 1.1, archer: 1, spear: 0.8, skirm: 0.7 };
 
 export class Computer {
   constructor(world, side, { level = 'normal' } = {}) {
@@ -514,34 +570,47 @@ export class Computer {
     const w = this.w;
     if (w.t < this.next || w.winner !== null) return;
     this.next = w.t + (this.level === 'easy' ? 4 : 2.5);
-    const s = w.sides[this.side];
-    const foe = w.mix(1 - this.side);
-    const kit = w.kits[this.side];
-    const builds = w.structures.filter((b) => b.side === this.side && b.kind === 'building' && b.hp > 0);
-    const military = builds.filter((b) => b.line !== 'market').length;
+    const side = this.side;
+    const s = w.sides[side];
+    const foe = w.mix(1 - side);
+    const foeTotal = 1 + Object.values(foe).reduce((a, b) => a + b, 0);
+    const kit = w.kits[side];
+    const builds = w.buildings(side);
+    const military = builds.filter((b) => b.line !== 'market');
+    const vs = (kind) => Object.entries(foe).reduce((acc, [k, n]) => acc + (BEATS[kind][k] ?? 1) * n, 0) / foeTotal;
     const options = [];
+    const free = w.freePlot(side) >= 0;
     for (const line of kit.lines) {
-      const kind = kindOf(line.key, kit.fighter(line.key, w.tier(this.side, line.key)));
-      const counter = Object.entries(foe).reduce((acc, [k, n]) => acc + (BEATS[kind][k] ?? 1) * n, 0) / (1 + Object.values(foe).reduce((a, b) => a + b, 0));
-      const have = w.count(this.side, line.key);
-      const base = BASE[line.key] ?? (line.unique ? 1.3 : 1);
+      if (!w.unlocked(side, line)) continue;
+      const kind = kindOf(line.key, kit.fighter(line.key, 0));
+      const have = w.count(side, line.key);
       // More buildings means more units: fill plots early, then upgrade.
-      const early = w.freePlot(this.side) >= 0 && military < 6 ? 0.8 : 0;
-      if (w.price(this.side, 'build', line.key) !== null) options.push({ kind: 'build', key: line.key, score: base + early + 0.7 * counter - have * 0.25 });
-      if (have && w.price(this.side, 'upgrade', line.key) !== null) options.push({ kind: 'upgrade', key: line.key, score: 1.1 + have * 0.5 + counter * 0.5 + (w.t > 180 ? 0.5 : 0) });
+      const early = free && military.length < 6 ? 0.8 : 0;
+      if (w.price(side, 'build', line.key) !== null) {
+        options.push({ kind: 'build', key: line.key, score: (BASE[kind] ?? 1) + (line.unique ? 0.2 : 0) + early + 0.7 * vs(kind) - have * 0.25 });
+      }
     }
-    // Markets pay for themselves: get them early.
-    if (military >= 1 && w.price(this.side, 'market') !== null && w.t < 600) options.push({ kind: 'market', score: 2.2 - s.markets * 0.5 });
-    for (const k of ['attack', 'armour']) if (military >= 3 && w.price(this.side, k) !== null) options.push({ kind: k, score: 0.8 + military * 0.12 });
+    // Upgrade the lowest-tier building of a useful line.
+    for (const b of military) {
+      const p = w.price(side, 'upgrade', b.id);
+      if (p === null) continue;
+      const kind = kindOf(b.line, kit.fighter(b.line, b.tier));
+      options.push({ kind: 'upgrade', key: b.id, score: 1 + 0.5 * vs(kind) - b.tier * 0.25 + (w.t > 180 ? 0.5 : 0) - p / 1500 });
+    }
+    // Armory: once there's an army to make better
+    if (military.length >= 3 && !s.research) {
+      for (const t of kit.techs) {
+        if (w.price(side, 'research', t.id) === null) continue;
+        options.push({ kind: 'research', key: t.id, score: 0.7 + military.length * 0.08 + (t.group === 'Blacksmith' ? 0.3 : 0) - t.cost / 1200 });
+      }
+    }
+    if (military.length >= 1 && w.price(side, 'market') !== null && w.t < 600) options.push({ kind: 'market', score: 2.2 - s.markets * 0.5 });
     // Plots full and gold piling up: replace the building that does least against the enemy.
-    if (w.freePlot(this.side) < 0 && s.gold > 600 && this.level !== 'easy') {
-      const rate = (key) => {
-        const kind = kindOf(key, kit.fighter(key, w.tier(this.side, key)));
-        return Object.entries(foe).reduce((acc, [k, n]) => acc + (BEATS[kind][k] ?? 1) * n, 0);
-      };
-      const worst = builds.filter((b) => b.line !== 'market').sort((a, b) => rate(a.line) - rate(b.line))[0];
-      const best = kit.lines.map((l) => l.key).sort((a, b) => rate(b) - rate(a))[0];
-      if (worst && best && rate(best) > rate(worst.line) * 1.3) { w.sell(this.side, worst.id); return; }
+    if (!free && s.gold > 600 && this.level !== 'easy' && military.length) {
+      const rate = (key, tier) => vs(kindOf(key, kit.fighter(key, tier)));
+      const worst = [...military].sort((a, b) => rate(a.line, a.tier) - rate(b.line, b.tier))[0];
+      const best = kit.lines.filter((l) => w.unlocked(side, l)).sort((a, b) => rate(b.key, 0) - rate(a.key, 0))[0];
+      if (worst && best && worst.tier === 0 && rate(best.key, 0) > rate(worst.line, worst.tier) * 1.3) { w.sell(side, worst.id); return; }
     }
     if (!options.length) return;
     // Easy plays at random; Normal and Hard pick well, with a little variety.
@@ -550,6 +619,6 @@ export class Computer {
     options.sort((a, b) => b.score - a.score);
     const pick = options[0];
     // Save up for the best choice rather than spending on whatever is cheap.
-    if (w.canBuy(this.side, pick.kind, pick.key)) w.buy(this.side, pick.kind, pick.key);
+    if (w.canBuy(side, pick.kind, pick.key)) w.buy(side, pick.kind, pick.key);
   }
 }
