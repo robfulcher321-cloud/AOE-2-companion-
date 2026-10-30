@@ -153,6 +153,16 @@ for (const [i, [a, b]] of games.entries()) {
   const bytes = JSON.stringify(snapshot(host, host.t - 0.1)).length;
   console.log(`Wi-Fi snapshot with ${host.units.length} soldiers: ${(bytes / 1024).toFixed(1)} KB`);
 }
+// The explosion only lands on your own third; stronger units take longer to come out.
+{
+  const k = await kitFor('Khmer');
+  const w = new World([k, k], data, { seed: 4 });
+  assert.equal(w.blast(0, 60, 0), 0, 'blue can\'t drop it on the middle or red\'s side');
+  assert.equal(w.sides[0].blasts, 1, 'a refused drop isn\'t used up');
+  assert.ok(w.canBlastAt(0, 20) && !w.canBlastAt(0, 40) && w.canBlastAt(1, 70) && !w.canBlastAt(1, 50));
+  const every = (band) => k.lines.find((l) => l.band === band).tiers[0].every;
+  assert.ok(every('spear') < every('standard') && every('standard') < every('cavalry') && every('cavalry') < every('elephant'), 'spears quickest, elephants slowest');
+}
 // Territory: soldiers in the enemy's third add 5 gold a tick.
 {
   const k = await kitFor('Franks');

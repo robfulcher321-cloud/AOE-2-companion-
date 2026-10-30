@@ -1,21 +1,18 @@
 // AOSiege tab: pick civs and difficulty, then play against the computer.
 
-import { loadCore, loadTree, imageUrl, nameText } from '../data.js';
+import { loadCore, loadTree, imageUrl, civIconUrl, nameText } from '../data.js';
 import { Picker } from '../picker.js';
 import { civOptions } from '../techtree.js';
 import { loadPack } from '../duel/spritepack.js';
 import { buildKit, MARKET, BUILDING_NAMES } from './kit.js';
 import { World, Computer, DT, PLOTS, OVERTIME, START_GOLD, BLAST } from './world.js';
-import { SiegeView } from './view.js';
+import { SiegeView, COLOURS } from './view.js';
+export { COLOURS };
 import { COMMANDS, snapshot, applySnapshot } from './sync.js';
 import { openLobby } from './lobby.js';
 
 const GAME_SPEED = 1.7;
 // Player colours (AoE II's), for names, buildings and the minimap. Soldiers wear their team's blue or red.
-export const COLOURS = [
-  { name: 'Blue', hex: '#2f6fe0' }, { name: 'Red', hex: '#d6322b' }, { name: 'Green', hex: '#3bb143' }, { name: 'Yellow', hex: '#e8cf2b' },
-  { name: 'Teal', hex: '#2bc8d6' }, { name: 'Purple', hex: '#a04fe0' }, { name: 'Grey', hex: '#a0a0a0' }, { name: 'Orange', hex: '#ee8a2b' },
-];
 const SNAP_MS = 100;   // Wi-Fi games: the host sends the game state this often
 // game seconds per real second at Normal speed
 const LEVELS = { easy: { income: 0.8, label: 'Easy' }, normal: { income: 1, label: 'Normal' }, hard: { income: 1.25, label: 'Hard' } };
@@ -95,7 +92,7 @@ export async function initSiege(root) {
         el('li', { textContent: 'Tap a building to hold it: its bar turns blue and the unit waits when ready. Tap GO to send every waiting unit out at once.' }),
         el('li', { textContent: 'The Armory (anvil, bottom left) has Blacksmith upgrades, Ballistics, Chemistry, Bloodlines and your civ\'s unique techs. One at a time; each one reaches all your units, even those already fighting.' }),
         el('li', { textContent: 'The middle of the map is split by a river into two lanes. Buildings in your top row send units down the top lane, the bottom row the bottom lane, the middle row takes turns. Arrows fly over the river; soldiers cross only near the bases.' }),
-        el('li', { textContent: `One explosion each (the fire button): tap it, tap where, then Drop. It hurts every enemy soldier within ${BLAST.radius} tiles for ${Math.round(BLAST.share * 100)}% of their HP. Save it for a deathball.` }),
+        el('li', { textContent: `One explosion each (the fire button): tap it, tap where, then Drop. It hurts every enemy soldier within ${BLAST.radius} tiles for ${Math.round(BLAST.share * 100)}% of their HP. It can only be dropped on your own third of the map: it's for defending against a deathball, not for pushing.` }),
         el('li', { textContent: 'Gold comes in every few seconds; Markets add more, and kills pay a bounty. In team games the base income is split between teammates, so a 2v2 team earns what one player does in a 1v1 (your own Markets still pay you in full).' }),
         el('li', { textContent: 'Buildings cost more the stronger the unit: spears and skirmishers are cheapest, then infantry, archers and scouts, then cavalry, then elephants. Castle (unique unit) buildings cost 40% more.' }),
         el('li', { textContent: 'Counter what the computer builds: spearmen beat cavalry, skirmishers beat archers, cavalry and infantry beat archers.' }),
@@ -120,8 +117,8 @@ export async function initSiege(root) {
       openGame({
         data, kits, assets, me: 0, mode: 'solo',
         players: [
-          { name: 'You', civName: civName(myCiv), colour: COLOURS[0].hex, team: 0, kind: 'human' },
-          { name: civName(aiCiv), civName: civName(aiCiv), colour: COLOURS[1].hex, team: 1, kind: 'ai', level },
+          { name: 'You', civ: myCiv, civName: civName(myCiv), colour: COLOURS[0].hex, team: 0, kind: 'human' },
+          { name: civName(aiCiv), civ: aiCiv, civName: civName(aiCiv), colour: COLOURS[1].hex, team: 1, kind: 'ai', level },
         ],
       });
     } catch (err) {
@@ -223,13 +220,15 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   const blastBtn = el('button', { type: 'button', className: 'sg-blast-btn', 'aria-label': 'Explosion (once per game)' },
     el('span', { className: 'sg-blast-ic', textContent: '💥' }), el('small', { className: 'sg-blast-n', textContent: String(BLAST.per) }));
   const dropBtn = el('button', { type: 'button', className: 'sg-drop', textContent: 'Drop here' });
-  const aimBar = el('div', { className: 'sg-aim', hidden: true }, el('span', { className: 'sg-aim-text', textContent: 'Tap where to drop the explosion' }), dropBtn,
+  const aimBar = el('div', { className: 'sg-aim', hidden: true }, el('span', { className: 'sg-aim-text', textContent: 'Tap your third of the map to aim' }), dropBtn,
     el('button', { type: 'button', className: 'sg-btn', textContent: 'Cancel', onclick: () => setAim(false) }));
   const dock = el('section', { className: 'sg-dock' });
 
   const screen = el('div', { className: 'sg-run', role: 'dialog', 'aria-label': 'AOSiege game' },
     el('header', { className: 'sg-head' },
-      el('div', { className: 'sg-gold' }, el('img', { src: 'img/res/gold.webp', alt: 'Gold', width: 28, height: 28 }), goldNum, incomeTxt),
+      el('div', { className: 'sg-gold' },
+        el('img', { className: 'sg-flag', src: players[ME].civ ? civIconUrl(players[ME].civ) : '', alt: players[ME].civName || '', title: `You: ${players[ME].civName || ''}`, style: `--pc:${players[ME].colour}` }),
+        el('img', { className: 'sg-gold-ic', src: 'img/res/gold.webp', alt: 'Gold', width: 28, height: 28 }), goldNum, incomeTxt),
       clock, goBtn, speedBtn, pauseBtn, closeBtn,
       el('div', { className: 'sg-castles' }, castles[0].wrap, castles[1].wrap)),
     el('div', { className: 'sg-field' }, canvas, followBtn, armoryBtn, blastBtn, aimBar, banner),
@@ -253,13 +252,21 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     },
     holdBuilding: (b) => setMode({ kind: 'building', id: b.id }),
     tapEmpty: () => setMode({ kind: 'hint' }),
-    aimAt: (x, y) => { view.aimPoint = [x, y]; dropBtn.disabled = false; aimBar.querySelector('.sg-aim-text').textContent = 'Tap to move it, or'; },
+    aimAt: (x, y) => {
+      if (!world.canBlastAt(myTeam, x)) {
+        view.aimPoint = null; dropBtn.disabled = true;
+        aimBar.querySelector('.sg-aim-text').textContent = 'Only on your third of the map';
+        navigator.vibrate?.(20);
+        return;
+      }
+      view.aimPoint = [x, y]; dropBtn.disabled = false; aimBar.querySelector('.sg-aim-text').textContent = 'Tap to move it, or';
+    },
   });
   function setAim(on) {
     view.aiming = on && world.sides[ME].blasts > 0;
     view.aimPoint = null;
     dropBtn.disabled = true;
-    aimBar.querySelector('.sg-aim-text').textContent = 'Tap where to drop the explosion';
+    aimBar.querySelector('.sg-aim-text').textContent = 'Tap your third of the map to aim';
     aimBar.hidden = !view.aiming;
     blastBtn.classList.toggle('on', view.aiming);
   }
@@ -304,7 +311,6 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         el('li', {}, el('b', { textContent: 'Press and hold a building' }), ' to upgrade or sell it.'),
         el('li', {}, 'The ', el('b', { textContent: 'anvil' }), ' opens the Armory for upgrades that reach your whole army.')),
       held ? el('p', { className: 'sg-note', textContent: `${held} building${held > 1 ? 's' : ''} on hold.` }) : null,
-      s.research ? researchBar() : null,
     ];
   }
 
@@ -371,19 +377,29 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     ];
   }
 
-  function researchBar() {
+  // The Armory tech under way: how far along (0..1) and real seconds left.
+  const researchState = () => {
     const r = world.sides[ME].research;
-    const t = kit.techs.find((x) => x.id === r.id);
-    const frac = 1 - Math.max(0, r.endsAt - world.t) / r.time;
-    return el('div', { className: 'sg-research' }, el('span', { textContent: `Researching ${t?.name}` }),
-      el('div', { className: 'sg-rbar' }, el('i', { style: `width:${Math.round(frac * 100)}%` })));
+    if (!r) return null;
+    const left = Math.max(0, r.endsAt - world.t);
+    return { r, frac: 1 - left / r.time, secs: Math.ceil(left / GAME_SPEED) };
+  };
+  /** Strip at the top of the panel, whatever it's showing, while a tech is being researched. */
+  function researchBar() {
+    const st = researchState();
+    if (!st) return null;
+    const t = kit.techs.find((x) => x.id === st.r.id);
+    return el('button', { type: 'button', className: 'sg-research', onclick: () => setMode({ kind: 'armory' }) },
+      el('img', { src: t?.picture !== undefined ? imageUrl('Tech', t.picture) : bldIcon(103), alt: '' }),
+      el('span', { className: 'sg-rname' }, el('small', { textContent: 'Researching' }), el('b', { textContent: t?.name || 'Upgrade' })),
+      el('span', { className: 'sg-rleft', textContent: `${st.secs}s` }),
+      el('div', { className: 'sg-rbar' }, el('i', { style: `width:${Math.round(st.frac * 100)}%` })));
   }
 
   function armoryView() {
     const s = world.sides[ME];
     const out = [closeRow('Armory')];
-    if (s.research) out.push(researchBar());
-    else out.push(el('p', { className: 'sg-note', textContent: 'One at a time. Each upgrade reaches all your units that it applies to, including those already fighting.' }));
+    if (!s.research) out.push(el('p', { className: 'sg-note', textContent: 'One at a time. Each upgrade reaches all your units that it applies to, including those already fighting.' }));
     for (const group of ['Blacksmith', 'Unit upgrades', 'Unique techs']) {
       const list = kit.techs.filter((t) => t.group === group);
       if (!list.length) continue;
@@ -392,9 +408,11 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         const done = s.researched.has(t.id);
         const p = world.price(ME, 'research', t.id);
         const blocked = t.after && !s.researched.has(t.after);
-        const note = done ? 'Researched' : s.research?.id === t.id ? 'Researching…' : blocked ? `After ${kit.techs.find((x) => x.id === t.after)?.name}` : `${Math.round(t.time / GAME_SPEED)}s to research`;
-        return priced(el('button', { type: 'button', className: `sg-opt${done ? ' done' : ''}`,
+        const now = s.research?.id === t.id;
+        const note = done ? 'Researched' : now ? 'Researching…' : blocked ? `After ${kit.techs.find((x) => x.id === t.after)?.name}` : `${Math.round(t.time / GAME_SPEED)}s to research`;
+        return priced(el('button', { type: 'button', className: `sg-opt${done ? ' done' : ''}${now ? ' researching' : ''}`,
           onclick: () => { act('research', { id: t.id }); refresh(true); } },
+          now ? el('i', { className: 'sg-opt-fill', style: `width:${Math.round((researchState()?.frac || 0) * 100)}%` }) : null,
           el('img', { className: 'sg-opt-ic', src: t.picture !== undefined ? imageUrl('Tech', t.picture) : '', alt: '' }),
           el('span', { className: 'sg-opt-text' }, el('b', { textContent: t.name }), el('small', { textContent: note })),
           done ? el('span', { className: 'sg-tick', textContent: '✓' }) : priceTag(t.cost)), t.cost, done || p === null);
@@ -420,14 +438,19 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     if (!force && key === lastKey) {
       // Same content: just keep prices and the research bar current.
       for (const btn of dock.querySelectorAll('[data-price]')) btn.disabled = btn.dataset.blocked === '1' || s.gold < Number(btn.dataset.price);
-      const bar = dock.querySelector('.sg-rbar i');
-      if (bar && s.research) bar.style.width = `${Math.round((1 - Math.max(0, s.research.endsAt - world.t) / s.research.time) * 100)}%`;
+      const st = researchState();
+      if (st) {
+        const w = `${Math.round(st.frac * 100)}%`;
+        for (const bar of dock.querySelectorAll('.sg-rbar i, .sg-opt-fill')) bar.style.width = w;
+        const left = dock.querySelector('.sg-rleft');
+        if (left) left.textContent = `${st.secs}s`;
+      }
       return;
     }
     lastKey = key;
     const content = pmode.kind === 'build' ? buildView(pmode.plot) : pmode.kind === 'building' ? buildingView(pmode.id) : pmode.kind === 'armory' ? armoryView() : hintView();
     const scroll = dock.scrollTop;
-    dock.replaceChildren(...content.flat().filter(Boolean));
+    dock.replaceChildren(...[researchBar(), ...content].flat().filter(Boolean));
     dock.scrollTop = scroll;
   }
 
@@ -502,8 +525,13 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       // Slide soldiers between snapshots, and keep animations ticking.
       const since = (now - snapAt) / 1000;
       if (snapAt && running) world.t = snapT + Math.min(0.2, since) * GAME_SPEED;
-      view.draw(snapAt ? Math.min(1, since / (SNAP_MS / 1000)) : 1);
-    } else view.draw(running ? Math.min(1, acc / DT) : 1);
+      const a = snapAt ? Math.min(1, since / (SNAP_MS / 1000)) : 1;
+      view.draw(a, snapT - (1 - a) * (SNAP_MS / 1000) * GAME_SPEED);
+    } else {
+      // Soldiers are drawn between the last two steps; draw everything else at that same moment.
+      const a = running ? Math.min(1, acc / DT) : 1;
+      view.draw(a, world.t - (1 - a) * DT);
+    }
     if (now - hudAt > 150) {
       hudAt = now;
       clock.textContent = fmt(world.t / GAME_SPEED);
@@ -541,6 +569,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
 
   if (client) { pauseBtn.hidden = true; speedBtn.hidden = true; }
   function close() {
+    view.dispose();
     cancelAnimationFrame(raf);
     for (const off of offs) off();
     if (net) net.onLeave?.();

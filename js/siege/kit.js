@@ -21,6 +21,9 @@ export const NEEDS = { 5: 47 };                // unit -> tech it needs (Hand Ca
 // elephants dearest. Castle (unique unit) buildings cost 40% more again.
 export const BUILD_PRICES = { spear: 140, skirm: 150, standard: 175, scout: 185, cavalry: 215, elephant: 270 };
 const UNIQUE_MARKUP = 1.4;
+// Stronger units also take longer to come out (on top of time scaling with the unit's cost).
+const BUILD_TIME = { spear: 0.9, skirm: 0.9, standard: 1, scout: 1, cavalry: 1.25, elephant: 1.5 };
+const UNIQUE_TIME = 1.1;
 const ARMOUR = { ELEPHANT: 5, CAVALRY: 8, CAMEL: 30 };
 /** Which price band a line's first unit falls in. */
 export function priceBand(rootId, unit) {
@@ -82,6 +85,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
       if (building === 82 && castleLines > 0 && chain.length < 2) continue;
       if (building === 82) castleLines += 1;
       chain.forEach((n) => seen.add(n.node_id));
+      const band = priceBand(root.node_id, U[root.node_id]);
       const tiers = chain.map((n, i) => {
         const up = i ? data.data.unit_upgrades?.[n.node_id] : null;
         return {
@@ -89,7 +93,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
           name: name(n),
           picture: n.picture_index,
           upgrade: i ? upgradePrice(total(up?.Cost || { Gold: 500 })) : 0,
-          every: Math.max(8, Math.min(45, Math.round((total(U[n.node_id].Cost) / OUTPUT) * 10) / 10)),
+          every: Math.max(8, Math.min(75, Math.round((total(U[n.node_id].Cost) / OUTPUT) * BUILD_TIME[band] * (building === 82 ? UNIQUE_TIME : 1) * 10) / 10)),
         };
       });
       lines.push({
@@ -97,8 +101,8 @@ export function buildKit({ data, strings = {}, tree, civ }) {
         building,
         unique: building === 82,
         label: tiers[0].name,
-        band: priceBand(root.node_id, U[root.node_id]),
-        cost: (() => { const base = BUILD_PRICES[priceBand(root.node_id, U[root.node_id])]; return building === 82 ? round5(base * UNIQUE_MARKUP) : base; })(),
+        band,
+        cost: building === 82 ? round5(BUILD_PRICES[band] * UNIQUE_MARKUP) : BUILD_PRICES[band],
         needs: NEEDS[root.node_id] ?? null,
         tiers,
       });

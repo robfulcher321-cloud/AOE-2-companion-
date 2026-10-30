@@ -251,9 +251,17 @@ export class World {
    * The explosion (once per player, like Castle Fight's comeback ability): hurts
    * every enemy soldier within BLAST.radius of (x, y) for 60% of its full HP + 25.
    */
+  /** Where team `team` may drop its explosion: its own third of the map (to defend, not to push). */
+  blastZone(team) {
+    const edge = LANE.length * TERRITORY.share;
+    return team === 0 ? [0, edge] : [LANE.length - edge, LANE.length];
+  }
+
+  canBlastAt(team, x) { const [a, b] = this.blastZone(team); return x >= a && x <= b; }
+
   blast(side, x, y) {
     const s = this.sides[side];
-    if (s.blasts <= 0 || this.winner !== null) return 0;
+    if (s.blasts <= 0 || this.winner !== null || !this.canBlastAt(s.team, x)) return 0;
     s.blasts -= 1;
     let hit = 0;
     for (const v of this.units) {
@@ -272,6 +280,7 @@ export class World {
     let best = null;
     const foes = this.units.filter((v) => v.side !== team && v.hp > 0);
     for (const a of foes) {
+      if (!this.canBlastAt(team, a.x)) continue;
       let n = 0;
       for (const v of foes) if (hyp(v.x - a.x, v.y - a.y) <= BLAST.radius) n += 1;
       if (!best || n > best[2]) best = [a.x, a.y, n];
@@ -667,7 +676,9 @@ export class World {
         u.y = bank * (RIVER.half + u.r);
       }
       // Only shown walking if it actually got somewhere (no running on the spot).
-      u.moving = u.wantsMove && hyp(u.x - u.px, u.y - u.py) > u.f.speed * DT * 0.3;
+      // (and kept for a moment after, so a nudge in a crowd doesn't flicker idle/walk).
+      if (u.wantsMove && hyp(u.x - u.px, u.y - u.py) > u.f.speed * DT * 0.3) u.movedAt = t;
+      u.moving = u.wantsMove && t - (u.movedAt ?? -1) < 0.25;
     }
     // Shots land
     for (let k = this.shots.length - 1; k >= 0; k--) {
@@ -715,7 +726,8 @@ export class World {
     const len = Math.min(u.f.speed * DT, Math.max(0, maxStep));
     u.x += dx * len; u.y += dy * len;
     u.wantsMove = true;
-    if (Math.abs(dx) > 0.2) u.face = Math.sign(dx);
+    // Turn round only on a clear change of direction, not every sidestep.
+    if (Math.abs(dx) > 0.35 && Math.sign(dx) !== u.face && this.t - (u.turnedAt ?? -1) > 0.4) { u.face = Math.sign(dx); u.turnedAt = this.t; }
   }
 
   release(u, tg) {

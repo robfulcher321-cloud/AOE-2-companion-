@@ -9,6 +9,14 @@ const TILE = 96 / Math.SQRT2;   // screen px per tile at zoom 1 (same as the Tes
 const DEPTH = 0.5;
 const SIDE = ['#4a8de3', '#d5473d'];
 const SIDE_DARK = ['#1f3f73', '#6e1f19'];
+const MAX_DPR = 2;   // sharper than this costs a lot of drawing on 3x phone screens for little visible gain
+
+/** Player colours. The first two are the sprite pack's own blue and red; others are repainted. */
+export const COLOURS = [
+  { name: 'Blue', hex: '#2f6fe0' }, { name: 'Red', hex: '#d6322b' }, { name: 'Green', hex: '#3bb143' }, { name: 'Yellow', hex: '#e8cf2b' },
+  { name: 'Teal', hex: '#2bc8d6' }, { name: 'Purple', hex: '#a04fe0' }, { name: 'Grey', hex: '#a0a0a0' }, { name: 'Orange', hex: '#ee8a2b' },
+];
+const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 
 export class SiegeView {
   /** handlers: { tapPlot(i), tapBuilding(b), holdBuilding(b) } */
@@ -25,15 +33,17 @@ export class SiegeView {
     this.lastTouch = 0;
     this.floaters = [];
     this.seen = 0;
+    this.recoloured = new Map();   // "unitId|player" -> repainted sprite (or 'pending' / 'failed')
     const ro = new ResizeObserver(() => this.resize());
     ro.observe(canvas); ro.observe(mini);
     this.bindPan();
   }
 
   /**
-   * mySide: the player this screen belongs to. colours: each player's chosen colour
-   * (buildings, frames, minimap); soldiers wear their team's colour (blue or red),
-   * since those are the only colours their sprites come in.
+   * mySide: the player this screen belongs to. colours: each player's chosen colour,
+   * on their buildings, the minimap and their soldiers (blue and red come straight
+   * from the sprite pack; other colours are repainted in a worker the first time
+   * that unit is needed).
    */
   setup(world, { sprites = null, unitIcons = {}, buildingIcons = {}, mySide = 0, colours = null } = {}) {
     this.w = world;
@@ -43,6 +53,7 @@ export class SiegeView {
     this.me = mySide;
     this.myTeam = world.sides[mySide].team;
     this.colours = colours || world.sides.map((s) => SIDE[s.team]);
+    this.paint = this.colours.map((hex) => (hex === COLOURS[0].hex ? 'blue' : hex === COLOURS[1].hex ? 'red' : rgbOf(hex)));
     this.grassPattern = null;
     this.follow = true;
     this.cam.x = CASTLE_X[this.myTeam] + (this.myTeam === 0 ? 6 : -6);
@@ -51,7 +62,7 @@ export class SiegeView {
   }
 
   resize() {
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(MAX_DPR, window.devicePixelRatio || 1);
     for (const [c, key] of [[this.canvas, 'ctx'], [this.mini, 'mctx']]) {
       const { width, height } = c.getBoundingClientRect();
       c.width = Math.round(width * dpr);
@@ -200,13 +211,19 @@ export class SiegeView {
 
   // ---------- Drawing ----------
 
-  draw(alpha = 1) {
+  /**
+   * alpha: how far between the last two game steps to draw soldiers (0..1).
+   * renderT: the game time those positions belong to, used for everything that
+   * moves with time (animations, arrows, explosions) so it all glides together
+   * instead of jumping a step at a time.
+   */
+  draw(alpha = 1, renderT = null) {
     if (!this.w || !this.vw) return;
     this.autoCam();
     const { ctx, vw, vh } = this;
     const zoom = this.cam.zoom;
     const ppt = TILE * zoom;
-    const t = this.w.t;
+    const t = renderT ?? this.w.t;
 
     // Ground
     if (this.sprites?.grass) {
@@ -335,7 +352,22 @@ export class SiegeView {
         ctx.fill();
       }
     }
-    // Aiming: the area it would hit, where you last tapped
+    // Aiming: darken where it can't go (outside your third), then the area it would hit
+    if (this.aiming) {
+      const [z0, z1] = this.w.blastZone(this.myTeam);
+      const [sx0] = this.toScreen(z0, 0);
+      const [sx1] = this.toScreen(z1, 0);
+      ctx.fillStyle = 'rgb(0 0 0 / .35)';
+      if (sx0 > 0) ctx.fillRect(0, 0, sx0, this.vh);
+      if (sx1 < this.vw) ctx.fillRect(sx1, 0, this.vw - sx1, this.vh);
+      ctx.strokeStyle = 'rgb(255 170 60 / .9)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 6]);
+      ctx.beginPath();
+      for (const ex of [sx0, sx1]) if (ex > 0 && ex < this.vw) { ctx.moveTo(ex, 0); ctx.lineTo(ex, this.vh); }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     if (this.aiming && this.aimPoint) {
       const [ax, ay] = this.toScreen(this.aimPoint[0], this.aimPoint[1]);
       this.ellipse(this.aimPoint[0], this.aimPoint[1], BLAST.radius, 'rgb(255 120 30 / .18)');
@@ -381,10 +413,11 @@ export class SiegeView {
     const trains = b.kind === 'building' && b.line !== 'market';
     const line = trains ? this.w.line(b.owner, b.line) : null;
     const unitImg = trains ? this.unitIcons[line.tiers[b.tier].unitId] : null;
+    if (trains) this.spriteFor(line.tiers[b.tier].unitId, b.owner, b.side);   // get its soldiers' colours ready before they come out
     const bImg = this.buildingIcons[b.building];
     const main = unitImg?.complete && unitImg.naturalWidth ? unitImg : bImg;
     // A short pop and gold flash right after an upgrade
-    const since = b.upgradedAt !== undefined ? t - b.upgradedAt : 99;
+    const since = b.upgradedAt !== undefined ? Math.max(0, t - b.upgradedAt) : 99;
     const pop = since < 0.6 ? 1 + 0.18 * Math.sin((since / 0.6) * Math.PI) : 1;
     const sz = size * pop;
     const ix = sx - sz / 2;
@@ -459,21 +492,68 @@ export class SiegeView {
     ctx.fillRect(x, y, w * Math.max(0, frac), h);
   }
 
+  /**
+   * The sprite to draw a unit with, in its player's colour: { sprite, side } where
+   * side says which frames ('blue' face right, 'red' face left). A colour other than
+   * the pack's blue or red is repainted in the background; until it's ready the
+   * team colour is used.
+   */
+  spriteFor(unitId, player, team) {
+    const base = this.sprites?.units?.[unitId];
+    const teamSet = team === 0 ? 'blue' : 'red';
+    if (!base) return { sprite: null, side: teamSet };
+    const paint = this.paint?.[player];
+    if (!paint) return { sprite: base, side: teamSet };
+    if (typeof paint === 'string') return { sprite: base, side: base.anims.idle?.frames?.[paint]?.length ? paint : teamSet };
+    const key = `${unitId}|${player}`;
+    const got = this.recoloured.get(key);
+    if (got && typeof got === 'object') return { sprite: got, side: 'blue' };
+    if (!got) this.recolour(key, base, paint);
+    return { sprite: base, side: teamSet };
+  }
+
+  recolour(key, base, rgb) {
+    if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') { this.recoloured.set(key, 'failed'); return; }
+    this.recoloured.set(key, 'pending');
+    if (!this.worker) {
+      this.worker = new Worker(new URL('./recolour.js', import.meta.url));
+      this.worker.onmessage = (e) => {
+        const { key: k, bitmap, rects, error } = e.data;
+        const job = this.jobs?.get(k);
+        this.jobs?.delete(k);
+        if (error || !job) { this.recoloured.set(k, 'failed'); return; }
+        // Same animations, pointing at the repainted frames
+        const anims = {};
+        let i = 0;
+        for (const [name, a] of Object.entries(job.base.anims)) {
+          const frames = (a.frames.blue || []).map((f) => [...rects[i++], f[4], f[5]]);
+          anims[name] = { ...a, frames: { blue: frames } };
+        }
+        this.recoloured.set(k, { ...job.base, anims, atlas: bitmap });
+      };
+    }
+    (this.jobs ||= new Map()).set(key, { base });
+    const rects = Object.values(base.anims).flatMap((a) => (a.frames.blue || []).map((f) => f.slice(0, 4)));
+    this.worker.postMessage({ key, atlas: base.atlas, rects, colour: rgb });
+  }
+
+  /** Stop the repainting worker (when the game closes). */
+  dispose() { this.worker?.terminate(); this.worker = null; }
+
   drawUnit(u, x, y, t, zoom) {
     const { ctx } = this;
     const [sx, sy] = this.toScreen(x, y);
     if (sx < -80 || sx > this.vw + 80) return;
     const dead = u.hp <= 0;
-    const sprite = this.sprites?.units?.[u.f.unitId];
+    const { sprite, side } = this.spriteFor(u.f.unitId, u.owner ?? u.side, u.side);
     let fr = null;
     if (sprite) {
-      const side = u.side === 0 ? 'blue' : 'red';
       const { anims } = sprite;
       const seq = (a) => anims[a]?.frames?.[side];
       const at = (a, el, loop) => {
         const fs = seq(a);
         if (!fs?.length) return null;
-        let n = Math.floor(el / anims[a].fdur);
+        let n = Math.floor(Math.max(0, el) / anims[a].fdur);
         n = loop ? ((n % fs.length) + fs.length) % fs.length : Math.min(n, fs.length - 1);
         return fs[n];
       };
@@ -487,7 +567,7 @@ export class SiegeView {
       if (fr) {
         const [fx, fy, fw, fh, ax, ay] = fr;
         if (dead) ctx.globalAlpha = Math.max(0, 1 - Math.max(0, t - u.diedAt - 2.5) / 1.5);
-        const flip = u.side === 0 ? u.face < 0 : u.face > 0;
+        const flip = side === 'blue' ? u.face < 0 : u.face > 0;   // blue frames face right, red ones left
         if (flip) {
           ctx.save(); ctx.translate(sx, 0); ctx.scale(-1, 1);
           ctx.drawImage(sprite.atlas, fx, fy, fw, fh, -ax * zoom, sy - ay * zoom, fw * zoom, fh * zoom);
@@ -591,7 +671,7 @@ export class SiegeView {
     }
     for (const u of this.w.units) {
       if (u.hp <= 0) continue;
-      c.fillStyle = u.side === 0 ? '#9cc4ff' : '#ff9c8f';
+      c.fillStyle = this.colours[u.owner] || (u.side === 0 ? '#9cc4ff' : '#ff9c8f');
       c.fillRect(sx(u.x) - 1, sy(u.y) - 1, 2.5, 2.5);
     }
     const half = this.vw / (2 * TILE * this.cam.zoom);
