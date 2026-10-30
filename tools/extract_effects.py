@@ -35,14 +35,15 @@ BALLISTICS = 93
 
 
 def duel_eligible(u):
-    """Land units that fight: infantry, cavalry, elephants and archers; no siege, rams or ships."""
+    """Land units that fight: infantry, cavalry, elephants, archers, camels and siege
+    (rams and trebuchets too: AOSiege sends them at buildings); no ships."""
     classes = {a['Class'] for a in u['Armours']}
-    if not u['Attack'] > 0 or classes & {16, 17, 20}:
+    if not u['Attack'] > 0 or classes & {16}:
         return False
     # 30: camels (incl. Mameluke) have their own class, not Cavalry. 1263 Flaming Camel, 440 Petard: suicide units.
     if u.get('ID') in (1263, 440):
         return False
-    return bool(classes & {1, 5, 8, 15, 30})
+    return bool(classes & {1, 5, 8, 15, 17, 20, 30})
 
 
 def ranged_record(dat, uid):

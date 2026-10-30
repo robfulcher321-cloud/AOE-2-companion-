@@ -405,7 +405,7 @@ export class World {
   inReach(u, reach) {
     let best = null;
     let bd = Infinity;
-    this.near(u.x, reach + 1, (v) => {
+    if (!u.f.buildingsOnly) this.near(u.x, reach + 1, (v) => {
       if (v.side === u.side || v.hp <= 0) return;
       const d = hyp(v.x - u.x, v.y - u.y) - v.r - u.r;
       if (d <= reach && d < bd && this.canReach(u, v, d)) { bd = d; best = v; }
@@ -423,7 +423,8 @@ export class World {
     let best = null;
     let bd = Infinity;
     const reach = u.f.range + AGGRO;
-    this.near(u.x, reach + 1, (v) => {
+    // Rams and trebuchets ignore soldiers and go for buildings.
+    if (!u.f.buildingsOnly) this.near(u.x, reach + 1, (v) => {
       if (v.side === u.side || v.hp <= 0 || v === skip) return;
       const d = hyp(v.x - u.x, v.y - u.y) - v.r - u.r;
       if (d < bd && d <= reach && this.canReach(u, v, d)) { bd = d; best = v; }
@@ -494,6 +495,36 @@ export class World {
   landShot(s) {
     const f = s.castle ? s.by.f : s.by.f;
     const dmgTo = (v) => damagePerHit({ ...f, attacks: s.attacks, special: f.special || {} }, v.f);
+    const p = f.projectile || {};
+    // Extra stones with no attack of their own (a mangonel's scatter) are just for show.
+    if (s.attacks && (s.attacks.length === 0 || s.attacks.size === 0)) { s.landed = null; return; }
+    // Catapult stones and cannon balls: everyone in the blast. (Enemies only, to keep the lane readable.)
+    if (p.blast > 0 && !s.castle) {
+      let any = null;
+      this.near(s.x1, p.blast + 1, (v) => {
+        if (v.side === s.side || v.hp <= 0) return;
+        if (hyp(v.x - s.x1, v.y - s.y1) > p.blast + v.r) return;
+        this.damage(s.side, v, dmgTo(v), s.by);
+        any = any || v;
+      });
+      if (s.target.kind && s.target.hp > 0 && hyp(s.target.x - s.x1, s.target.y - s.y1) <= s.target.r + p.blast) { this.damage(s.side, s.target, dmgTo(s.target), s.by); any = any || s.target; }
+      s.landed = any;
+      return;
+    }
+    // Scorpion bolts go through: every enemy along the line takes the hit.
+    if (p.pierces && !s.castle) {
+      const dx = s.x1 - s.x0, dy = s.y1 - s.y0, len = hyp(dx, dy) || 1;
+      const ex = s.x1 + (dx / len) * 2, ey = s.y1 + (dy / len) * 2;
+      const lx = Math.min(s.x0, ex), hx = Math.max(s.x0, ex);
+      this.near((lx + hx) / 2, (hx - lx) / 2 + 1, (v) => {
+        if (v.side === s.side || v.hp <= 0) return;
+        const t = Math.max(0, Math.min(1, ((v.x - s.x0) * (ex - s.x0) + (v.y - s.y0) * (ey - s.y0)) / ((ex - s.x0) ** 2 + (ey - s.y0) ** 2 || 1)));
+        if (hyp(v.x - (s.x0 + (ex - s.x0) * t), v.y - (s.y0 + (ey - s.y0) * t)) <= v.r + 0.15) this.damage(s.side, v, dmgTo(v), s.by);
+      });
+      if (s.target.kind && s.target.hp > 0) this.damage(s.side, s.target, dmgTo(s.target), s.by);
+      s.landed = s.target;
+      return;
+    }
     if (s.hit && s.target.hp > 0) { this.damage(s.side, s.target, dmgTo(s.target), s.by); s.landed = s.target; return; }
     // A miss can still come down on someone: half damage.
     let hitV = null;
@@ -773,6 +804,8 @@ export function kindOf(line, f) {
   const root = Number(String(line).split('-')[1]);
   if (root === 93) return 'spear';     // Spearman line
   if (root === 7) return 'skirm';      // Skirmisher line
+  if (f.buildingsOnly) return 'ram';   // rams, trebuchets
+  if (f.armours.has(CLASS.SIEGE)) return 'siege';
   if (f.armours.has(CLASS.CAVALRY) || f.armours.has(CLASS.ELEPHANT) || f.armours.has(CLASS.CAMEL)) return 'cavalry';
   if (f.projectile) return 'archer';
   return 'infantry';
@@ -786,10 +819,12 @@ const BEATS = {
   spear: { cavalry: 3, infantry: 0.4, archer: 0.3, spear: 1, skirm: 1.5 },
   archer: { infantry: 1.5, spear: 2, archer: 1, cavalry: 0.3, skirm: 0.2 },
   skirm: { archer: 3, spear: 1, skirm: 1, infantry: 0.2, cavalry: 0.2 },
-  cavalry: { archer: 2.5, skirm: 2.5, infantry: 1, cavalry: 1, spear: 0.2 },
+  cavalry: { archer: 2.5, skirm: 2.5, infantry: 1, cavalry: 1, spear: 0.2, siege: 3 },
+  siege: { infantry: 2, archer: 2, spear: 2, skirm: 2, cavalry: 0.4, siege: 1 },
+  ram: { infantry: 0.2, archer: 0.4, spear: 0.4, skirm: 0.4, cavalry: 0.2, siege: 0.3 },
 };
 // How good a kind of unit is on its own, before counters (spearmen and skirmishers are cheap specialists).
-const BASE = { cavalry: 1.1, infantry: 1.1, archer: 1, spear: 0.8, skirm: 0.7 };
+const BASE = { cavalry: 1.1, infantry: 1.1, archer: 1, spear: 0.8, skirm: 0.7, siege: 0.8, ram: 0.6 };
 
 export class Computer {
   constructor(world, side, { level = 'normal' } = {}) {

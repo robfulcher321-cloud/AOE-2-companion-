@@ -8,21 +8,25 @@
 // down: a building trains about the same value of army per second whatever it
 // makes, so cheap units come in numbers and expensive ones in quality.
 
-import { buildFighter, otherTechsFor, isDuelEligible, trackFor, affectsUnit, TRACKS, OTHER_TECHS } from '../duel/combat.js';
+import { buildFighter, otherTechsFor, isDuelEligible, buildingsOnly, trackFor, affectsUnit, TRACKS, OTHER_TECHS } from '../duel/combat.js';
 import { CIV_EFFECTS, UNIT_CLASS } from '../duel/effects.js';
 
-export const TRAIN_AT = [12, 87, 101, 82];        // Barracks, Archery Range, Stable, Castle
-export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 82: 'Castle', 84: 'Market' };
+export const TRAIN_AT = [12, 87, 101, 49, 82];    // Barracks, Archery Range, Stable, Siege Workshop, Castle
+export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 49: 'Siege Workshop', 82: 'Castle', 84: 'Market' };
 export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 275, income: 5, max: 3 };
-export const NOT_UNITS = new Set([440, 331]);    // Petard, Trebuchet: not lane fighters
-export const NEEDS = { 5: 47 };                // unit -> tech it needs (Hand Cannoneer: Chemistry)
+export const NOT_UNITS = new Set([440]);         // Petard: not a lane fighter
+// The tech tree lists the Trebuchet packed; it fights unpacked.
+const FIGHTS_AS = { 331: 42 };
+const SIEGE_CLASSES = [17, 20];
+const isSiege = (u) => (u?.Armours || []).some((a) => SIEGE_CLASSES.includes(a.Class));
+export const NEEDS = { 5: 47, 36: 47 };         // unit -> tech it needs (Hand Cannoneer, Bombard Cannon: Chemistry)
 // What a building costs depends on what it trains: cheap counters (spears,
 // skirmishers), standard infantry, archers and scouts, dearer cavalry, and
 // elephants dearest. Castle (unique unit) buildings cost 40% more again.
-export const BUILD_PRICES = { spear: 140, skirm: 150, standard: 175, scout: 185, cavalry: 215, elephant: 270 };
+export const BUILD_PRICES = { spear: 140, skirm: 150, standard: 175, scout: 185, cavalry: 215, siege: 230, elephant: 270 };
 const UNIQUE_MARKUP = 1.4;
 // Stronger units also take longer to come out (on top of time scaling with the unit's cost).
-const BUILD_TIME = { spear: 0.9, skirm: 0.9, standard: 1, scout: 1, cavalry: 1.25, elephant: 1.5 };
+const BUILD_TIME = { spear: 0.9, skirm: 0.9, standard: 1, scout: 1, cavalry: 1.25, siege: 1.3, elephant: 1.5 };
 const UNIQUE_TIME = 1.1;
 const ARMOUR = { ELEPHANT: 5, CAVALRY: 8, CAMEL: 30 };
 /** Which price band a line's first unit falls in. */
@@ -30,6 +34,7 @@ export function priceBand(rootId, unit) {
   if (rootId === 93) return 'spear';
   if (rootId === 7) return 'skirm';
   const armours = new Set((unit?.Armours || []).map((a) => a.Class));
+  if (armours.has(17) || armours.has(20)) return 'siege';   // rams, catapults, cannons, trebuchets
   if (armours.has(ARMOUR.ELEPHANT)) return 'elephant';
   if (rootId === 448 || rootId === 751 || rootId === 1755) return 'scout';   // Scout Cavalry, Eagle Scout, Camel Scout
   if (armours.has(ARMOUR.CAVALRY) || armours.has(ARMOUR.CAMEL)) return 'cavalry';
@@ -62,7 +67,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
   // Copies of unique units unlocked by a tech elsewhere (Huskarls at the
   // Barracks, Tarkans at the Stable) are left out; the Castle trains them.
   const fights = (n) => n.use_type === 'Unit' && ok(n) && (n.node_status !== 'ResearchRequired' || NEEDS[n.node_id])
-    && !NOT_UNITS.has(n.node_id) && U[n.node_id] && isDuelEligible(U[n.node_id]);
+    && !NOT_UNITS.has(n.node_id) && U[FIGHTS_AS[n.node_id] ?? n.node_id] && isDuelEligible(U[FIGHTS_AS[n.node_id] ?? n.node_id]);
 
   // Unit lines: each unit with nothing before it starts a line; follow the
   // units that upgrade from it, one step at a time.
@@ -82,18 +87,19 @@ export function buildKit({ data, strings = {}, tree, civ }) {
         chain.push(next);
       }
       // At the Castle: unique units have an Elite version; heroes don't.
-      if (building === 82 && castleLines > 0 && chain.length < 2) continue;
+      // (Siege at the Castle, like the Trebuchet, is its own line.)
+      if (building === 82 && castleLines > 0 && chain.length < 2 && !isSiege(U[FIGHTS_AS[root.node_id] ?? root.node_id])) continue;
       if (building === 82) castleLines += 1;
       chain.forEach((n) => seen.add(n.node_id));
-      const band = priceBand(root.node_id, U[root.node_id]);
+      const band = priceBand(root.node_id, U[FIGHTS_AS[root.node_id] ?? root.node_id]);
       const tiers = chain.map((n, i) => {
         const up = i ? data.data.unit_upgrades?.[n.node_id] : null;
         return {
-          unitId: n.node_id,
+          unitId: FIGHTS_AS[n.node_id] ?? n.node_id,
           name: name(n),
           picture: n.picture_index,
           upgrade: i ? upgradePrice(total(up?.Cost || { Gold: 500 })) : 0,
-          every: Math.max(8, Math.min(75, Math.round((total(U[n.node_id].Cost) / OUTPUT) * BUILD_TIME[band] * (building === 82 ? UNIQUE_TIME : 1) * 10) / 10)),
+          every: Math.max(8, Math.min(75, Math.round((total(U[FIGHTS_AS[n.node_id] ?? n.node_id].Cost) / OUTPUT) * BUILD_TIME[band] * (building === 82 ? UNIQUE_TIME : 1) * 10) / 10)),
         };
       });
       lines.push({
@@ -165,14 +171,19 @@ export function buildKit({ data, strings = {}, tree, civ }) {
           while (n < 3 && researched.has(track.techs[n])) n++;
           return n;
         };
-        cache.set(ck, buildFighter(unit, t.name, {
+        const f = buildFighter(unit, t.name, {
           civ,
           attackLevel: level('attack'),
           armourLevel: level('armour'),
           techs: otherTechsFor(unit).map((o) => o.id).filter((id) => researched.has(id)),
           uts: [...researched].filter((id) => utIds.has(id)),
           units: U,
-        }));
+        });
+        // Rams and trebuchets only go for buildings; a trebuchet walks packed (at its packed speed).
+        f.buildingsOnly = buildingsOnly(unit);
+        const packed = Object.entries(FIGHTS_AS).find(([, v]) => v === t.unitId)?.[0];
+        if (!(f.speed > 0) && packed) { f.speed = U[packed].Speed; f.walkAs = Number(packed); }
+        cache.set(ck, f);
       }
       return cache.get(ck);
     },

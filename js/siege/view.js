@@ -4,6 +4,7 @@
 // actions: drag to look around, tap a plot or building, press and hold a building.
 
 import { LANE, CASTLE_X, RIVER, BLAST } from './world.js';
+import { TEAM_RGB } from '../duel/spritepack.js';
 
 const TILE = 96 / Math.SQRT2;   // screen px per tile at zoom 1 (same as the Test arena)
 const DEPTH = 0.5;
@@ -16,7 +17,12 @@ export const COLOURS = [
   { name: 'Blue', hex: '#2f6fe0' }, { name: 'Red', hex: '#d6322b' }, { name: 'Green', hex: '#3bb143' }, { name: 'Yellow', hex: '#e8cf2b' },
   { name: 'Teal', hex: '#2bc8d6' }, { name: 'Purple', hex: '#a04fe0' }, { name: 'Grey', hex: '#a0a0a0' }, { name: 'Orange', hex: '#ee8a2b' },
 ];
-const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const rgbOf = (hex) => {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const m = Math.max(...c, 1);
+  return c.map((v) => Math.round((v * 236) / m));
+};
+const BUILDING_KIND = { 12: 'barracks', 87: 'archery', 101: 'stable', 82: 'castle', 84: 'market', 103: 'blacksmith', 49: 'workshop', 104: 'monastery' };
 
 export class SiegeView {
   /** handlers: { tapPlot(i), tapBuilding(b), holdBuilding(b) } */
@@ -33,7 +39,7 @@ export class SiegeView {
     this.lastTouch = 0;
     this.floaters = [];
     this.seen = 0;
-    this.recoloured = new Map();   // "unitId|player" -> repainted sprite (or 'pending' / 'failed')
+    this.tinted = new Map();   // unit or building + colour -> its tinted sprite (or 'pending' / 'failed')
     const ro = new ResizeObserver(() => this.resize());
     ro.observe(canvas); ro.observe(mini);
     this.bindPan();
@@ -45,7 +51,7 @@ export class SiegeView {
    * from the sprite pack; other colours are repainted in a worker the first time
    * that unit is needed).
    */
-  setup(world, { sprites = null, unitIcons = {}, buildingIcons = {}, mySide = 0, colours = null } = {}) {
+  setup(world, { sprites = null, unitIcons = {}, buildingIcons = {}, mySide = 0, colours = null, civs = [] } = {}) {
     this.w = world;
     this.sprites = sprites;
     this.unitIcons = unitIcons;
@@ -53,7 +59,9 @@ export class SiegeView {
     this.me = mySide;
     this.myTeam = world.sides[mySide].team;
     this.colours = colours || world.sides.map((s) => SIDE[s.team]);
+    // The pack's own blue and red, or any other colour (brightest channel scaled like theirs)
     this.paint = this.colours.map((hex) => (hex === COLOURS[0].hex ? 'blue' : hex === COLOURS[1].hex ? 'red' : rgbOf(hex)));
+    this.civs = civs;
     this.grassPattern = null;
     this.follow = true;
     this.cam.x = CASTLE_X[this.myTeam] + (this.myTeam === 0 ? 6 : -6);
@@ -399,29 +407,57 @@ export class SiegeView {
     const { size, iy, lift, lx, rx, ty, by } = this.boxOf(b);
     const zoom = this.cam.zoom;
     ctx.globalAlpha = dead ? Math.max(0, 1 - (t - b.diedAt) / 3) : 1;
-    // A raised stone platform: front face, then the top in the side's trim
-    ctx.fillStyle = dead ? '#2a241c' : '#4b4335';
-    ctx.fillRect(lx, by - lift, rx - lx, lift + 2);
-    ctx.fillStyle = dead ? '#3a3328' : '#7a7160';
-    ctx.fillRect(lx, ty - lift, rx - lx, by - ty);
     const selected = this.selected === b.id;
     const own = b.owner !== undefined ? this.colours[b.owner] : SIDE[b.side];
-    ctx.strokeStyle = selected ? '#ffd97a' : own; ctx.lineWidth = selected ? 3 : 2;
-    ctx.strokeRect(lx, ty - lift, rx - lx, by - ty);
+    // The building itself: the game's graphic for the owner's civ, in their colour.
+    // (Until it's ready, or without the graphics: a stone platform.)
+    const bs = this.buildingSprite(b);
+    let spriteTop = null;
+    if (bs) {
+      const [fx, fy, fw, fh, ax, ay] = bs.frame;
+      const [gx, gy] = this.toScreen(b.x, b.y);
+      const k = ((rx - lx) * (b.kind === 'castle' ? 1.3 : 1.3)) / fw;
+      if (selected) this.diamond(b.x, b.y, b.r * 1.05, 'rgb(255 217 122 / .18)', '#ffd97a');
+      ctx.drawImage(bs.atlas, fx, fy, fw, fh, gx - ax * k, gy - ay * k, fw * k, fh * k);
+      if (dead) ctx.globalAlpha *= 0.5;
+      spriteTop = gy - ay * k;
+    } else {
+      // A raised stone platform: front face, then the top in the side's trim
+      ctx.fillStyle = dead ? '#2a241c' : '#4b4335';
+      ctx.fillRect(lx, by - lift, rx - lx, lift + 2);
+      ctx.fillStyle = dead ? '#3a3328' : '#7a7160';
+      ctx.fillRect(lx, ty - lift, rx - lx, by - ty);
+      ctx.strokeStyle = selected ? '#ffd97a' : own; ctx.lineWidth = selected ? 3 : 2;
+      ctx.strokeRect(lx, ty - lift, rx - lx, by - ty);
+    }
     // The picture on the platform: for a training building, the unit it makes now
     // (it changes when you upgrade), with the building's own icon small in the corner.
     const trains = b.kind === 'building' && b.line !== 'market';
     const line = trains ? this.w.line(b.owner, b.line) : null;
     const unitImg = trains ? this.unitIcons[line.tiers[b.tier].unitId] : null;
-    if (trains) this.spriteFor(line.tiers[b.tier].unitId, b.owner, b.side);   // get its soldiers' colours ready before they come out
+    if (trains) {
+      const f = this.w.kits[b.owner].fighter(b.line, b.tier);
+      this.spriteFor(f.unitId, b.owner);
+      if (f.walkAs) this.spriteFor(f.walkAs, b.owner);
+    }   // get its soldiers' colours ready before they come out
     const bImg = this.buildingIcons[b.building];
     const main = unitImg?.complete && unitImg.naturalWidth ? unitImg : bImg;
     // A short pop and gold flash right after an upgrade
     const since = b.upgradedAt !== undefined ? Math.max(0, t - b.upgradedAt) : 99;
     const pop = since < 0.6 ? 1 + 0.18 * Math.sin((since / 0.6) * Math.PI) : 1;
-    const sz = size * pop;
+    // With the building graphic, the unit it trains is a smaller badge over its roof.
+    const base = bs ? size * 0.62 : size;
+    const sz = base * pop;
     const ix = sx - sz / 2;
-    const iy2 = iy - (sz - size);
+    const iy2 = (bs ? Math.max(spriteTop - base * 0.35, iy - base) : iy) - (sz - base);
+    if (bs && (!trains || b.kind === 'castle')) {
+      // Castle and Market: no badge, just their bars
+      ctx.globalAlpha = 1;
+      if (dead) return;
+      const bw = Math.max(40, (rx - lx) * 0.8);
+      this.bar(sx - bw / 2, spriteTop - 4, bw, 5, b.hp / b.maxHp);
+      return;
+    }
     ctx.fillStyle = SIDE_DARK[b.side];
     ctx.fillRect(ix - 3, iy2 - 3, sz + 6, sz + 6);
     if (main?.complete && main.naturalWidth) {
@@ -470,7 +506,7 @@ export class SiegeView {
     if (trains && b.every) {
       const frac = b.waiting ? 1 : 1 - Math.max(0, b.timer) / b.every;
       const h = Math.max(5, 6 * zoom);
-      const y = iy2 + sz + 5;
+      const y = bs ? by + 2 : iy2 + sz + 5;
       ctx.fillStyle = 'rgb(0 0 0 / .6)';
       ctx.fillRect(ix - 3, y - 1, sz + 6, h + 2);
       ctx.fillStyle = b.hold ? '#4fb0ff' : '#e8d9a8';
@@ -494,58 +530,57 @@ export class SiegeView {
 
   /**
    * The sprite to draw a unit with, in its player's colour: { sprite, side } where
-   * side says which frames ('blue' face right, 'red' face left). A colour other than
-   * the pack's blue or red is repainted in the background; until it's ready the
-   * team colour is used.
+   * side says which frames ('blue' face right, 'red' face left). Colours are
+   * applied in the background (spritepack tint) the first time a unit is needed;
+   * buildings ask for theirs as soon as they're built, so it's ready before the
+   * first soldier comes out. Until then: any colour already made, else the icon.
    */
-  spriteFor(unitId, player, team) {
-    const base = this.sprites?.units?.[unitId];
-    const teamSet = team === 0 ? 'blue' : 'red';
-    if (!base) return { sprite: null, side: teamSet };
-    const paint = this.paint?.[player];
-    if (!paint) return { sprite: base, side: teamSet };
-    if (typeof paint === 'string') return { sprite: base, side: base.anims.idle?.frames?.[paint]?.length ? paint : teamSet };
-    const key = `${unitId}|${player}`;
-    const got = this.recoloured.get(key);
-    if (got && typeof got === 'object') return { sprite: got, side: 'blue' };
-    if (!got) this.recolour(key, base, paint);
-    return { sprite: base, side: teamSet };
-  }
-
-  recolour(key, base, rgb) {
-    if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') { this.recoloured.set(key, 'failed'); return; }
-    this.recoloured.set(key, 'pending');
-    if (!this.worker) {
-      this.worker = new Worker(new URL('./recolour.js', import.meta.url));
-      this.worker.onmessage = (e) => {
-        const { key: k, bitmap, rects, error } = e.data;
-        const job = this.jobs?.get(k);
-        this.jobs?.delete(k);
-        if (error || !job) { this.recoloured.set(k, 'failed'); return; }
-        // Same animations, pointing at the repainted frames
-        const anims = {};
-        let i = 0;
-        for (const [name, a] of Object.entries(job.base.anims)) {
-          const frames = (a.frames.blue || []).map((f) => [...rects[i++], f[4], f[5]]);
-          anims[name] = { ...a, frames: { blue: frames } };
-        }
-        this.recoloured.set(k, { ...job.base, anims, atlas: bitmap });
-      };
+  spriteFor(unitId, player) {
+    const pack = this.sprites?.pack;
+    if (!pack?.has(unitId)) return { sprite: null, side: 'blue' };
+    const paint = this.paint?.[player] ?? 'blue';
+    const team = typeof paint === 'string';
+    const key = team ? `${unitId}|team` : `${unitId}|${paint.join(',')}`;
+    const got = this.tinted.get(key);
+    if (got && typeof got === 'object') return { sprite: got, side: team ? paint : 'blue' };
+    if (!got) {
+      this.tinted.set(key, 'pending');
+      (team ? pack.unit(unitId) : pack.unitIn(unitId, paint))
+        .then((sp) => this.tinted.set(key, sp || 'failed'), () => this.tinted.set(key, 'failed'));
     }
-    (this.jobs ||= new Map()).set(key, { base });
-    const rects = Object.values(base.anims).flatMap((a) => (a.frames.blue || []).map((f) => f.slice(0, 4)));
-    this.worker.postMessage({ key, atlas: base.atlas, rects, colour: rgb });
+    const any = this.tinted.get(`${unitId}|team`);
+    return typeof any === 'object' ? { sprite: any, side: team ? paint : 'blue' } : { sprite: null, side: 'blue' };
   }
 
-  /** Stop the repainting worker (when the game closes). */
-  dispose() { this.worker?.terminate(); this.worker = null; }
+  /** A structure's building graphic, in its owner's colour and civ's architecture: { atlas, frame } or null. */
+  buildingSprite(b) {
+    const pack = this.sprites?.pack;
+    const kind = BUILDING_KIND[b.building];
+    if (!pack || !kind) return null;
+    const player = b.owner ?? this.w.teams[b.side].players[0];
+    const name = pack.buildingSet(this.civs?.[player])?.[kind];
+    if (!name) return null;
+    const paint = this.paint?.[player] ?? 'blue';
+    const rgb = typeof paint === 'string' ? TEAM_RGB[paint] : paint;
+    const key = `${name}|${rgb.join(',')}`;
+    const got = this.tinted.get(key);
+    if (got && typeof got === 'object') return got;
+    if (!got) {
+      this.tinted.set(key, 'pending');
+      pack.building(name, rgb).then((sp) => this.tinted.set(key, sp || 'failed'), () => this.tinted.set(key, 'failed'));
+    }
+    return null;
+  }
+
+  dispose() { this.tinted.clear(); }
 
   drawUnit(u, x, y, t, zoom) {
     const { ctx } = this;
     const [sx, sy] = this.toScreen(x, y);
     if (sx < -80 || sx > this.vw + 80) return;
     const dead = u.hp <= 0;
-    const { sprite, side } = this.spriteFor(u.f.unitId, u.owner ?? u.side, u.side);
+    // (A trebuchet walks packed: a different unit's graphics.)
+    const { sprite, side } = this.spriteFor(u.moving && u.f.walkAs ? u.f.walkAs : u.f.unitId, u.owner ?? this.w.teams[u.side].players[0]);
     let fr = null;
     if (sprite) {
       const { anims } = sprite;
@@ -553,7 +588,7 @@ export class SiegeView {
       const at = (a, el, loop) => {
         const fs = seq(a);
         if (!fs?.length) return null;
-        let n = Math.floor(Math.max(0, el) / anims[a].fdur);
+        let n = Math.floor(Math.max(0, el) / (anims[a].fdur || 0.1));   // (single-frame poses have no frame time)
         n = loop ? ((n % fs.length) + fs.length) % fs.length : Math.min(n, fs.length - 1);
         return fs[n];
       };

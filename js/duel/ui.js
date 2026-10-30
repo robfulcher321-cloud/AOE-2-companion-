@@ -2,10 +2,10 @@ import { loadCore, loadTree, imageUrl, civIconUrl, nameText } from '../data.js';
 import { Picker } from '../picker.js';
 import { UNIT_CLASS, CIV_EFFECTS } from './effects.js';
 import { civKeys } from '../techtree.js';
-import { buildFighter, isDuelEligible, damagePerHit, hitsToKill, affectsUnit, trackFor, otherTechsFor, CLASS } from './combat.js';
+import { buildFighter, isDuelEligible, buildingsOnly, damagePerHit, hitsToKill, affectsUnit, trackFor, otherTechsFor, CLASS } from './combat.js';
 import { simulateMany } from './sim.js';
 import { ArenaPlayer } from './render.js';
-import { loadPack } from './spritepack.js';
+import { loadPack, onPackProgress } from './spritepack.js';
 
 const OTHER_NOTES = { 435: '+20 HP', 437: 'accuracy, fire rate', 436: 'armour, bonus damage', 47: '+1 attack', 215: '+10% speed', 39: '+10% speed', 93: 'arrows lead moving targets' };
 
@@ -106,7 +106,8 @@ class SidePanel {
     const byName = new Map();
     for (const node of tree.units_techs) {
       const unit = this.data.data.Unit[node.node_id];
-      if (node.use_type !== 'Unit' || !available(node) || !isDuelEligible(unit)) continue;
+      // Rams and trebuchets only hit buildings, so they've nothing to do in a duel.
+      if (node.use_type !== 'Unit' || !available(node) || !isDuelEligible(unit) || buildingsOnly(unit)) continue;
       const label = nameText(this.strings[node.name_string_id] || node.name);
       const prev = byName.get(label);
       if (!prev || node.node_id < prev.node.node_id) byName.set(label, { node, unit });
@@ -300,10 +301,18 @@ export async function initDuel() {
   const player = new ArenaPlayer(document.getElementById('arena'));
   const resultBox = document.getElementById('result');
   let current = null;
-  const pack = await loadPack();
+  // Game graphics download in the background (first start: tens of MB); until then fights use icons.
+  let pack = null;
   const packText = document.getElementById('pack-text');
   const showPack = (message) => { packText.textContent = message || ''; packText.hidden = !message; };
-  if (!pack) showPack('In-game graphics couldn\'t be loaded, so units are shown as icons.');
+  const stopFollow = onPackProgress(({ active, done, total }) => {
+    if (active && total) showPack(`Downloading game graphics: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB (once only)`);
+  });
+  loadPack().then((p) => {
+    pack = p;
+    stopFollow();
+    showPack(p ? '' : 'In-game graphics couldn\'t be downloaded, so units are shown as icons. They\'ll download next time you\'re online.');
+  });
 
   // Sprites for every unit that can appear (including a Konnik's dismounted
   // form) and every projectile they can throw or fire.
@@ -349,7 +358,7 @@ export async function initDuel() {
     fightBtn.disabled = false;
     fightBtn.textContent = 'Fight';
     const sprites = await spritesFor(fa, fb);
-    showPack(pack && !sprites ? 'This matchup has no in-game graphics, so it\'s shown with icons.' : '');
+    if (pack) showPack(sprites ? '' : 'This matchup has no in-game graphics, so it\'s shown with icons.');
     const icons = await Promise.all([fa.icon, fb.icon].map((src) => new Promise((res) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';

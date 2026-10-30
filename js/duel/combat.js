@@ -52,15 +52,20 @@ export const isInfantry = (u) => armourClasses(u).has(CLASS.INFANTRY);
 export const isCavalry = (u) => armourClasses(u).has(CLASS.CAVALRY);
 
 /**
- * Units the duel supports: land units that fight, melee or ranged; no siege, rams or ships.
- * Camels (including the Mameluke) have their own armour class, not Cavalry, so they're listed too.
+ * Units the duel supports: land units that fight, melee or ranged, including
+ * siege; no ships. Camels (including the Mameluke) have their own armour class,
+ * not Cavalry, so they're listed too.
  */
 export function isDuelEligible(u) {
   if (!u || !(u.Attack > 0) || SUICIDE.has(u.ID)) return false;
   const c = armourClasses(u);
-  if (c.has(CLASS.SHIP) || c.has(CLASS.SIEGE) || c.has(CLASS.RAM)) return false;
-  return c.has(CLASS.INFANTRY) || c.has(CLASS.CAVALRY) || c.has(CLASS.ELEPHANT) || c.has(CLASS.ARCHER) || c.has(CLASS.CAMEL);
+  if (c.has(CLASS.SHIP)) return false;
+  return c.has(CLASS.INFANTRY) || c.has(CLASS.CAVALRY) || c.has(CLASS.ELEPHANT) || c.has(CLASS.ARCHER) || c.has(CLASS.CAMEL)
+    || c.has(CLASS.SIEGE) || c.has(CLASS.RAM);
 }
+
+/** Rams, trebuchets and armoured elephants: they only attack buildings (and other siege). */
+export const buildingsOnly = (u) => armourClasses(u).has(CLASS.RAM);
 
 export const isRanged = (u) => Boolean(RANGED[u?.ID]);
 

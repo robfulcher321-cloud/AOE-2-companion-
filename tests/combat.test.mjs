@@ -36,7 +36,8 @@ assert.equal(damagePerHit(militia, tank), 1);
 // Eligibility: melee and ranged land units in; siege, rams and ships out
 assert.ok(isDuelEligible(U[554]) && isDuelEligible(U[569]) && isDuelEligible(U[359]));
 assert.ok(isDuelEligible(U[4]) && isDuelEligible(U[5]) && isDuelEligible(U[39]) && isDuelEligible(U[879]));
-assert.ok(!isDuelEligible(U[1258]) && !isDuelEligible(U[539]) && !isDuelEligible(U[279]) && !isDuelEligible(U[36]));
+assert.ok(!isDuelEligible(U[539]) && !isDuelEligible(U[1105]), 'no ships, no siege towers');
+assert.ok(isDuelEligible(U[279]) && isDuelEligible(U[36]) && isDuelEligible(U[280]), 'scorpions, bombard cannons and mangonels are offered');
 
 // Simulation: winner, hit counts consistent with the formula
 for (const [x, y] of [[etk, pal], [champ, halb], [halb, pal]]) {

@@ -1,19 +1,31 @@
-"""Build a private sprite pack for the AoE2 Companion duel arena.
+"""Build the AoE2 Companion sprite packs (format 2) from YOUR OWN copy of
+Age of Empires II: Definitive Edition.
 
-Reads unit animations and the grass texture from YOUR OWN copy of
-Age of Empires II: Definitive Edition and writes one .aoe2pack file that the
-app imports and keeps on your device. The pack contains Microsoft's game art,
-so don't commit or share it; this script contains no game art itself.
+Format 2 works like the game: each frame is stored once (facing right), with
+its player-colour mask beside it, and the app tints the mask with each
+player's colour at run time (blue, red or any other). Facing left is the
+same frame mirrored.
+
+Writes several .aoe2pack files plus manifest.json into --out-dir:
+  units-1.aoe2pack ...  unit animations (idle, walk, attack, death), split to stay
+                        well under GitHub's file size limits; the first also holds
+                        the grass and projectiles
+  buildings.aoe2pack    Barracks, Archery Range, Stable, Castle, Market, Blacksmith,
+                        Siege Workshop and Monastery for every architecture set
+The app downloads the files listed in manifest.json from the sprites repo and
+keeps them on the phone, re-downloading only files whose hash changed.
 
 Usage:
   pip install genieutils-py numpy pillow
-  python tools/make_sprite_pack.py --game "D:/Steam/steamapps/common/AoE2DE" --out sprites.aoe2pack
+  python tools/make_sprite_pack.py --game "D:/Steam/steamapps/common/AoE2DE" --out-dir packs/
 
 Options:
-  --units 554,569      only these unit IDs (default: every unit the duel supports)
+  --units 554,569      only these unit IDs
   --techtree data.json aoe2techtree's data.json (default: downloaded)
+  --split-mb 24        start a new units file after this many MB
 """
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -31,31 +43,129 @@ from sld import SLD, MAIN, SHADOW, PCOLOR  # noqa: E402
 
 TECHTREE_URL = 'https://raw.githubusercontent.com/SiegeEngineers/aoe2techtree/master/data/data.json'
 ANIMS = ['idle', 'walk', 'attack', 'death']
-SIDES = [  # (name, facing angle out of 16, player colour)
-    ('blue', 0, (52, 104, 236)),   # left side, faces right
-    ('red', 8, (226, 40, 32)),     # right side, faces left
-]
 MAX_FRAMES = 30
 SHADOW_ALPHA = 0.55
 MAGIC = b'AOE2PACK'
+VERSION = 2
 
+# Imperial-look buildings the app draws, by the unit ID that has that look
+BUILDINGS = {'barracks': 20, 'archery': 14, 'stable': 153, 'castle': 82, 'market': 137,
+             'blacksmith': 19, 'workshop': 150, 'monastery': 104}
+# Game data civ names that differ from aoe2techtree's civ keys
+CIV_KEYS = {'British': 'Britons', 'French': 'Franks', 'Byzantine': 'Byzantines', 'Mayan': 'Mayans'}
 
-# Projectiles whose frames are tilt steps along the flight (rising -> falling);
-# the rest (axes, chakrams, bolas...) spin, so their frames loop.
 PITCHED = ('arrow', 'dart', 'spear', 'bolt')
 
 
-def duel_eligible(u):
-    """Land units that fight, melee or ranged; no siege, rams or ships."""
+def wanted(u, uid):
+    """Land units the app can show: everything that fights (incl. siege, rams, camels), and Monks."""
     classes = {a['Class'] for a in u['Armours']}
-    if not u['Attack'] > 0:
+    if uid in (1263, 440):   # Flaming Camel, Petard: suicide units
         return False
-    if classes & {16, 17, 20}:
+    if uid == 125:           # Monk
+        return True
+    if classes & {16}:       # ships
         return False
-    # 30: camels (incl. Mameluke) have their own class, not Cavalry. 1263 Flaming Camel, 440 Petard: suicide units.
-    if u.get('ID') in (1263, 440):
-        return False
-    return bool(classes & {1, 5, 8, 15, 30})
+    return bool(classes & {1, 5, 8, 15, 17, 20, 30})
+
+
+def compose(frame, mirror=False):
+    """Main layer over its shadow, plus the player-colour mask. Returns (RGBA, mask L, hotspot x, y) or None."""
+    main = frame[MAIN]
+    if main is None or main.w == 0:
+        return None
+    shadow = frame[SHADOW]
+    layers = [main] + ([shadow] if shadow is not None and shadow.w else [])
+    x0 = min(l.x1 for l in layers)
+    y0 = min(l.y1 for l in layers)
+    x1 = max(l.x1 + l.img.shape[1] for l in layers)
+    y1 = max(l.y1 + l.img.shape[0] for l in layers)
+    canvas = np.zeros((y1 - y0, x1 - x0, 4), np.float32)
+    mask = np.zeros((y1 - y0, x1 - x0), np.float32)
+    if shadow is not None and shadow.w:
+        a = shadow.img.astype(np.float32) / 255 * SHADOW_ALPHA
+        sl = canvas[shadow.y1 - y0:shadow.y1 - y0 + a.shape[0], shadow.x1 - x0:shadow.x1 - x0 + a.shape[1]]
+        sl[..., 3] = np.maximum(sl[..., 3], a)
+    rgba = main.img.astype(np.float32)
+    a = rgba[..., 3:] / 255
+    oy, ox = main.y1 - y0, main.x1 - x0
+    dst = canvas[oy:oy + a.shape[0], ox:ox + a.shape[1]]
+    dst[..., :3] = rgba[..., :3] * a + dst[..., :3] * (1 - a)
+    dst[..., 3:] = a + dst[..., 3:] * (1 - a)
+    pc = frame[PCOLOR]
+    if pc is not None and pc.w:
+        mask[oy:oy + a.shape[0], ox:ox + a.shape[1]] = pc.img.astype(np.float32) * a[..., 0]
+    out = np.zeros_like(canvas)
+    out[..., :3] = np.where(canvas[..., 3:] > 0, canvas[..., :3], 0)
+    out[..., 3] = canvas[..., 3] * 255
+    img = Image.fromarray(out.clip(0, 255).astype(np.uint8), 'RGBA')
+    m = Image.fromarray(mask.clip(0, 255).astype(np.uint8), 'L')
+    bbox = img.getbbox()
+    if not bbox:
+        return None
+    img, m = img.crop(bbox), m.crop(bbox)
+    hx, hy = frame['hotspot']
+    ax, ay = hx - x0 - bbox[0], hy - y0 - bbox[1]
+    if mirror:
+        img, m = img.transpose(Image.FLIP_LEFT_RIGHT), m.transpose(Image.FLIP_LEFT_RIGHT)
+        ax = img.width - ax
+    return img, m, ax, ay
+
+
+def pack_atlas(images, width=2048):
+    """Shelf-pack images. Returns ([(x, y, w, h)], height)."""
+    order = sorted(range(len(images)), key=lambda i: -images[i].height)
+    rects = [None] * len(images)
+    x = y = shelf = 0
+    for i in order:
+        w, h = images[i].size
+        if x + w > width:
+            x, y, shelf = 0, y + shelf + 1, 0
+        rects[i] = (x, y, w, h)
+        x += w + 1
+        shelf = max(shelf, h)
+    return rects, y + shelf
+
+
+def atlas_pair(images, masks, width=2048):
+    """Atlas and its mask, same layout. Returns (atlas webp bytes, mask webp bytes or None, rects)."""
+    rects, height = pack_atlas(images, width)
+    atlas = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    mask = Image.new('L', (width, height), 0)
+    for img, m, (rx, ry, _, _) in zip(images, masks, rects):
+        atlas.paste(img, (rx, ry))
+        mask.paste(m, (rx, ry))
+    buf = io.BytesIO()
+    atlas.save(buf, 'WEBP', quality=88, method=4)
+    mbuf = None
+    if mask.getbbox():
+        b = io.BytesIO()
+        mask.convert('RGB').save(b, 'WEBP', lossless=True, method=4)
+        mbuf = b.getvalue()
+    return buf.getvalue(), mbuf, rects
+
+
+class Pack:
+    """One output file: JSON header + blobs."""
+
+    def __init__(self, kind):
+        self.blobs = []
+        self.size = 0
+        self.meta = {'version': VERSION, 'kind': kind, 'created': time.strftime('%Y-%m-%d'), 'tileSize': 96}
+
+    def add(self, data):
+        off = self.size
+        self.blobs.append(data)
+        self.size += len(data)
+        return [off, len(data)]
+
+    def write(self, path):
+        header = json.dumps(self.meta, separators=(',', ':')).encode()
+        with open(path, 'wb') as fh:
+            fh.write(MAGIC + struct.pack('<II', VERSION, len(header)) + header)
+            for b in self.blobs:
+                fh.write(b)
+        return os.path.getsize(path)
 
 
 def projectile_entry(g, sld):
@@ -71,191 +181,180 @@ def projectile_entry(g, sld):
             if fi >= len(sld.frames):
                 continue
             try:
-                comp = compose(sld.frame(fi), (200, 200, 200))
+                comp = compose(sld.frame(fi))
             except KeyError:
-                comp = None
+                continue
             if comp is None:
                 continue
-            img, ax, ay = comp
+            img, _, ax, ay = comp
             seq.append([len(images), ax, ay])
             images.append(img)
         frames[side] = seq
     return mode, images, frames
 
 
-def compose(frame, colour):
-    """Main layer with player colour applied, over its shadow. Returns (RGBA image, hotspot x, y)."""
-    main = frame[MAIN]
-    if main is None or main.w == 0:
-        return None
-    shadow = frame[SHADOW]
-    layers = [main] + ([shadow] if shadow is not None and shadow.w else [])
-    x0 = min(l.x1 for l in layers)
-    y0 = min(l.y1 for l in layers)
-    x1 = max(l.x1 + l.img.shape[1] for l in layers)
-    y1 = max(l.y1 + l.img.shape[0] for l in layers)
-    canvas = np.zeros((y1 - y0, x1 - x0, 4), np.float32)
-    if shadow is not None and shadow.w:
-        a = shadow.img.astype(np.float32) / 255 * SHADOW_ALPHA
-        sl = canvas[shadow.y1 - y0:shadow.y1 - y0 + a.shape[0], shadow.x1 - x0:shadow.x1 - x0 + a.shape[1]]
-        sl[..., 3] = np.maximum(sl[..., 3], a)
-    rgba = main.img.astype(np.float32)
-    pc = frame[PCOLOR]
-    if pc is not None and pc.w:
-        m = pc.img.astype(np.float32)[..., None] / 255
-        lum = rgba[..., :3].mean(-1, keepdims=True) / 255
-        tint = np.clip(np.array(colour, np.float32) * lum * 1.7, 0, 255)
-        rgba[..., :3] = rgba[..., :3] * (1 - m) + tint * m
-    a = rgba[..., 3:] / 255
-    dst = canvas[main.y1 - y0:main.y1 - y0 + a.shape[0], main.x1 - x0:main.x1 - x0 + a.shape[1]]
-    dst[..., :3] = rgba[..., :3] * a + dst[..., :3] * (1 - a)
-    dst[..., 3:] = a + dst[..., 3:] * (1 - a)
-    out = np.zeros_like(canvas)
-    out[..., :3] = np.where(canvas[..., 3:] > 0, canvas[..., :3], 0)
-    out[..., 3] = canvas[..., 3] * 255
-    img = Image.fromarray(out.clip(0, 255).astype(np.uint8), 'RGBA')
-    bbox = img.getbbox()
-    if not bbox:
-        return None
-    img = img.crop(bbox)
-    hx, hy = frame['hotspot']
-    return img, hx - x0 - bbox[0], hy - y0 - bbox[1]
-
-
-def pack_atlas(images, width=2048):
-    """Shelf-pack images. Returns (atlas image, [(x, y, w, h)])."""
-    order = sorted(range(len(images)), key=lambda i: -images[i].height)
-    rects = [None] * len(images)
-    x = y = shelf = 0
-    for i in order:
-        w, h = images[i].size
-        if x + w > width:
-            x, y, shelf = 0, y + shelf + 1, 0
-        rects[i] = (x, y, w, h)
-        x += w + 1
-        shelf = max(shelf, h)
-    atlas = Image.new('RGBA', (width, y + shelf), (0, 0, 0, 0))
-    for img, (rx, ry, _, _) in zip(images, rects):
-        atlas.paste(img, (rx, ry))
-    return atlas, rects
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--game', required=True, help='AoE2 DE install folder')
-    ap.add_argument('--out', default='sprites.aoe2pack')
+    ap.add_argument('--out-dir', default='packs')
     ap.add_argument('--units', default='')
     ap.add_argument('--techtree', default='')
+    ap.add_argument('--split-mb', type=float, default=24)
+    ap.add_argument('--skip', default='', help='comma list: units,buildings')
     args = ap.parse_args()
+    skip = set(args.skip.split(','))
+    os.makedirs(args.out_dir, exist_ok=True)
 
     from genieutils.datfile import DatFile
     common = os.path.join(args.game, 'resources', '_common')
+    gfx_dir = os.path.join(common, 'drs', 'graphics')
     print('Reading game data...')
     dat = DatFile.parse(os.path.join(common, 'dat', 'empires2_x2_p1.dat'))
-    if args.techtree:
-        tt = json.load(open(args.techtree))
-    else:
-        tt = json.load(urllib.request.urlopen(TECHTREE_URL))
+    tt = json.load(open(args.techtree)) if args.techtree else json.load(urllib.request.urlopen(TECHTREE_URL))
     units = [int(i) for i in args.units.split(',') if i] or \
-        sorted(int(k) for k, u in tt['data']['Unit'].items() if duel_eligible(u))
+        sorted(int(k) for k, u in tt['data']['Unit'].items() if wanted(u, int(k)))
+    files = []
 
-    blobs = []
-    meta = {'version': 1, 'created': time.strftime('%Y-%m-%d'), 'tileSize': 96, 'units': {}}
-
-    def add_blob(data):
-        off = sum(len(b) for b in blobs)
-        blobs.append(data)
-        return [off, len(data)]
-
-    grass = Image.open(os.path.join(common, 'terrain', 'textures', '2x', 'g_grs.dds')).convert('RGB')
-    buf = io.BytesIO()
-    grass.resize((1024, 1024), Image.LANCZOS).save(buf, 'WEBP', quality=85)
-    meta['grass'] = add_blob(buf.getvalue())
-
-    gfx_dir = os.path.join(common, 'drs', 'graphics')
-    for n, uid in enumerate(units, 1):
-        u = dat.civs[1].units[uid]
-        gids = {'idle': u.standing_graphic[0], 'walk': u.dead_fish.walking_graphic,
-                'attack': u.type_50.attack_graphic, 'death': u.dying_graphic}
-        images, entries = [], {}
-        for anim in ANIMS:
-            gid = gids[anim]
-            if gid < 0:
-                continue
-            g = dat.graphics[gid]
-            path = os.path.join(gfx_dir, g.file_name + '.sld')
-            if not os.path.exists(path):
-                print(f'  missing {g.file_name}.sld, skipped')
-                continue
-            sld = SLD(path)
-            per_angle = g.frame_count
-            step = max(1, -(-per_angle // MAX_FRAMES))
-            picks = list(range(0, per_angle, step))
-            entry = {'fdur': g.frame_duration * step, 'frames': {}}
-            for side, angle, colour in SIDES:
-                angle_idx = angle * g.angle_count // 16
-                frames = []
-                for f in picks:
-                    fi = angle_idx * per_angle + f
-                    if fi >= len(sld.frames):
-                        continue
-                    comp = compose(sld.frame(fi), colour)
-                    if comp is None:
-                        continue
-                    img, ax, ay = comp
-                    frames.append([len(images), ax, ay])
-                    images.append(img)
-                entry['frames'][side] = frames
-            entries[anim] = entry
-        if not images:
-            continue
-        atlas, rects = pack_atlas(images)
-        for entry in entries.values():
-            for side, frames in entry['frames'].items():
-                entry['frames'][side] = [list(rects[i]) + [ax, ay] for i, ax, ay in frames]
-        buf = io.BytesIO()
-        atlas.save(buf, 'WEBP', quality=88, method=4)
-        meta['units'][str(uid)] = {
-            'radius': round(float(u.collision_size_x), 3),
-            'atlas': add_blob(buf.getvalue()),
-            'anims': entries,
-        }
-        print(f'[{n}/{len(units)}] {u.name}: {len(images)} frames, {len(buf.getvalue()) // 1024} KB')
-
-    # Projectile sprites used by the ranged units in the pack
-    meta['projectiles'] = {}
-    names = set()
-    for uid in units:
-        pid = dat.civs[1].units[uid].type_50.projectile_unit_id
-        if pid >= 0:
-            gid = dat.civs[1].units[pid].standing_graphic[0]
-            if gid >= 0:
-                names.add(gid)
-    for gid in sorted(names):
+    def sld_for(gid):
+        if gid < 0 or not dat.graphics[gid]:
+            return None, None
         g = dat.graphics[gid]
         path = os.path.join(gfx_dir, g.file_name + '.sld')
         if not os.path.exists(path):
             print(f'  missing {g.file_name}.sld, skipped')
-            continue
-        mode, images, frames = projectile_entry(g, SLD(path))
-        if not images:
-            print(f'  {g.file_name}: no visible frames (drawn as a tracer in the app)')
-            continue
-        atlas, rects = pack_atlas(images, width=512)
-        for side, seq in frames.items():
-            frames[side] = [list(rects[i]) + [ax, ay] for i, ax, ay in seq]
-        buf = io.BytesIO()
-        atlas.save(buf, 'WEBP', lossless=True)
-        meta['projectiles'][g.file_name] = {'mode': mode, 'fdur': g.frame_duration or 0.05,
-                                            'atlas': add_blob(buf.getvalue()), 'frames': frames}
-        print(f'Projectile {g.file_name}: {len(images)} frames ({mode})')
+            return g, None
+        return g, SLD(path)
 
-    header = json.dumps(meta, separators=(',', ':')).encode()
-    with open(args.out, 'wb') as fh:
-        fh.write(MAGIC + struct.pack('<II', 1, len(header)) + header)
-        for b in blobs:
-            fh.write(b)
-    print(f'Wrote {args.out} ({os.path.getsize(args.out) / 1e6:.1f} MB, {len(meta["units"])} units)')
+    def finish(pack, name):
+        path = os.path.join(args.out_dir, name)
+        size = pack.write(path)
+        sha = hashlib.sha256(open(path, 'rb').read()).hexdigest()
+        files.append({'name': name, 'kind': pack.meta['kind'], 'size': size, 'sha256': sha})
+        print(f'Wrote {name}: {size / 1e6:.1f} MB')
+
+    # ---------- Units ----------
+    if 'units' not in skip:
+        n_file = 1
+        pack = Pack('units')
+        pack.meta['units'] = {}
+        # Grass and projectiles go in the first units file
+        grass = Image.open(os.path.join(common, 'terrain', 'textures', '2x', 'g_grs.dds')).convert('RGB')
+        buf = io.BytesIO()
+        grass.resize((1024, 1024), Image.LANCZOS).save(buf, 'WEBP', quality=85)
+        pack.meta['grass'] = pack.add(buf.getvalue())
+        pack.meta['projectiles'] = {}
+        names = set()
+        for uid in units:
+            u = dat.civs[1].units[uid]
+            if u.type_50 and u.type_50.projectile_unit_id >= 0:
+                gid = dat.civs[1].units[u.type_50.projectile_unit_id].standing_graphic[0]
+                if gid >= 0:
+                    names.add(gid)
+        for gid in sorted(names):
+            g, sld = sld_for(gid)
+            if not sld:
+                continue
+            mode, images, frames = projectile_entry(g, sld)
+            if not images:
+                continue
+            rects, height = pack_atlas(images, 512)
+            atlas = Image.new('RGBA', (512, height), (0, 0, 0, 0))
+            for img, (rx, ry, _, _) in zip(images, rects):
+                atlas.paste(img, (rx, ry))
+            for side, seq in frames.items():
+                frames[side] = [list(rects[i]) + [ax, ay] for i, ax, ay in seq]
+            b = io.BytesIO()
+            atlas.save(b, 'WEBP', lossless=True)
+            pack.meta['projectiles'][g.file_name] = {'mode': mode, 'fdur': g.frame_duration or 0.05,
+                                                    'atlas': pack.add(b.getvalue()), 'frames': frames}
+
+        for n, uid in enumerate(units, 1):
+            u = dat.civs[1].units[uid]
+            gids = {'idle': u.standing_graphic[0], 'walk': u.dead_fish.walking_graphic if u.dead_fish else -1,
+                    'attack': u.type_50.attack_graphic if u.type_50 else -1, 'death': u.dying_graphic}
+            images, masks, entries = [], [], {}
+            for anim in ANIMS:
+                g, sld = sld_for(gids[anim])
+                if not sld:
+                    continue
+                per_angle = max(1, g.frame_count)
+                step = max(1, -(-per_angle // MAX_FRAMES))
+                picks = range(0, per_angle, step)
+                seq = []
+                for f in picks:
+                    if f >= len(sld.frames):
+                        continue
+                    try:
+                        comp = compose(sld.frame(f))   # angle 0: facing right
+                    except KeyError:
+                        continue
+                    if comp is None:
+                        continue
+                    img, m, ax, ay = comp
+                    seq.append([len(images), ax, ay])
+                    images.append(img)
+                    masks.append(m)
+                entries[anim] = {'fdur': g.frame_duration * step, 'frames': seq}
+            if not images:
+                continue
+            atlas, mask, rects = atlas_pair(images, masks)
+            for e in entries.values():
+                e['frames'] = [list(rects[i]) + [ax, ay] for i, ax, ay in e['frames']]
+            entry = {'radius': round(float(u.collision_size_x), 3), 'atlas': pack.add(atlas), 'anims': entries}
+            if mask:
+                entry['mask'] = pack.add(mask)
+            pack.meta['units'][str(uid)] = entry
+            print(f'[{n}/{len(units)}] {u.name}: {len(images)} frames, {(len(atlas) + len(mask or b"")) // 1024} KB')
+            if pack.size > args.split_mb * 1e6:
+                finish(pack, f'units-{n_file}.aoe2pack')
+                n_file += 1
+                pack = Pack('units')
+                pack.meta['units'] = {}
+        if pack.meta['units']:
+            finish(pack, f'units-{n_file}.aoe2pack')
+
+    # ---------- Buildings ----------
+    if 'buildings' not in skip:
+        pack = Pack('buildings')
+        pack.meta['buildings'] = {}
+        pack.meta['sets'] = {}
+        done = {}
+        for c in dat.civs[1:]:
+            key = CIV_KEYS.get(c.name, c.name)
+            if key not in tt['civs']:
+                continue
+            sets = {}
+            for kind, uid in BUILDINGS.items():
+                if uid >= len(c.units) or not c.units[uid]:
+                    continue
+                gid = c.units[uid].standing_graphic[0]
+                g, sld = sld_for(gid)
+                if not sld:
+                    continue
+                name = g.file_name
+                if name not in done:
+                    comp = compose(sld.frame(0))
+                    if comp is None:
+                        continue
+                    img, m, ax, ay = comp
+                    atlas, mask, rects = atlas_pair([img], [m], width=img.width)
+                    e = {'atlas': pack.add(atlas), 'frame': list(rects[0]) + [ax, ay]}
+                    if mask:
+                        e['mask'] = pack.add(mask)
+                    pack.meta['buildings'][name] = e
+                    done[name] = True
+                    print(f'Building {name}: {img.width}x{img.height}')
+                sets[kind] = name
+            pack.meta['sets'][key] = sets
+        finish(pack, 'buildings.aoe2pack')
+
+    manifest_path = os.path.join(args.out_dir, 'manifest.json')
+    old = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {'files': []}
+    keep = [f for f in old['files'] if f['name'] not in {x['name'] for x in files}]
+    manifest = {'format': VERSION, 'updated': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                'files': sorted(keep + files, key=lambda f: f['name'])}
+    json.dump(manifest, open(manifest_path, 'w'), indent=1)
+    print(f'manifest.json: {len(manifest["files"])} files, {sum(f["size"] for f in manifest["files"]) / 1e6:.1f} MB')
 
 
 if __name__ == '__main__':

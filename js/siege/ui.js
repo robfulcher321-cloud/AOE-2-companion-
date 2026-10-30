@@ -3,7 +3,7 @@
 import { loadCore, loadTree, imageUrl, civIconUrl, nameText } from '../data.js';
 import { Picker } from '../picker.js';
 import { civOptions } from '../techtree.js';
-import { loadPack } from '../duel/spritepack.js';
+import { loadPack, onPackProgress } from '../duel/spritepack.js';
 import { buildKit, MARKET, BUILDING_NAMES } from './kit.js';
 import { World, Computer, DT, PLOTS, OVERTIME, START_GOLD, BLAST } from './world.js';
 import { SiegeView, COLOURS } from './view.js';
@@ -110,7 +110,7 @@ export async function initSiege(root) {
       const myCiv = randomMe.checked ? pick() : mine.value;
       const aiCiv = randomBox.checked ? pick() : theirs.value;
       const kits = await Promise.all([myCiv, aiCiv].map(async (civ) => buildKit({ data, strings, tree: await loadTree(civ), civ })));
-      const assets = await loadAssets(kits);
+      const assets = await loadAssets(kits, (msg) => { status.textContent = msg; });
       store.set('sg-played', '1');
       status.hidden = true;
       const civName = (c) => nameText(strings[data.civs[c].name_string_id] || c);
@@ -131,8 +131,12 @@ export async function initSiege(root) {
 }
 
 /** Sprites for every unit either side can make, unit icons, and building icons. */
-async function loadAssets(kits) {
+async function loadAssets(kits, onStatus = () => {}) {
+  const stop = onPackProgress(({ active, done, total }) => {
+    if (active && total) onStatus(`Downloading game graphics: ${Math.round(done / 1e6)} of ${Math.round(total / 1e6)} MB (once only)`);
+  });
   const pack = await loadPack();
+  stop();
   const unitIds = new Set();
   const shotNames = new Set();
   const unitIcons = {};
@@ -153,10 +157,10 @@ async function loadAssets(kits) {
       if (pic !== undefined && !buildingIcons[id]) { buildingIcons[id] = null; jobs.push(loadImg(imageUrl('Building', pic)).then((img) => { buildingIcons[id] = img; })); }
     }
   }
+  // Unit and building colours are made during the game, as each one is needed.
   let sprites = null;
   if (pack) {
-    sprites = { grass: await pack.grass(), units: {}, projectiles: {} };
-    jobs.push(...[...unitIds].filter((id) => pack.has(id)).map(async (id) => { sprites.units[id] = await pack.unit(id); }));
+    sprites = { pack, grass: await pack.grass(), projectiles: {} };
     jobs.push(...[...shotNames].map(async (n) => { sprites.projectiles[n] = await pack.projectile(n); }));
   }
   await Promise.all(jobs);
@@ -277,7 +281,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     navigator.vibrate?.([40, 30, 80]);
     setAim(false);
   });
-  view.setup(world, { ...assets, mySide: ME, colours: players.map((p) => p.colour) });
+  view.setup(world, { ...assets, mySide: ME, colours: players.map((p) => p.colour), civs: players.map((p) => p.civ) });
   screen.view = view;
   view.resize();
   followBtn.addEventListener('click', () => { view.follow = true; });

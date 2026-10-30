@@ -130,7 +130,7 @@ export class ArenaPlayer {
     const at = (anim, elapsed, loop) => {
       const frames = seq(anim);
       if (!frames?.length) return null;
-      let n = Math.floor(elapsed / anims[anim].fdur);
+      let n = Math.floor(Math.max(0, elapsed) / (anims[anim].fdur || 0.1));
       n = loop ? ((n % frames.length) + frames.length) % frames.length : Math.min(n, frames.length - 1);
       return frames[n];
     };
@@ -250,7 +250,7 @@ export class ArenaPlayer {
           const frac = (ang + Math.PI / 2.4) / (Math.PI / 1.2);
           n = Math.round(Math.min(1, Math.max(0, frac)) * (seq.length - 1));
         } else {
-          n = stuck ? 0 : Math.floor((t - s.t0) / sprite.fdur) % seq.length;
+          n = stuck ? 0 : Math.floor((t - s.t0) / (sprite.fdur || 0.05)) % seq.length;
         }
         const [sx, sy, sw, sh, ax, ay] = seq[n];
         const z = Math.max(zoom, 0.75); // keep tiny arrows visible when zoomed out

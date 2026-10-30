@@ -34,14 +34,23 @@ Then open http://localhost:8000.
 
 ## In-game graphics
 
-The duel shows the game's own unit animations on the game's grass, from the sprite pack in `assets/`. To rebuild it after a game update, run the pack tool against an AoE2 DE install and replace `assets/AoE2-sprites.aoe2pack`. A different pack can also be imported on the Duel screen.
+Unit animations, buildings, projectiles and grass come from the game's own files, packed by
+`tools/make_sprite_pack.py` and kept in a separate repo,
+[extra-sprites-for-aoe2-companion](https://github.com/robfulcher321-cloud/extra-sprites-for-aoe2-companion).
+The app reads that repo's `manifest.json` at start-up, downloads any pack it doesn't have yet (about
+70 MB the first time) and keeps it on the phone, so new sprites arrive without a new app build.
+
+Each frame is stored once, facing right, with its player-colour mask; the app tints the mask with each
+player's colour (`js/tint.js`, in a worker), the way the game does.
+
+To rebuild after a game update:
 
 ```
 pip install genieutils-py numpy pillow
-python tools/make_sprite_pack.py --game "D:/Steam/steamapps/common/AoE2DE" --out AoE2-sprites.aoe2pack
+python tools/make_sprite_pack.py --game "D:/Steam/steamapps/common/AoE2DE" --out-dir packs
 ```
 
-It takes about 20 minutes and makes a file of roughly 80 MB covering every melee and ranged unit plus their projectiles.
+then copy `packs/*.aoe2pack` into the sprites repo's `packs/` folder, replace its `manifest.json`, and push.
 
 The sprite decoder (`tools/sld.py`) is written from the format notes in the [openage](https://github.com/SFTtech/openage) project's documentation.
 

@@ -296,10 +296,11 @@ export function openLobby({ data, strings, action, name }) {
 
   // ---------- Into the game ----------
   async function launch(players, me, mode, seed, net) {
-    show(el('p', { className: 'status', textContent: 'Getting the armies ready…' }));
+    const status = el('p', { className: 'status', textContent: 'Getting the armies ready…' });
+    show(status);
     try {
       const kits = await Promise.all(players.map(async (p) => buildKit({ data, strings, tree: await loadTree(p.civ), civ: p.civ })));
-      const assets = await loadAssets(kits);
+      const assets = await loadAssets(kits, (msg) => { status.textContent = msg; });
       close();
       openGame({ data, kits, assets, players, me, mode, seed, net });
     } catch (err) {
