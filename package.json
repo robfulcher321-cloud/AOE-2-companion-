@@ -5,7 +5,7 @@
   "description": "Age of Empires II tech tree and duel simulator",
   "scripts": {
     "build:web": "node scripts/build-web.mjs",
-    "test": "node tests/combat.test.mjs && node tests/guides.test.mjs"
+    "test": "node tests/combat.test.mjs && node tests/guides.test.mjs && node tests/siege.test.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^7.0.0",

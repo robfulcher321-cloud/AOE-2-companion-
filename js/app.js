@@ -3,6 +3,7 @@ import { civOptions, renderTree } from './techtree.js';
 import { Picker } from './picker.js';
 import { initDuel } from './duel/ui.js';
 import { initGuides } from './guides/ui.js';
+import { initSiege } from './siege/ui.js';
 import { checkForAppUpdate } from './updater.js';
 
 const $ = (id) => document.getElementById(id);
@@ -14,6 +15,7 @@ const store = {
 // ---------- Tabs ----------
 let duelReady = null;
 let guidesReady = null;
+let siegeReady = null;
 function showView(name) {
   for (const btn of document.querySelectorAll('.tabs button')) {
     btn.toggleAttribute('aria-current', btn.dataset.view === name);
@@ -22,8 +24,10 @@ function showView(name) {
   $('view-tree').hidden = name !== 'tree';
   $('view-duel').hidden = name !== 'duel';
   $('view-guides').hidden = name !== 'guides';
+  $('view-siege').hidden = name !== 'siege';
   if (name === 'duel' && !duelReady) duelReady = initDuel().catch(showError($('side-a')));
   if (name === 'guides' && !guidesReady) guidesReady = initGuides($('guides-body')).catch(showError($('guides-body')));
+  if (name === 'siege' && !siegeReady) siegeReady = initSiege($('siege-body')).catch(showError($('siege-body')));
   store.set('view', name);
   window.scrollTo(0, 0);
 }
@@ -90,7 +94,7 @@ async function startTree() {
 async function boot() {
   await startTree().catch(showError($('tree-body')));
   updateFooter();
-  showView(['duel', 'guides'].includes(store.get('view')) ? store.get('view') : 'tree');
+  showView(['duel', 'guides', 'siege'].includes(store.get('view')) ? store.get('view') : 'tree');
 
   const status = await checkForUpdate();
   updateFooter();

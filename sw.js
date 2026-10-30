@@ -2,13 +2,13 @@
 // Unit/tech icons and fonts: cache forever once downloaded.
 // Game data JSON is cached by the app itself (js/data.js), so it's left alone here.
 
-const SHELL = 'shell-v17';
+const SHELL = 'shell-v18';
 const ASSETS = 'assets-v1';
 const SHELL_FILES = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
   'js/app.js', 'js/data.js', 'js/techtree.js', 'js/picker.js', 'js/updater.js',
   'js/duel/combat.js', 'js/duel/sim.js', 'js/duel/render.js', 'js/duel/ui.js',
-  'js/duel/radii.js', 'js/duel/spritepack.js', 'js/duel/effects.js', 'js/duel/ranged.js', 'js/duel/specials.js', 'js/guides/ui.js', 'js/guides/source.js', 'js/guides/econ.js', 'js/guides/run.js', 'assets/builds/index.json', 'assets/builds/starter.json',
+  'js/duel/radii.js', 'js/duel/spritepack.js', 'js/duel/effects.js', 'js/duel/ranged.js', 'js/duel/specials.js', 'js/guides/ui.js', 'js/guides/source.js', 'js/guides/econ.js', 'js/guides/run.js', 'js/siege/kit.js', 'js/siege/world.js', 'js/siege/view.js', 'js/siege/ui.js', 'assets/builds/index.json', 'assets/builds/starter.json',
   'icons/icon-192.png', 'icons/icon-512.png',
   'img/paper.jpg', 'img/cross.png', 'img/ages/dark.png', 'img/ages/feudal.png', 'img/ages/castle.png', 'img/ages/imperial.png',
   'fonts/merriweather-latin-400-normal.woff2', 'fonts/merriweather-latin-700-normal.woff2', 'fonts/merriweather-latin-400-italic.woff2',
