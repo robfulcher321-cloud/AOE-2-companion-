@@ -625,18 +625,6 @@ body.sg-open { overflow: hidden; }
 .sg-end.lost h2 { color: #ff9c8f; }
 .sg-end .result-table { background: #f2e2bb; color: #23170b; border-radius: 8px; }
 .sg-end-acts { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-@media (orientation: landscape) and (max-height: 600px) {
-  .sg-run {
-    grid-template-columns: minmax(0, 1fr) minmax(250px, 36%);
-    grid-template-rows: auto minmax(0, 1fr) 28px;
-    grid-template-areas: "head head" "field panel" "mini panel";
-  }
-  .sg-mini { height: 28px; }
-  .sg-head { grid-template-columns: auto minmax(0, 1fr) repeat(5, auto); }
-  .sg-castles { grid-column: 2; grid-row: 1; grid-template-columns: 1fr; }
-  .sg-gold-num { font-size: 1.3rem; }
-  .sg-opts { grid-template-columns: 1fr; }
-}
 .sg-go small { font-size: .7rem; font-weight: 700; }
 .sg-blast-btn { position: absolute; right: 8px; bottom: 8px; width: 56px; height: 56px; border: 2px solid #e0742a; border-radius: 50%; background: radial-gradient(#5a2a10, #2a1208); cursor: pointer; box-shadow: 0 2px 8px rgb(0 0 0 / .5); }
 .sg-blast-btn:disabled { opacity: .35; filter: grayscale(1); cursor: default; }
@@ -685,3 +673,53 @@ body.sg-open { overflow: hidden; }
 .sg-civ-list li.off { opacity: .6; }
 .sg-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: #3a2610; color: #ffd97a; font-size: .7rem; }
 .sg-civ-list li.off .sg-tag { color: #c9b48a; }
+.sg-rot-btn { position: absolute; right: 8px; top: 50px; z-index: 2; width: 36px; height: 36px; border: 1px solid #8a5d1c; border-radius: 50%; background: rgb(42 26 11 / .85); color: #f4e6c2; font-size: 1.15rem; line-height: 1; cursor: pointer; }
+
+/* Sideways phone: a thin banner across the top, the battle in most of the screen with the
+   minimap under it, and the panel as a strip along the bottom that scrolls sideways. */
+@media (orientation: landscape) and (max-height: 600px) {
+  .sg-run {
+    grid-template-rows: auto minmax(0, 1fr) 22px 112px;
+    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .sg-head { grid-template-columns: auto minmax(0, 1fr) repeat(5, auto); gap: 8px; padding: 3px 8px; }
+  .sg-gold { grid-column: 1; display: flex; gap: 6px; align-items: center; }
+  .sg-gold .sg-flag { width: 28px; height: 28px; border-width: 2px; }
+  .sg-gold-ic { width: 22px; height: 22px; }
+  .sg-gold-num { font-size: 1.15rem; }
+  .sg-castles { grid-column: 2; grid-row: 1; gap: 2px 14px; }
+  .sg-clock { font-size: 1rem; }
+  .sg-head .sg-btn, .sg-head .sg-go { min-height: 32px; min-width: 36px; }
+  .sg-mini { height: 22px; }
+
+  .sg-dock { display: flex; align-items: stretch; gap: 10px; overflow-x: auto; overflow-y: hidden; padding: 6px 8px; overscroll-behavior: contain; }
+  .sg-dock > * { flex: none; margin: 0; }
+  .sg-dock-head { position: sticky; left: -8px; z-index: 3; flex-direction: column; justify-content: space-between; align-items: flex-start; width: 104px; margin: -6px 0 -6px -8px; padding: 6px 6px 6px 8px; background: #24170b; border-right: 1px solid #6b4a1a; font-size: .85rem; }
+  .sg-dock-head b { overflow-wrap: anywhere; }
+  .sg-research { position: static; width: 200px; margin: 0; padding: 0 8px 0 0; border-bottom: 0; border-right: 1px solid #6b4a1a; align-content: center; }
+  .sg-group { writing-mode: vertical-rl; justify-content: center; font-size: .72rem; gap: 4px; white-space: nowrap; }
+  .sg-group img { width: 20px; height: 20px; }
+  .sg-opts { grid-auto-flow: column; grid-template-columns: none; grid-template-rows: repeat(2, 47px); grid-auto-columns: 190px; }
+  .sg-opt { min-height: 0; padding: 3px 6px; }
+  .sg-opt-ic { width: 32px; height: 32px; }
+  .sg-dock > .sg-opt { width: 235px; }   /* age cards */
+  .sg-dock > .sg-opt small { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .sg-note { width: 230px; overflow-y: auto; align-self: center; max-height: 100%; }
+  .sg-hints { display: flex; gap: 14px; padding: 0; list-style: none; font-size: .8rem; line-height: 1.35; }
+  .sg-hints li { width: 190px; }
+  .sg-steps { align-self: center; }
+  .sg-acts { grid-auto-flow: column; grid-template-rows: repeat(2, minmax(0, 1fr)); grid-auto-columns: 210px; }
+  .sg-acts > * { min-height: 0; }
+  .sg-emotes { width: 450px; align-content: flex-start; overflow-y: auto; }
+  .sg-emote { min-height: 30px; }
+  .sg-chat-form { width: 260px; align-self: flex-start; flex-direction: column; }
+  .sg-chat-log { width: 240px; max-height: none; }
+  .sg-civ-chips { flex-direction: column; flex-wrap: nowrap; overflow-y: auto; }
+  .sg-civ-tag { width: 150px; align-self: center; }
+  .sg-civ-list { width: 300px; overflow-y: auto; }
+
+  .sg-armory-btn, .sg-age-btn, .sg-blast-btn { width: 48px; height: 48px; }
+  .sg-age-btn { bottom: 64px; }
+  .sg-chat-btn { width: 42px; height: 42px; bottom: 62px; font-size: 1.15rem; }
+  .sg-notices { top: 8px; }
+}

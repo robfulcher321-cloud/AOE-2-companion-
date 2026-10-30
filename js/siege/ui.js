@@ -11,6 +11,7 @@ import { SiegeView, COLOURS } from './view.js';
 export { COLOURS };
 import { COMMANDS, snapshot, applySnapshot } from './sync.js';
 import { openLobby } from './lobby.js';
+import { setOrientation, setImmersive } from '../orient.js';
 
 const GAME_SPEED = 1.7;
 // Player colours (AoE II's), for names, buildings and the minimap. Soldiers wear their team's blue or red.
@@ -279,6 +280,14 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     el('span', { textContent: '💬' }), el('i', { className: 'sg-chat-dot', hidden: true }));
   const chatFeed = el('div', { className: 'sg-chat-feed', 'aria-live': 'polite' });
   const tipBox = el('div', { className: 'sg-tip', role: 'tooltip', hidden: true });
+  // Screen: follow the phone, or keep it sideways or upright (remembered between games)
+  const ORIENT = {
+    auto: { icon: '⟳', say: 'Screen follows your phone' },
+    landscape: { icon: '▭', say: 'Screen kept sideways' },
+    portrait: { icon: '▯', say: 'Screen kept upright' },
+  };
+  let orient = ORIENT[store.get('sg-orient')] ? store.get('sg-orient') : 'auto';
+  const rotBtn = el('button', { type: 'button', className: 'sg-rot-btn', 'aria-label': 'Screen orientation' });
 
   const screen = el('div', { className: 'sg-run', role: 'dialog', 'aria-label': 'Wonder Wars game' },
     el('header', { className: 'sg-head' },
@@ -287,7 +296,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         el('img', { className: 'sg-gold-ic', src: 'img/res/gold.webp', alt: 'Gold', width: 28, height: 28 }), goldNum, incomeTxt),
       clock, goBtn, speedBtn, pauseBtn, closeBtn,
       el('div', { className: 'sg-castles' }, castles[0].wrap, castles[1].wrap)),
-    el('div', { className: 'sg-field' }, canvas, followBtn, ageBtn, armoryBtn, blastBtn, chatBtn, chatFeed, aimBar, banner, notices),
+    el('div', { className: 'sg-field' }, canvas, followBtn, rotBtn, ageBtn, armoryBtn, blastBtn, chatBtn, chatFeed, aimBar, banner, notices),
     mini,
     dock,
     tipBox);
@@ -356,6 +365,29 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   tip(blastBtn, 'Explosion', `Once per game. Drag the circle onto enemies inside your own third of the field (up to the dashed line), then Drop. It hits enemies only.`);
   tip(followBtn, 'To the fight', 'Moves the view to where the fighting is. The view never moves on its own.');
   tip(goBtn, 'GO', 'Sends out every unit your buildings are holding, all at once.');
+  tip(rotBtn, 'Screen', 'Tap to switch: follow your phone (⟳), keep it sideways (▭), or keep it upright (▯). Sideways gives the battle most of the screen.');
+  // Sideways: hide the phone's status and navigation bars too (swipe from an edge to get them back)
+  const wide = matchMedia('(orientation: landscape)');
+  const onTurn = () => setImmersive(wide.matches);
+  wide.addEventListener('change', onTurn);
+  onTurn();
+  const applyOrient = (announce) => {
+    rotBtn.textContent = ORIENT[orient].icon;
+    rotBtn.dataset.mode = orient;
+    setOrientation(orient).then((ok) => {
+      if (!announce) return;
+      banner.hidden = false;
+      banner.textContent = ok || orient === 'auto' ? ORIENT[orient].say : 'Turn your phone to rotate (this browser can\'t lock it)';
+      clearTimeout(applyOrient.t);
+      applyOrient.t = setTimeout(() => { banner.hidden = true; }, 1800);
+    });
+  };
+  rotBtn.addEventListener('click', () => {
+    orient = orient === 'auto' ? 'landscape' : orient === 'landscape' ? 'portrait' : 'auto';
+    store.set('sg-orient', orient);
+    applyOrient(true);
+  });
+  applyOrient(false);
   armoryBtn.addEventListener('click', () => setMode(pmode.kind === 'armory' ? { kind: 'hint' } : { kind: 'armory' }));
   ageBtn.addEventListener('click', () => setMode(pmode.kind === 'age' ? { kind: 'hint' } : { kind: 'age' }));
   goBtn.addEventListener('click', () => { act('go'); navigator.vibrate?.(30); refresh(true); });
@@ -733,9 +765,15 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     lastKey = key;
     const views = { build: () => buildView(pmode.plot), building: () => buildingView(pmode.id), armory: armoryView, age: ageView, chat: chatView, civ: () => civView(pmode.who), hint: hintView };
     const content = (views[pmode.kind] || hintView)();
-    const scroll = dock.scrollTop;
+    // Same panel: keep where it was scrolled to; another panel starts at its beginning
+    const panel = [pmode.kind, pmode.plot, pmode.id, pmode.who].join('|');
+    const same = panel === dock.dataset.panel;
+    dock.dataset.panel = panel;
+    const top = same ? dock.scrollTop : 0;
+    const left = same ? dock.scrollLeft : 0;
     dock.replaceChildren(...[agingBar(), researchBar(), ...content].flat().filter(Boolean));
-    dock.scrollTop = scroll;
+    dock.scrollTop = top;
+    dock.scrollLeft = left;
   }
 
   // ---------- Loop ----------
@@ -871,6 +909,9 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     for (const off of offs) off();
     if (net) net.onLeave?.();
     document.removeEventListener('visibilitychange', onVis);
+    wide.removeEventListener('change', onTurn);
+    setImmersive(false);
+    setOrientation('auto');   // the rest of the app follows the phone
     wake?.release?.();
     screen.remove();
     document.body.classList.remove('sg-open');

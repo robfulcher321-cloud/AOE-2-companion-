@@ -84,7 +84,9 @@ export class SiegeView {
     }
     // Fit the lane's width (top to bottom) to the view.
     // (the outermost tile of each edge may be cut off, so units stay a readable size)
-    if (this.vh) this.cam.zoom = Math.max(0.3, Math.min(1, (this.vh - 50) / ((LANE.half * 2 - 1) * TILE * DEPTH)));
+    // (a short, wide view, like a phone held sideways, keeps less spare room so soldiers stay bigger)
+    const spare = this.vh < 320 ? 16 : 50;
+    if (this.vh) this.cam.zoom = Math.max(0.3, Math.min(1, (this.vh - spare) / ((LANE.half * 2 - 1) * TILE * DEPTH)));
   }
 
   // ---------- Camera ----------
