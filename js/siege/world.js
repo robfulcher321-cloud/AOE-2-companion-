@@ -178,6 +178,7 @@ export class World {
       const b = this.building(key);
       b.tier += 1;
       b.invested += p;
+      b.upgradedAt = this.t;
       b.every = this.line(side, b.line).tiers[b.tier].every;
     } else if (kind === 'research') {
       const t = this.tech(side, key);

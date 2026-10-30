@@ -144,9 +144,9 @@ export class SiegeView {
     const [, sy] = this.toScreen(b.x, b.y);
     const castle = b.kind === 'castle';
     const lift = Math.max(5, (castle ? 16 : 10) * this.cam.zoom);
-    const size = Math.max(22, b.r * 2 * ppt * (castle ? 0.62 : 0.4));
+    const size = Math.max(26, b.r * 2 * ppt * (castle ? 0.62 : 0.5));
     const iy = sy - lift - size * 0.8;
-    return { x0: lx, x1: rx, y0: iy - size * 0.5, y1: by, size, iy, lift, lx, rx, ty, by };
+    return { x0: lx, x1: rx, y0: iy - 16, y1: by, size, iy, lift, lx, rx, ty, by };
   }
 
   clampCam() {
@@ -271,64 +271,76 @@ export class SiegeView {
     const selected = this.selected === b.id;
     ctx.strokeStyle = selected ? '#ffd97a' : SIDE[b.side]; ctx.lineWidth = selected ? 3 : 2;
     ctx.strokeRect(lx, ty - lift, rx - lx, by - ty);
-    // The building's icon standing on its platform, framed in the side's colour
-    const ix = sx - size / 2;
+    // The picture on the platform: for a training building, the unit it makes now
+    // (it changes when you upgrade), with the building's own icon small in the corner.
+    const trains = b.kind === 'building' && b.line !== 'market';
+    const line = trains ? this.w.line(b.side, b.line) : null;
+    const unitImg = trains ? this.unitIcons[line.tiers[b.tier].unitId] : null;
+    const bImg = this.buildingIcons[b.building];
+    const main = unitImg?.complete && unitImg.naturalWidth ? unitImg : bImg;
+    // A short pop and gold flash right after an upgrade
+    const since = b.upgradedAt !== undefined ? t - b.upgradedAt : 99;
+    const pop = since < 0.6 ? 1 + 0.18 * Math.sin((since / 0.6) * Math.PI) : 1;
+    const sz = size * pop;
+    const ix = sx - sz / 2;
+    const iy2 = iy - (sz - size);
     ctx.fillStyle = SIDE_DARK[b.side];
-    ctx.fillRect(ix - 3, iy - 3, size + 6, size + 6);
-    const img = this.buildingIcons[b.building];
-    if (img?.complete && img.naturalWidth) {
+    ctx.fillRect(ix - 3, iy2 - 3, sz + 6, sz + 6);
+    if (main?.complete && main.naturalWidth) {
       if (dead) ctx.filter = 'grayscale(1) brightness(.6)';
-      ctx.drawImage(img, ix, iy, size, size);
+      ctx.drawImage(main, ix, iy2, sz, sz);
       ctx.filter = 'none';
     } else {
       ctx.fillStyle = '#8a7a5a';
-      ctx.fillRect(ix, iy, size, size);
+      ctx.fillRect(ix, iy2, sz, sz);
     }
-    ctx.strokeStyle = selected ? '#ffd97a' : SIDE[b.side]; ctx.lineWidth = 2;
-    ctx.strokeRect(ix - 2, iy - 2, size + 4, size + 4);
+    const frame = selected ? '#ffd97a' : b.hold ? '#6cc3ff' : SIDE[b.side];
+    ctx.strokeStyle = frame; ctx.lineWidth = 2.5;
+    ctx.strokeRect(ix - 2, iy2 - 2, sz + 4, sz + 4);
+    if (since < 1.2 && !dead) {
+      ctx.strokeStyle = `rgb(255 217 122 / ${1 - since / 1.2})`;
+      ctx.lineWidth = 4;
+      const g = 4 + since * 14;
+      ctx.strokeRect(ix - g, iy2 - g, sz + 2 * g, sz + 2 * g);
+    }
     ctx.globalAlpha = 1;
     if (dead) return;
-    const trains = b.kind === 'building' && b.line !== 'market';
-    // The unit it trains, on a round badge above it (the castle has none)
-    let top = iy - 12;
     if (trains) {
-      const line = this.w.line(b.side, b.line);
-      const unitId = line.tiers[b.tier].unitId;
-      const r = Math.max(10, size * 0.34);
-      const cx = sx, cy = iy - r - 4;
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = SIDE_DARK[b.side]; ctx.fill();
-      const ui = this.unitIcons[unitId];
-      if (ui?.complete && ui.naturalWidth) { ctx.save(); ctx.clip(); ctx.drawImage(ui, cx - r, cy - r, r * 2, r * 2); ctx.restore(); }
-      ctx.lineWidth = 2; ctx.strokeStyle = b.hold ? '#6cc3ff' : '#ffd97a'; ctx.stroke();
-      // Upgrade step: Roman numeral under the badge
+      // Building icon in the bottom-left corner
+      const c = Math.max(12, sz * 0.36);
+      ctx.fillStyle = SIDE_DARK[b.side];
+      ctx.fillRect(ix - 4, iy2 + sz - c + 4, c + 2, c + 2);
+      if (bImg?.complete && bImg.naturalWidth) ctx.drawImage(bImg, ix - 3, iy2 + sz - c + 5, c, c);
+      ctx.strokeStyle = frame; ctx.lineWidth = 1.5;
+      ctx.strokeRect(ix - 4, iy2 + sz - c + 4, c + 2, c + 2);
+      // Upgrade step in the top-right corner: I, II, III...
       if (b.tier > 0) {
         const label = ['I', 'II', 'III', 'IV', 'V', 'VI'][b.tier];
-        ctx.font = `700 ${Math.round(9 + 4 * zoom)}px "Merriweather", Georgia, serif`;
-        ctx.textAlign = 'center';
-        ctx.lineWidth = 3; ctx.strokeStyle = 'rgb(0 0 0 / .8)';
-        ctx.strokeText(label, cx + r * 0.85, cy + r * 0.9);
+        ctx.font = `700 ${Math.round(10 + 4 * zoom)}px "Merriweather", Georgia, serif`;
+        ctx.textAlign = 'right';
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgb(0 0 0 / .85)';
+        ctx.strokeText(label, ix + sz - 2, iy2 + 13 + 3 * zoom);
         ctx.fillStyle = '#ffd97a';
-        ctx.fillText(label, cx + r * 0.85, cy + r * 0.9);
+        ctx.fillText(label, ix + sz - 2, iy2 + 13 + 3 * zoom);
       }
-      top = cy - r - 10;
     }
+    const top = iy2 - 12;
     // HP bar
-    const bw = Math.max(40, size + 6);
+    const bw = Math.max(40, sz + 6);
     this.bar(sx - bw / 2, top, bw, 5, b.hp / b.maxHp);
     // Training bar: fills until the next unit comes out. Held: blue, and glowing when the unit is waiting.
     if (trains && b.every) {
       const frac = b.waiting ? 1 : 1 - Math.max(0, b.timer) / b.every;
       const h = Math.max(5, 6 * zoom);
-      const y = iy + size + 5;
+      const y = iy2 + sz + 5;
       ctx.fillStyle = 'rgb(0 0 0 / .6)';
-      ctx.fillRect(ix - 3, y - 1, size + 6, h + 2);
+      ctx.fillRect(ix - 3, y - 1, sz + 6, h + 2);
       if (b.waiting) {
         ctx.shadowColor = '#6cc3ff';
         ctx.shadowBlur = 8 + 6 * Math.sin(performance.now() / 160);
       }
       ctx.fillStyle = b.hold ? '#4fb0ff' : '#e8d9a8';
-      ctx.fillRect(ix - 2, y, (size + 4) * frac, h);
+      ctx.fillRect(ix - 2, y, (sz + 4) * frac, h);
       ctx.shadowBlur = 0;
     }
   }
