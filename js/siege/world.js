@@ -32,7 +32,8 @@ export const TERRITORY = { edge: 30.5, bonus: 5 };
 // Game seconds per real second at Normal speed (build times are given in real seconds).
 export const GAME_SPEED = 1.7;
 const BUILD_HP = 0.15;          // a new building starts at this share of its HP...
-const BUILD_WEAK = 1.5;         // ...and takes this much more damage until it's finished
+const BUILD_WEAK = 1.5;
+const SIEGE_TURN = 1.2;         // game seconds for siege with a minimum range to turn about         // ...and takes this much more damage until it's finished
 const BIN = 2;                 // tiles: units are bucketed along the lane for "who's near" lookups
 const MELEE_SLACK = 0.35;      // tiles: a melee unit this close counts as touching (no running on the spot in a crowd)
 const BUILDING_SLACK = 0.45;   // tiles: buildings are big; a unit at their foot can hit them
@@ -793,9 +794,22 @@ export class World {
         }
         this.move(u, dx, dy, gap - reach + 0.05);
       } else if (minR > 0 && gap < minR && tg.kind === undefined) {
+        // Too close to shoot: turn round (slowly, it's siege), then back off
+        const away = Math.sign(u.x - tg.x) || -u.face;
+        if (u.face !== away) {
+          u.turnUntil ??= t + SIEGE_TURN;
+          if (t < u.turnUntil) continue;
+          u.face = away; u.turnedAt = t; u.turnUntil = null;
+        }
         const len = hyp(tg.x - u.x, tg.y - u.y) || 1;
         this.move(u, -(tg.x - u.x) / len, -(tg.y - u.y) / len);
+      } else if (minR > 0 && u.face !== (Math.sign(tg.x - u.x) || u.face)) {
+        // and turn back to face it before firing again
+        u.turnUntil ??= t + SIEGE_TURN;
+        if (t < u.turnUntil) continue;
+        u.face = Math.sign(tg.x - u.x); u.turnedAt = t; u.turnUntil = null;
       } else {
+        u.turnUntil = null;
         u.stuck = 0;
         u.lastGap = null;
         u.face = Math.sign(tg.x - u.x) || u.face;

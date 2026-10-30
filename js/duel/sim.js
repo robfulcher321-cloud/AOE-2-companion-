@@ -52,7 +52,10 @@ const CELL = 1.5;                  // spatial grid cell, tiles: nearby-unit look
 const RECORD_EVERY = 3;            // keep every 3rd step for playback (20 a second); the player interpolates
 const STUCK_AFTER = 1.2;           // seconds a melee unit can be blocked before picking another enemy
 export const MAX_PER_SIDE = 500;
-const MELEE_SLACK = 0.2;          // tiles: a melee unit this close counts as touching, so it swings instead of shuffling on the spot
+const MELEE_SLACK = 0.2;
+// Siege with a minimum range backs away from enemies too close to shoot, as in the game, but
+// turns round first (and again before it can fire): slow work for a catapult or scorpion.
+const SIEGE_TURN = 1.2;          // game seconds to turn about          // tiles: a melee unit this close counts as touching, so it swings instead of shuffling on the spot
 
 /** Small, fast seeded random generator so each run can be replayed exactly. */
 export function mulberry32(seed) {
@@ -387,6 +390,16 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
     return best;
   };
 
+  /** Siege turning round: true once it faces `dir` (−1 left, 1 right); others turn at once. */
+  const turnTo = (u, dir) => {
+    if (u.face === dir || !(u.f.minRange > 0)) { u.turnUntil = null; if (!(u.f.minRange > 0)) u.face = dir; return true; }
+    if (u.turnUntil == null) u.turnUntil = t + SIEGE_TURN;
+    if (t < u.turnUntil) return false;
+    u.face = dir;
+    u.turnUntil = null;
+    return true;
+  };
+
   const startAttack = (u, target, kind, bursts = [1]) => {
     u.pending = { at: t + u.f.attackDelay, started: t, target: target.id, bursts, kind };
     u.attackStart = t;
@@ -426,15 +439,20 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
         continue;
       }
       const minR = p ? u.f.minRange || 0 : 0;
+      u.retreating = false;
       if (minR > 0 && gapNow < minR) {
-        // Too close to shoot: switch to an enemy that is in range, or step back.
+        // Too close to shoot: switch to an enemy that is in range, or turn round and back off.
         const alt = enemiesNear(u, u.x, u.y, u.f.range + u.r + 1.5).find((e) => edge(u, e) >= minR && edge(u, e) <= u.f.range);
         if (alt) { u.target = alt.id; target = alt; } else {
+          if (!turnTo(u, Math.sign(u.x - target.x) || -u.face)) continue;
           const d = centre(u, target) || 1;
           moves[u.id] = [((u.x - target.x) / d) * u.f.speed * DT, ((u.y - target.y) / d) * u.f.speed * DT];
+          u.retreating = true;
           continue;
         }
       }
+      // Siege turns to face its target before walking at it or firing.
+      if (minR > 0 && !turnTo(u, Math.sign(target.x - u.x) || u.face)) continue;
       const reach = u.f.range + (p ? 0 : MELEE_SLACK);
       const gap2 = edge(u, target);
       if (gap2 > reach + 1e-9) {
@@ -445,7 +463,9 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
           if (c >= rush.from && c <= rush.to) u.rushing = true;
         }
         const speed = u.f.speed * (u.rushing && rush ? rush.speed : 1);
-        const stepLen = Math.min(speed * DT, gap2 - reach);
+        // Step a little inside reach, so a target backing off at the same moment can't keep it
+        // exactly one step short for ever.
+        const stepLen = Math.min(speed * DT, gap2 - reach + (p ? 0.05 : MELEE_SLACK / 2));
         const d = centre(u, target) || 1;
         let dx = (target.x - u.x) / d;
         let dy = (target.y - u.y) / d;
@@ -494,9 +514,9 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
       u.x += m[0]; u.y += m[1];
       u.vx = m[0] / DT; u.vy = m[1] / DT;
       u.moving = true;
-      if (Math.abs(m[0]) > 1e-6) u.face = Math.sign(m[0]);
+      if (Math.abs(m[0]) > 1e-6 && !u.f.minRange) u.face = Math.sign(m[0]);
       const tg = u.target !== null ? units[u.target] : null;
-      if (tg && Math.sign(tg.x - u.x)) u.face = Math.sign(tg.x - u.x) || u.face;
+      if (tg && Math.sign(tg.x - u.x) && !u.retreating && !u.f.minRange) u.face = Math.sign(tg.x - u.x) || u.face;
     }
     for (const u of units) {
       if (!alive(u)) continue;
