@@ -338,8 +338,8 @@ export class ArenaPlayer {
       ctx.save(); ctx.clip();
       const img = this.icons?.[unit.side];
       if (img?.complete && img.naturalWidth) {
-        if (dead) ctx.filter = 'grayscale(1)';
         ctx.drawImage(img, x - r, y - 2 * r, r * 2, r * 2);
+        if (dead) { ctx.fillStyle = 'rgb(30 30 30 / .6)'; ctx.fillRect(x - r, y - 2 * r, r * 2, r * 2); }
       }
       ctx.restore();
       ctx.lineWidth = 3; ctx.strokeStyle = COLORS.p[unit.side]; ctx.stroke();

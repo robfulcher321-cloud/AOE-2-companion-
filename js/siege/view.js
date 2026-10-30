@@ -3,7 +3,7 @@
 // with their in-game animations, and a minimap. Also turns touches into
 // actions: drag to look around, tap a plot or building, press and hold a building.
 
-import { LANE, PLOTS, plotPos } from './world.js';
+import { LANE, PLOTS, plotPos, CASTLE_X } from './world.js';
 
 const TILE = 96 / Math.SQRT2;   // screen px per tile at zoom 1 (same as the Test arena)
 const DEPTH = 0.5;
@@ -38,7 +38,7 @@ export class SiegeView {
     this.me = mySide;
     this.grassPattern = null;
     this.follow = true;
-    this.cam.x = mySide === 0 ? 12 : LANE.length - 12;
+    this.cam.x = CASTLE_X[mySide] + (mySide === 0 ? 6 : -6);
     this.floaters = [];
     this.seen = world.events.length;
   }
@@ -144,7 +144,7 @@ export class SiegeView {
     const [, sy] = this.toScreen(b.x, b.y);
     const castle = b.kind === 'castle';
     const lift = Math.max(5, (castle ? 16 : 10) * this.cam.zoom);
-    const size = Math.max(26, b.r * 2 * ppt * (castle ? 0.62 : 0.5));
+    const size = Math.max(26, b.r * 2 * ppt * (castle ? 0.46 : 0.5));
     const iy = sy - lift - size * 0.8;
     return { x0: lx, x1: rx, y0: iy - 16, y1: by, size, iy, lift, lx, rx, ty, by };
   }
@@ -160,7 +160,7 @@ export class SiegeView {
     if (!this.follow) return;
     const live = this.w.units.filter((u) => u.hp > 0);
     const dir = this.me === 0 ? 1 : -1;
-    let target = this.me === 0 ? 14 : LANE.length - 14;
+    let target = CASTLE_X[this.me] + dir * 8;
     const mine = live.filter((u) => u.side === this.me);
     const theirs = live.filter((u) => u.side !== this.me);
     // Where the two armies meet, else the front of whichever army exists.
@@ -287,9 +287,9 @@ export class SiegeView {
     ctx.fillStyle = SIDE_DARK[b.side];
     ctx.fillRect(ix - 3, iy2 - 3, sz + 6, sz + 6);
     if (main?.complete && main.naturalWidth) {
-      if (dead) ctx.filter = 'grayscale(1) brightness(.6)';
       ctx.drawImage(main, ix, iy2, sz, sz);
-      ctx.filter = 'none';
+      // Destroyed: darkened. (A canvas filter would be simpler but is very slow on phones.)
+      if (dead) { ctx.fillStyle = 'rgb(20 16 10 / .65)'; ctx.fillRect(ix, iy2, sz, sz); }
     } else {
       ctx.fillStyle = '#8a7a5a';
       ctx.fillRect(ix, iy2, sz, sz);
@@ -335,13 +335,14 @@ export class SiegeView {
       const y = iy2 + sz + 5;
       ctx.fillStyle = 'rgb(0 0 0 / .6)';
       ctx.fillRect(ix - 3, y - 1, sz + 6, h + 2);
-      if (b.waiting) {
-        ctx.shadowColor = '#6cc3ff';
-        ctx.shadowBlur = 8 + 6 * Math.sin(performance.now() / 160);
-      }
       ctx.fillStyle = b.hold ? '#4fb0ff' : '#e8d9a8';
       ctx.fillRect(ix - 2, y, (sz + 4) * frac, h);
-      ctx.shadowBlur = 0;
+      if (b.waiting) {
+        // Ready and waiting for GO: a pulsing outline (shadow blur is too slow on phones)
+        ctx.strokeStyle = `rgb(140 210 255 / ${0.45 + 0.45 * Math.sin(performance.now() / 160)})`;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(ix - 5, y - 3, sz + 10, h + 6);
+      }
     }
   }
 

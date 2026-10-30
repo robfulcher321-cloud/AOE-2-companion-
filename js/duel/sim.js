@@ -52,6 +52,7 @@ const CELL = 1.5;                  // spatial grid cell, tiles: nearby-unit look
 const RECORD_EVERY = 3;            // keep every 3rd step for playback (20 a second); the player interpolates
 const STUCK_AFTER = 1.2;           // seconds a melee unit can be blocked before picking another enemy
 export const MAX_PER_SIDE = 500;
+const MELEE_SLACK = 0.2;          // tiles: a melee unit this close counts as touching, so it swings instead of shuffling on the spot
 
 /** Small, fast seeded random generator so each run can be replayed exactly. */
 export function mulberry32(seed) {
@@ -274,7 +275,7 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
 
   // A melee blow, with trample, charges, blocking and reflection.
   const strike = (u, target) => {
-    if (!alive(target) || edge(u, target) > u.f.range + 0.5) return;
+    if (!alive(target) || edge(u, target) > u.f.range + MELEE_SLACK + 0.5) return;
     const ch = chargeOf(u);
     let extra = 0;
     let area = u.f.special?.blast || null;
@@ -434,7 +435,7 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
           continue;
         }
       }
-      const reach = u.f.range;
+      const reach = u.f.range + (p ? 0 : MELEE_SLACK);
       const gap2 = edge(u, target);
       if (gap2 > reach + 1e-9) {
         // Samurai: charge in faster when the charge is full and the target is in the window.
@@ -487,6 +488,7 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
     const before = units.map((u) => (u.target !== null && alive(u) ? edge(u, units[u.target]) : null));
     for (const u of units) {
       const m = moves[u.id];
+      u.x0 = u.x; u.y0 = u.y;
       u.vx = 0; u.vy = 0;
       if (!m) continue;
       u.x += m[0]; u.y += m[1];
@@ -513,6 +515,11 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
         v.x += nx * push * (1 - wu); v.y += ny * push * (1 - wu);
       });
     }
+    // Shown walking only if it actually got somewhere this step (no running on the spot).
+    for (const u of units) {
+      const m = moves[u.id];
+      u.walking = Boolean(m) && alive(u) && Math.hypot(u.x - (u.x0 ?? u.x), u.y - (u.y0 ?? u.y)) > u.f.speed * DT * 0.3;
+    }
     // Blocked: tried to walk to its target but got no closer.
     for (const u of units) {
       if (!alive(u) || !u.moving || before[u.id] === null) { if (!u.moving) u.stuck = 0; continue; }
@@ -530,7 +537,7 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
     if (record && step % RECORD_EVERY === 0) {
       frames.push({
         t,
-        u: units.map((u) => [u.x, u.y, Math.max(0, u.hp), u.moving ? 1 : 0, u.face, u.attackStart]),
+        u: units.map((u) => [u.x, u.y, Math.max(0, u.hp), u.walking ? 1 : 0, u.face, u.attackStart]),
       });
     }
     t += DT;

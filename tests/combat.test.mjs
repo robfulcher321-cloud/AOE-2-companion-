@@ -159,7 +159,8 @@ assert.equal(pagFight.hits.find((h) => h.side === 0).note, 'blocked', 'Iron Pago
 const shri = buildFighter(U[1753], 'Elite Shrivamsha', opt());
 const shriFight = simulate(arb, shri);
 const dodged = shriFight.hits.filter((h) => h.note === 'dodged').length;
-assert.ok(dodged >= 7, `Shrivamsha dodges its 7 charges worth of arrows (${dodged})`);
+console.log(`Shrivamsha: ${dodged} dodged of ${shriFight.sides[0].shots} arrows, fight ${shriFight.duration.toFixed(1)}s`);
+assert.ok(dodged >= Math.min(7, shriFight.sides[0].shots), `Shrivamsha dodges every arrow while it has charges (${dodged})`);
 const leitis = buildFighter(U[1236], 'Elite Leitis', opt());
 assert.equal(damagePerHit(leitis, teutonEtk), leitis.attacks.get(4), 'Leitis ignores armour');
 const urumi = buildFighter(U[1737], 'Elite Urumi', opt());

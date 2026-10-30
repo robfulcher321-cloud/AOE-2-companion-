@@ -16,11 +16,21 @@ import { damagePerHit, CLASS } from '../duel/combat.js';
 import { MARKET, structureStats } from './kit.js';
 
 export const DT = 1 / 30;
-export const LANE = { length: 70, half: 7.5 };
-export const CASTLE_X = [4, 66];
-const PLOT_X = [8.5, 12, 15.5, 19];
-const PLOT_Y = [-4.6, 0, 4.6];
-export const PLOTS = PLOT_X.length * PLOT_Y.length;   // building plots per side
+export const LANE = { length: 86, half: 7.5 };
+export const CASTLE_X = [13, 73];
+// Building plots for blue (red mirrors them), in the order the computer fills them:
+// three columns in front of the castle, one each side of it, two columns behind it.
+const ROWS = [0, -4.6, 4.6];
+const PLOT_LAYOUT = [
+  ...[18.5, 22, 25.5].flatMap((x) => ROWS.map((y) => [x, y])),
+  [13, -5.7], [13, 5.7],
+  ...[8, 4.5].flatMap((x) => ROWS.map((y) => [x, y])),
+];
+export const PLOTS = PLOT_LAYOUT.length;   // building plots per side
+const BIN = 2;                 // tiles: units are bucketed along the lane for "who's near" lookups
+const MELEE_SLACK = 0.35;      // tiles: a melee unit this close counts as touching (no running on the spot in a crowd)
+const BUILDING_SLACK = 0.45;   // tiles: buildings are big; a unit at their foot can hit them
+const STUCK_AFTER = 0.6;       // seconds without getting closer before a unit finds another way
 const AGGRO = 6;               // tiles: how far a unit looks for enemies beyond its range
 const RETARGET = 0.4;          // seconds between target checks
 const CAP = 70;                // most units a side can have on the field
@@ -45,14 +55,14 @@ export function mulberry32(seed) {
   };
 }
 
-/** Plot centre for side 0 or 1, plots numbered from the middle of the front column back. */
+/** Plot centre for side 0 or 1. */
 export function plotPos(side, i) {
-  const order = [];
-  for (let c = PLOT_X.length - 1; c >= 0; c--) for (const r of [1, 0, 2]) order.push([PLOT_X[c], PLOT_Y[r]]);
-  const [x, y] = order[i];
+  const [x, y] = PLOT_LAYOUT[i];
   return side === 0 ? [x, y] : [LANE.length - x, y];
 }
 
+// Math.hypot is slow in hot loops; this is the same for two values.
+const hyp = (x, y) => Math.sqrt(x * x + y * y);
 const cost = (f) => Object.values(f.cost || {}).reduce((a, b) => a + b, 0);
 
 export class World {
@@ -70,7 +80,10 @@ export class World {
     this.events = [];          // { t, type, side, ... } for the UI (kills, builds, castle hits)
     this.winner = null;
     this.nextId = 1;
+    this.sbins = [];
     this.incomeAt = INCOME_EVERY;
+    this.alive = [0, 0];       // living units per side
+    this.bins = [];            // living units by lane position, rebuilt each step
     this.sides = [0, 1].map((s) => ({
       gold: START_GOLD,
       incomeMult: income[s],
@@ -249,7 +262,8 @@ export class World {
 
   spawn(side, b) {
     const s = this.sides[side];
-    if (this.units.filter((u) => u.side === side && u.hp > 0).length >= CAP) return;
+    if (this.alive[side] >= CAP) return;
+    this.alive[side] += 1;
     const tier = b.tier;
     const f = this.kits[side].fighter(b.line, tier, s.researched, s.researchKey);
     const dir = side === 0 ? 1 : -1;
@@ -257,7 +271,7 @@ export class World {
       id: this.nextId++, side, line: b.line, tier, f, r: f.radius,
       x: b.x + dir * (b.r + f.radius + 0.3), y: b.y + (this.rand() - 0.5) * 0.6,
       px: 0, py: 0, hp: f.hp, target: null, retarget: 0, ready: 0, pending: null,
-      attackStart: null, diedAt: null, face: dir, moving: false, bornAt: this.t,
+      attackStart: null, diedAt: null, face: dir, moving: false, bornAt: this.t, stuck: 0, lastGap: null, sidestep: 0,
     };
     u.px = u.x; u.py = u.y;
     s.stats.trained += 1;
@@ -266,20 +280,48 @@ export class World {
 
   enemyCastle(side) { return this.sides[1 - side].castle; }
 
-  pickTarget(u) {
+  /** Calls fn(v) for living units whose lane position is within r of x (a quick pre-filter). */
+  near(x, r, fn) {
+    const b0 = Math.max(0, Math.floor((x - r) / BIN));
+    const b1 = Math.min(this.bins.length - 1, Math.floor((x + r) / BIN));
+    for (let b = b0; b <= b1; b++) {
+      const list = this.bins[b];
+      if (list) for (let i = 0; i < list.length; i++) fn(list[i]);
+    }
+  }
+
+  /** Nearest enemy (soldier or building) it can already hit without moving, or null. */
+  inReach(u, reach) {
+    let best = null;
+    let bd = Infinity;
+    this.near(u.x, reach + 1, (v) => {
+      if (v.side === u.side || v.hp <= 0) return;
+      const d = hyp(v.x - u.x, v.y - u.y) - v.r - u.r;
+      if (d <= reach && d < bd) { bd = d; best = v; }
+    });
+    for (const b of this.sbins[Math.max(0, Math.floor(u.x / BIN))] || []) {
+      if (b.side === u.side || b.hp <= 0) continue;
+      const d = hyp(b.x - u.x, b.y - u.y) - b.r - u.r;
+      if (d <= reach && d < bd) { bd = d; best = b; }
+    }
+    return best;
+  }
+
+  /** Nearest enemy soldier in reach, else the nearest enemy building in reach. `skip`: a target to avoid. */
+  pickTarget(u, skip = null) {
     let best = null;
     let bd = Infinity;
     const reach = u.f.range + AGGRO;
-    for (const v of this.units) {
-      if (v.side === u.side || v.hp <= 0) continue;
-      const d = Math.hypot(v.x - u.x, v.y - u.y) - v.r - u.r;
+    this.near(u.x, reach + 1, (v) => {
+      if (v.side === u.side || v.hp <= 0 || v === skip) return;
+      const d = hyp(v.x - u.x, v.y - u.y) - v.r - u.r;
       if (d < bd && d <= reach) { bd = d; best = v; }
-    }
+    });
     if (best) return best;
     // No enemy soldiers near: the nearest enemy building in reach, else keep marching.
     for (const b of this.structures) {
-      if (b.side === u.side || b.hp <= 0) continue;
-      const d = Math.hypot(b.x - u.x, b.y - u.y) - b.r - u.r;
+      if (b.side === u.side || b.hp <= 0 || b === skip) continue;
+      const d = hyp(b.x - u.x, b.y - u.y) - b.r - u.r;
       if (d < bd && d <= reach) { bd = d; best = b; }
     }
     return best;
@@ -300,6 +342,7 @@ export class World {
     target.hp -= amount;
     if (target.hp > 0) return;
     target.diedAt = this.t;
+    if (!target.kind) this.alive[target.side] -= 1;
     const s = this.sides[side];
     const o = this.sides[1 - side];
     if (target.kind === 'castle') {
@@ -321,7 +364,7 @@ export class World {
   }
 
   launch(u, target, attacks, { accuracy, speed, spread = 0.3 }, isCastle = false) {
-    const dist = Math.max(0.1, Math.hypot(target.x - u.x, target.y - u.y));
+    const dist = Math.max(0.1, hyp(target.x - u.x, target.y - u.y));
     const hit = this.rand() * 100 < accuracy;
     let x1 = target.x, y1 = target.y;
     if (!hit) {
@@ -331,7 +374,7 @@ export class World {
     }
     this.shots.push({
       side: u.side, by: u, target, attacks, hit, castle: isCastle,
-      x0: u.x, y0: u.y, x1, y1, t0: this.t, t1: this.t + Math.hypot(x1 - u.x, y1 - u.y) / speed,
+      x0: u.x, y0: u.y, x1, y1, t0: this.t, t1: this.t + hyp(x1 - u.x, y1 - u.y) / speed,
       sprite: u.f?.projectile?.sprite, arc: u.f?.projectile?.arc ?? 0,
     });
   }
@@ -341,12 +384,12 @@ export class World {
     const dmgTo = (v) => damagePerHit({ ...f, attacks: s.attacks, special: f.special || {} }, v.f);
     if (s.hit && s.target.hp > 0) { this.damage(s.side, s.target, dmgTo(s.target), s.by); s.landed = s.target; return; }
     // A miss can still come down on someone: half damage.
-    for (const v of this.units) {
-      if (v.side === s.side || v.hp <= 0) continue;
-      if (Math.abs(v.x - s.x1) <= v.r + 0.1 && Math.abs(v.y - s.y1) <= v.r + 0.1) {
-        this.damage(s.side, v, dmgTo(v) / 2, s.by); s.landed = v; return;
-      }
-    }
+    let hitV = null;
+    this.near(s.x1, 1, (v) => {
+      if (hitV || v.side === s.side || v.hp <= 0) return;
+      if (Math.abs(v.x - s.x1) <= v.r + 0.1 && Math.abs(v.y - s.y1) <= v.r + 0.1) hitV = v;
+    });
+    if (hitV) { this.damage(s.side, hitV, dmgTo(hitV) / 2, s.by); s.landed = hitV; }
   }
 
   step() {
@@ -387,22 +430,33 @@ export class World {
     for (const c of this.structures) {
       if (c.kind !== 'castle' || c.hp <= 0 || t < c.ready) continue;
       let best = null, bd = Infinity;
-      for (const v of this.units) {
-        if (v.side === c.side || v.hp <= 0) continue;
-        const d = Math.hypot(v.x - c.x, v.y - c.y) - c.r;
+      this.near(c.x, c.f.range + c.r + 1, (v) => {
+        if (v.side === c.side || v.hp <= 0) return;
+        const d = hyp(v.x - c.x, v.y - c.y) - c.r;
         if (d <= c.f.range && d < bd) { bd = d; best = v; }
-      }
+      });
       if (!best) continue;
       c.ready = t + c.f.reload;
       for (let k = 0; k < CASTLE_ARROWS; k++) this.launch(c, best, c.f.attacks, { accuracy: CASTLE_ACCURACY, speed: ARROW_SPEED, spread: 0.4 }, true);
     }
     // Units
     const live = this.units.filter((u) => u.hp > 0);
-    for (const u of live) { u.px = u.x; u.py = u.y; u.moving = false; }
+    this.bins = [];
+    this.sbins = [];
+    for (const b of this.structures) {
+      if (b.hp <= 0) continue;
+      for (let k = Math.floor((b.x - b.r - 2) / BIN); k <= Math.floor((b.x + b.r + 2) / BIN); k++) (this.sbins[Math.max(0, k)] ||= []).push(b);
+    }
+    for (const u of live) {
+      const b = Math.max(0, Math.floor(u.x / BIN));
+      (this.bins[b] ||= []).push(u);
+      u.px = u.x; u.py = u.y; u.wantsMove = false;
+    }
     for (const u of live) {
       if ((u.retarget -= DT) <= 0 || !u.target || u.target.hp <= 0) {
         u.retarget = RETARGET * (0.8 + this.rand() * 0.4);
         u.target = this.pickTarget(u);
+        u.lastGap = null;
       }
       if (u.pending) {
         if (t >= u.pending.at) {
@@ -418,48 +472,84 @@ export class World {
         // March down the lane towards the enemy castle.
         const c = this.enemyCastle(u.side);
         const dx = c.x - u.x, dy = (c.y - u.y) * 0.15;
-        const len = Math.hypot(dx, dy) || 1;
-        this.move(u, dx / len, dy / len, live);
+        const len = hyp(dx, dy) || 1;
+        this.move(u, dx / len, dy / len);
         u.face = dir;
         continue;
       }
-      const gap = Math.hypot(tg.x - u.x, tg.y - u.y) - tg.r - u.r;
-      const minR = u.f.projectile ? u.f.minRange || 0 : 0;
-      if (gap > u.f.range) {
-        const len = Math.hypot(tg.x - u.x, tg.y - u.y) || 1;
-        this.move(u, (tg.x - u.x) / len, (tg.y - u.y) / len, live, gap - u.f.range);
+      const gap = hyp(tg.x - u.x, tg.y - u.y) - tg.r - u.r;
+      const ranged = Boolean(u.f.projectile);
+      const minR = ranged ? u.f.minRange || 0 : 0;
+      // Melee units count as touching a little before their edges meet, so they
+      // swing instead of shuffling on the spot when the crowd nudges them.
+      const reach = u.f.range + (ranged ? 0 : MELEE_SLACK) + (tg.kind ? BUILDING_SLACK : 0);
+      if (gap > reach) {
+        // Blocked (by friends in the way): try another target, or step aside.
+        if (u.lastGap !== null && u.lastGap - gap < u.f.speed * DT * 0.25) u.stuck += DT; else u.stuck = Math.max(0, u.stuck - DT);
+        u.lastGap = gap;
+        if (u.stuck > STUCK_AFTER) {
+          u.stuck = 0;
+          // First choice: anything it can hit from here (often the building it's pressed against).
+          // (It sticks with the new choice for a while instead of switching straight back.)
+          const here = this.inReach(u, u.f.range + (ranged ? 0 : MELEE_SLACK + BUILDING_SLACK) + 0.3);
+          if (here) { u.target = here; u.lastGap = null; u.retarget = 1.5; continue; }
+          const alt = this.pickTarget(u, tg);
+          if (alt && alt !== tg) { u.target = alt; u.lastGap = null; u.retarget = 1.5; continue; }
+          u.sidestep = 0.6;   // nobody else in reach: walk round the crowd for a moment
+          u.retarget = Math.max(u.retarget, 0.8);
+        }
+        const len = hyp(tg.x - u.x, tg.y - u.y) || 1;
+        let dx = (tg.x - u.x) / len, dy = (tg.y - u.y) / len;
+        if (u.sidestep > 0) {
+          u.sidestep -= DT;
+          const k = (u.id % 2 ? 1 : -1) * (u.y > LANE.half - 1.5 ? -1 : u.y < -LANE.half + 1.5 ? 1 : 1);
+          const sx = dx - dy * 1.2 * k, sy = dy + dx * 1.2 * k, sl = hyp(sx, sy) || 1;
+          dx = sx / sl; dy = sy / sl;
+        }
+        this.move(u, dx, dy, gap - reach + 0.05);
       } else if (minR > 0 && gap < minR && tg.kind === undefined) {
-        const len = Math.hypot(tg.x - u.x, tg.y - u.y) || 1;
-        this.move(u, -(tg.x - u.x) / len, -(tg.y - u.y) / len, live);
-      } else if (t >= u.ready) {
-        u.pending = { at: t + (u.f.attackDelay || 0), target: tg };
-        u.ready = t + u.f.reload;
-        u.attackStart = t;
+        const len = hyp(tg.x - u.x, tg.y - u.y) || 1;
+        this.move(u, -(tg.x - u.x) / len, -(tg.y - u.y) / len);
+      } else {
+        u.stuck = 0;
+        u.lastGap = null;
         u.face = Math.sign(tg.x - u.x) || u.face;
+        if (t >= u.ready) {
+          u.pending = { at: t + (u.f.attackDelay || 0), target: tg };
+          u.ready = t + u.f.reload;
+          u.attackStart = t;
+        }
       }
     }
-    // Keep units apart, out of buildings, and on the lane.
-    for (let i = 0; i < live.length; i++) {
-      const u = live[i];
-      for (let j = i + 1; j < live.length; j++) {
-        const v = live[j];
+    // Keep units apart (a unit standing its ground gives way less than one
+    // walking past), out of buildings, and on the lane.
+    for (const u of live) {
+      if (u.hp <= 0) continue;
+      this.near(u.x, u.r + 0.7, (v) => {
+        if (v.id <= u.id || v.hp <= 0) return;
         const dx = v.x - u.x, dy = v.y - u.y;
         const need = u.r + v.r;
-        if (Math.abs(dx) >= need || Math.abs(dy) >= need) continue;
+        if (Math.abs(dx) >= need || Math.abs(dy) >= need) return;
         const d = Math.sqrt(dx * dx + dy * dy);
-        if (d >= need) continue;
-        const nx = d > 1e-6 ? dx / d : 0, ny = d > 1e-6 ? dy / d : 1;
-        const push = (need - d) / 2;
-        u.x -= nx * push; u.y -= ny * push; v.x += nx * push; v.y += ny * push;
-      }
-      for (const b of this.structures) {
+        if (d >= need) return;
+        const nx = d > 1e-6 ? dx / d : 0, ny = d > 1e-6 ? dy / d : (u.id % 2 ? 1 : -1);
+        const push = need - d;
+        const wu = u.wantsMove ? (v.wantsMove ? 0.5 : 0.85) : (v.wantsMove ? 0.15 : 0.5);
+        u.x -= nx * push * wu; u.y -= ny * push * wu;
+        v.x += nx * push * (1 - wu); v.y += ny * push * (1 - wu);
+      });
+    }
+    for (const u of live) {
+      for (const b of this.sbins[Math.max(0, Math.floor(u.x / BIN))] || []) {
         if (b.hp <= 0) continue;
         const dx = u.x - b.x, dy = u.y - b.y;
-        const d = Math.hypot(dx, dy), need = b.r + u.r;
+        const d = hyp(dx, dy), need = b.r + u.r;
         if (d < need) { const k = d > 1e-6 ? need / d : 1; u.x = b.x + dx * k; u.y = b.y + (d > 1e-6 ? dy * k : need); }
       }
       u.y = Math.max(-LANE.half, Math.min(LANE.half, u.y));
       u.x = Math.max(0.5, Math.min(LANE.length - 0.5, u.x));
+      // Only shown walking if it actually got somewhere (no running on the spot).
+      u.moving = u.wantsMove && hyp(u.x - u.px, u.y - u.py) > u.f.speed * DT * 0.3;
     }
     // Shots land
     for (let k = this.shots.length - 1; k >= 0; k--) {
@@ -475,43 +565,54 @@ export class World {
     }
   }
 
-  /** Walk one step, steering round friends standing in the way. */
-  move(u, dx, dy, live, maxStep = Infinity) {
+  /** Walk one step, steering round friends and buildings in the way. */
+  move(u, dx, dy, maxStep = Infinity) {
     let side = 0;
-    for (const v of live) {
-      if (v === u || v.side !== u.side) continue;
+    this.near(u.x, 1.3, (v) => {
+      if (v === u || v.side !== u.side || v.hp <= 0) return;
       const ox = v.x - u.x, oy = v.y - u.y;
-      if (Math.abs(ox) > 1.2 || Math.abs(oy) > 1.2) continue;
-      const od = Math.hypot(ox, oy) || 1;
+      if (Math.abs(oy) > 1.3) return;
+      const od = hyp(ox, oy) || 1;
       const ahead = (ox * dx + oy * dy) / od;
-      if (ahead < 0.55 || od > u.r + v.r + 0.45) continue;
+      if (ahead < 0.55 || od > u.r + v.r + 0.45) return;
       side += ((dx * oy - dy * ox) >= 0 ? -1 : 1) * ahead * (1 - od / (u.r + v.r + 0.45));
+    });
+    // Buildings (the castle especially) are walked round, not pushed against.
+    for (const b of this.sbins[Math.max(0, Math.floor(u.x / BIN))] || []) {
+      if (b.hp <= 0) continue;
+      const ox = b.x - u.x, oy = b.y - u.y;
+      if (Math.abs(oy) > b.r + u.r + 1.2) continue;
+      const od = hyp(ox, oy) || 1;
+      if (od > b.r + u.r + 1.2) continue;
+      const ahead = (ox * dx + oy * dy) / od;
+      if (ahead < 0.3) continue;
+      side += ((dx * oy - dy * ox) >= 0 ? -1.5 : 1.5) * ahead;
     }
     if (side) {
       const k = Math.max(-1, Math.min(1, side)) * 0.9;
-      const nx = dx - dy * k, ny = dy + dx * k, nl = Math.hypot(nx, ny) || 1;
+      const nx = dx - dy * k, ny = dy + dx * k, nl = hyp(nx, ny) || 1;
       dx = nx / nl; dy = ny / nl;
     }
-    const len = Math.min(u.f.speed * DT, maxStep);
+    const len = Math.min(u.f.speed * DT, Math.max(0, maxStep));
     u.x += dx * len; u.y += dy * len;
-    u.moving = true;
+    u.wantsMove = true;
     if (Math.abs(dx) > 0.2) u.face = Math.sign(dx);
   }
 
   release(u, tg) {
     const p = u.f.projectile;
     if (!p) {
-      if (Math.hypot(tg.x - u.x, tg.y - u.y) - tg.r - u.r > u.f.range + 0.5) return;
+      if (hyp(tg.x - u.x, tg.y - u.y) - tg.r - u.r > u.f.range + MELEE_SLACK + BUILDING_SLACK + 0.5) return;
       this.attackOn(u, tg);
       // Trample: enemies around the target take some of the blow.
       const bl = u.f.special?.blast;
       if (bl) {
-        for (const v of this.units) {
-          if (v === tg || v.side === u.side || v.hp <= 0) continue;
-          if (Math.hypot(v.x - tg.x, v.y - tg.y) - v.r > bl.width) continue;
+        this.near(tg.x, bl.width + 1, (v) => {
+          if (v === tg || v.side === u.side || v.hp <= 0) return;
+          if (hyp(v.x - tg.x, v.y - tg.y) - v.r > bl.width) return;
           const amt = bl.damage < 0 ? -bl.damage : bl.damage * damagePerHit(u.f, v.f);
           this.damage(u.side, v, amt, u);
-        }
+        });
       }
       return;
     }
