@@ -16,14 +16,18 @@ import { damagePerHit, CLASS } from '../duel/combat.js';
 import { MARKET, structureStats } from './kit.js';
 
 export const DT = 1 / 30;
-export const LANE = { length: 86, half: 7.5 };
+export const LANE = { length: 86, half: 10 };
+// The middle of the map is split by a river into two lanes, as in Castle Fight.
+// Units cross only at the ends, near the bases; arrows fly over.
+export const RIVER = { x0: 31, x1: 55, half: 2.6 };
+const LANE_Y = (RIVER.half + LANE.half) / 2;   // centre line of each lane
 export const CASTLE_X = [13, 73];
 // Building plots for blue (red mirrors them), in the order the computer fills them:
 // three columns in front of the castle, one each side of it, two columns behind it.
-const ROWS = [0, -4.6, 4.6];
+const ROWS = [0, -6, 6];
 const PLOT_LAYOUT = [
   ...[18.5, 22, 25.5].flatMap((x) => ROWS.map((y) => [x, y])),
-  [13, -5.7], [13, 5.7],
+  [13, -7], [13, 7],
   ...[8, 4.5].flatMap((x) => ROWS.map((y) => [x, y])),
 ];
 export const PLOTS = PLOT_LAYOUT.length;   // building plots per side
@@ -38,6 +42,7 @@ const INCOME_EVERY = 4;        // seconds between income ticks
 export const START_GOLD = 250;
 export const BASE_INCOME = 10;
 const CASTLE_ARROWS = 3;
+export const BLAST = { radius: 4, share: 0.6, flat: 25, per: 1 };   // the explosion: once per player
 export const OVERTIME = 25 * 60;   // after this, buildings take more damage every minute, so games end
 const SELL_BACK = 0.5;
 const CRUMBLE = 0.004;          // share of a castle's HP lost per second in overtime
@@ -83,6 +88,7 @@ export class World {
     this.sbins = [];
     this.incomeAt = INCOME_EVERY;
     this.alive = [0, 0];       // living units per side
+    this.effects = [];         // explosions, for drawing: { t, x, y, side }
     this.bins = [];            // living units by lane position, rebuilt each step
     this.sides = [0, 1].map((s) => ({
       gold: START_GOLD,
@@ -93,6 +99,7 @@ export class World {
       markets: 0,
       plots: Array(PLOTS).fill(null),
       stats: { trained: 0, kills: 0, lost: 0, earned: 0, spent: 0 },
+      blasts: BLAST.per,       // explosions left
     }));
     for (const s of [0, 1]) this.castle(s, structureStats(data, 82));
     this.buildingStats = (id) => structureStats(data, id);
@@ -201,6 +208,38 @@ export class World {
     return true;
   }
 
+  /**
+   * The explosion (once per player, like Castle Fight's comeback ability): hurts
+   * every enemy soldier within BLAST.radius of (x, y) for 60% of its full HP + 25.
+   */
+  blast(side, x, y) {
+    const s = this.sides[side];
+    if (s.blasts <= 0 || this.winner !== null) return 0;
+    s.blasts -= 1;
+    let hit = 0;
+    for (const v of this.units) {
+      if (v.side === side || v.hp <= 0) continue;
+      if (hyp(v.x - x, v.y - y) - v.r > BLAST.radius) continue;
+      this.damage(side, v, v.f.hp * BLAST.share + BLAST.flat, { side });
+      hit += 1;
+    }
+    this.effects.push({ t: this.t, x, y, side, hit });
+    this.events.push({ t: this.t, type: 'blast', side, x, y, hit });
+    return hit;
+  }
+
+  /** Best spot for an explosion against `side`'s enemies: [x, y, how many it would hit]. */
+  blastSpot(side) {
+    let best = null;
+    const foes = this.units.filter((v) => v.side !== side && v.hp > 0);
+    for (const a of foes) {
+      let n = 0;
+      for (const v of foes) if (hyp(v.x - a.x, v.y - a.y) <= BLAST.radius) n += 1;
+      if (!best || n > best[2]) best = [a.x, a.y, n];
+    }
+    return best;
+  }
+
   /** Knock down your own building for half of what you put into it (frees the plot). */
   sell(side, id) {
     const b = this.building(id);
@@ -267,8 +306,11 @@ export class World {
     const tier = b.tier;
     const f = this.kits[side].fighter(b.line, tier, s.researched, s.researchKey);
     const dir = side === 0 ? 1 : -1;
+    // Which lane: by the building's row; the middle row takes turns.
+    b.nextLane = -(b.nextLane || 1);
+    const lane = b.y < -1 ? -1 : b.y > 1 ? 1 : b.nextLane;
     const u = {
-      id: this.nextId++, side, line: b.line, tier, f, r: f.radius,
+      id: this.nextId++, side, line: b.line, tier, f, r: f.radius, lane,
       x: b.x + dir * (b.r + f.radius + 0.3), y: b.y + (this.rand() - 0.5) * 0.6,
       px: 0, py: 0, hp: f.hp, target: null, retarget: 0, ready: 0, pending: null,
       attackStart: null, diedAt: null, face: dir, moving: false, bornAt: this.t, stuck: 0, lastGap: null, sidestep: 0,
@@ -290,6 +332,24 @@ export class World {
     }
   }
 
+  /** Does the river stand between two points? (Only its long middle stretch blocks.) */
+  acrossRiver(ax, ay, bx, by) {
+    if ((ay > -RIVER.half && ay < RIVER.half) || (by > -RIVER.half && by < RIVER.half)) {
+      // one end on the bank line: blocked if both ends are beside the river and on different sides of it
+      if (Math.sign(ay) === Math.sign(by)) return false;
+    }
+    if (ay * by >= 0) return false;
+    const k = ay / (ay - by);
+    const xm = ax + (bx - ax) * k;
+    return xm > RIVER.x0 && xm < RIVER.x1;
+  }
+
+  /** Melee units can't go after enemies across the river; ranged ones only if they can shoot from here. */
+  canReach(u, v, gap) {
+    if (!this.acrossRiver(u.x, u.y, v.x, v.y)) return true;
+    return Boolean(u.f.projectile) && gap <= u.f.range;
+  }
+
   /** Nearest enemy (soldier or building) it can already hit without moving, or null. */
   inReach(u, reach) {
     let best = null;
@@ -297,7 +357,7 @@ export class World {
     this.near(u.x, reach + 1, (v) => {
       if (v.side === u.side || v.hp <= 0) return;
       const d = hyp(v.x - u.x, v.y - u.y) - v.r - u.r;
-      if (d <= reach && d < bd) { bd = d; best = v; }
+      if (d <= reach && d < bd && this.canReach(u, v, d)) { bd = d; best = v; }
     });
     for (const b of this.sbins[Math.max(0, Math.floor(u.x / BIN))] || []) {
       if (b.side === u.side || b.hp <= 0) continue;
@@ -315,7 +375,7 @@ export class World {
     this.near(u.x, reach + 1, (v) => {
       if (v.side === u.side || v.hp <= 0 || v === skip) return;
       const d = hyp(v.x - u.x, v.y - u.y) - v.r - u.r;
-      if (d < bd && d <= reach) { bd = d; best = v; }
+      if (d < bd && d <= reach && this.canReach(u, v, d)) { bd = d; best = v; }
     });
     if (best) return best;
     // No enemy soldiers near: the nearest enemy building in reach, else keep marching.
@@ -469,9 +529,14 @@ export class World {
       const tg = u.target;
       const dir = u.side === 0 ? 1 : -1;
       if (!tg) {
-        // March down the lane towards the enemy castle.
+        // March down your lane towards the enemy castle; past the river, head for the castle.
         const c = this.enemyCastle(u.side);
-        const dx = c.x - u.x, dy = (c.y - u.y) * 0.15;
+        const past = dir > 0 ? u.x > RIVER.x1 + 1 : u.x < RIVER.x0 - 1;
+        const before = dir > 0 ? u.x < RIVER.x0 - 6 : u.x > RIVER.x1 + 6;
+        // Beside the river, its lane is whichever bank it's on (it may have chased someone across).
+        if (u.x > RIVER.x0 - 1 && u.x < RIVER.x1 + 1) u.lane = Math.sign(u.y) || u.lane;
+        const aimY = past ? c.y : u.lane * LANE_Y;
+        const dx = c.x - u.x, dy = (aimY - u.y) * (before ? 0.12 : 0.35);
         const len = hyp(dx, dy) || 1;
         this.move(u, dx / len, dy / len);
         u.face = dir;
@@ -482,7 +547,7 @@ export class World {
       const minR = ranged ? u.f.minRange || 0 : 0;
       // Melee units count as touching a little before their edges meet, so they
       // swing instead of shuffling on the spot when the crowd nudges them.
-      const reach = u.f.range + (ranged ? 0 : MELEE_SLACK) + (tg.kind ? BUILDING_SLACK : 0);
+      const reach = u.f.range + (ranged ? 0.1 : MELEE_SLACK) + (tg.kind ? BUILDING_SLACK : 0);
       if (gap > reach) {
         // Blocked (by friends in the way): try another target, or step aside.
         if (u.lastGap !== null && u.lastGap - gap < u.f.speed * DT * 0.25) u.stuck += DT; else u.stuck = Math.max(0, u.stuck - DT);
@@ -548,6 +613,11 @@ export class World {
       }
       u.y = Math.max(-LANE.half, Math.min(LANE.half, u.y));
       u.x = Math.max(0.5, Math.min(LANE.length - 0.5, u.x));
+      // Out of the river, back onto the bank it came from
+      if (u.x > RIVER.x0 - u.r && u.x < RIVER.x1 + u.r && Math.abs(u.y) < RIVER.half + u.r) {
+        const bank = Math.sign(u.py || u.y || u.lane) || 1;
+        u.y = bank * (RIVER.half + u.r);
+      }
       // Only shown walking if it actually got somewhere (no running on the spot).
       u.moving = u.wantsMove && hyp(u.x - u.px, u.y - u.py) > u.f.speed * DT * 0.3;
     }
@@ -562,6 +632,7 @@ export class World {
       this.units = this.units.filter((u) => u.hp > 0 || t - u.diedAt < 4);
       this.structures = this.structures.filter((b) => b.hp > 0 || b.kind === 'castle' || t - b.diedAt < 3);
       if (this.events.length > 200) this.events.splice(0, this.events.length - 200);
+      this.effects = this.effects.filter((e) => t - e.t < 8);
     }
   }
 
@@ -674,6 +745,14 @@ export class Computer {
     this.next = w.t + (this.level === 'easy' ? 4 : 2.5);
     const side = this.side;
     const s = w.sides[side];
+    // The explosion: on a big enough clump, or when the castle is in danger.
+    if (s.blasts > 0) {
+      const spot = w.blastSpot(side);
+      const castle = s.castle;
+      const nearCastle = w.units.filter((v) => v.side !== side && v.hp > 0 && Math.abs(v.x - castle.x) < 16).length;
+      const need = this.level === 'easy' ? 22 : this.level === 'hard' ? 11 : 15;
+      if (spot && (spot[2] >= need || (nearCastle >= 10 && spot[2] >= 6))) { w.blast(side, spot[0], spot[1]); return; }
+    }
     const foe = w.mix(1 - side);
     const foeTotal = 1 + Object.values(foe).reduce((a, b) => a + b, 0);
     const kit = w.kits[side];

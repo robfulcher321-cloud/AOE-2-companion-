@@ -5,7 +5,7 @@ import { Picker } from '../picker.js';
 import { civOptions } from '../techtree.js';
 import { loadPack } from '../duel/spritepack.js';
 import { buildKit, MARKET, BUILDING_NAMES } from './kit.js';
-import { World, Computer, DT, PLOTS, OVERTIME, START_GOLD } from './world.js';
+import { World, Computer, DT, PLOTS, OVERTIME, START_GOLD, BLAST } from './world.js';
 import { SiegeView } from './view.js';
 
 const GAME_SPEED = 1.7;
@@ -32,12 +32,14 @@ const loadImg = (src) => new Promise((res) => {
 export async function initSiege(root) {
   const { data, strings } = await loadCore();
   const civs = civOptions(data, strings);
-  const mine = new Picker({ label: 'Your civilisation', onChange: (c) => store.set('sg-civ', c) });
+  const mine = new Picker({ label: 'Your civilisation', onChange: (c) => { store.set('sg-civ', c); if (randomMe) { randomMe.checked = false; store.set('sg-random-me', '0'); } } });
   mine.setOptions(civs, data.civs[store.get('sg-civ')] ? store.get('sg-civ') : 'Franks');
-  const theirs = new Picker({ label: 'Computer\'s civilisation', onChange: (c) => { store.set('sg-ai', c); randomBox.checked = false; } });
+  const theirs = new Picker({ label: 'Computer\'s civilisation', onChange: (c) => { store.set('sg-ai', c); randomBox.checked = false; store.set('sg-random', '0'); } });
   theirs.setOptions(civs, data.civs[store.get('sg-ai')] ? store.get('sg-ai') : 'Britons');
   const randomBox = el('input', { type: 'checkbox', checked: store.get('sg-random') !== '0' });
   randomBox.addEventListener('change', () => store.set('sg-random', randomBox.checked ? '1' : '0'));
+  const randomMe = el('input', { type: 'checkbox', checked: store.get('sg-random-me') === '1' });
+  randomMe.addEventListener('change', () => store.set('sg-random-me', randomMe.checked ? '1' : '0'));
   let level = LEVELS[store.get('sg-level')] ? store.get('sg-level') : 'normal';
   const levelBtns = Object.entries(LEVELS).map(([k, v]) => {
     const b = el('button', { type: 'button', textContent: v.label });
@@ -49,6 +51,7 @@ export async function initSiege(root) {
   const status = el('p', { className: 'status', hidden: true });
   root.replaceChildren(
     el('div', { className: 'field' }, el('span', { textContent: 'Your civilisation' }), mine.button),
+    el('label', { className: 'toggle' }, randomMe, el('span', { textContent: 'Random civ for me' })),
     el('div', { className: 'field' }, el('span', { textContent: 'Computer' }), theirs.button),
     el('label', { className: 'toggle' }, randomBox, el('span', { textContent: 'Random civ for the computer' })),
     el('div', { className: 'field' }, el('span', { textContent: 'Difficulty' }), el('div', { className: 'sg-levels' }, levelBtns)),
@@ -61,6 +64,8 @@ export async function initSiege(root) {
         el('li', { textContent: 'Press and hold a building to upgrade it to the next unit in its line (Militia → Man-at-Arms → … → Champion), or to sell it for half of what you put in. Each building upgrades on its own: lots of cheap units, or fewer strong ones?' }),
         el('li', { textContent: 'Tap a building to hold it: its bar turns blue and the unit waits when ready. Tap GO to send every waiting unit out at once.' }),
         el('li', { textContent: 'The Armory (anvil, bottom left) has Blacksmith upgrades, Ballistics, Chemistry, Bloodlines and your civ\'s unique techs. One at a time; each one reaches all your units, even those already fighting.' }),
+        el('li', { textContent: 'The middle of the map is split by a river into two lanes. Buildings in your top row send units down the top lane, the bottom row the bottom lane, the middle row takes turns. Arrows fly over the river; soldiers cross only near the bases.' }),
+        el('li', { textContent: `One explosion each (the fire button): tap it, tap where, then Drop. It hurts every enemy soldier within ${BLAST.radius} tiles for ${Math.round(BLAST.share * 100)}% of their HP. Save it for a deathball.` }),
         el('li', { textContent: 'Gold comes in every few seconds; Markets add more, and kills pay a bounty.' }),
         el('li', { textContent: 'Counter what the computer builds: spearmen beat cavalry, skirmishers beat archers, cavalry and infantry beat archers.' }),
         el('li', { textContent: 'Drag the battlefield or tap the minimap to look around; it follows the fighting again after a few seconds.' }),
@@ -73,12 +78,14 @@ export async function initSiege(root) {
     status.textContent = 'Getting the armies ready…';
     try {
       const keys = Object.keys(data.civs);
-      const aiCiv = randomBox.checked ? keys[Math.floor(Math.random() * keys.length)] : theirs.value;
-      const kits = await Promise.all([mine.value, aiCiv].map(async (civ) => buildKit({ data, strings, tree: await loadTree(civ), civ })));
+      const pick = () => keys[Math.floor(Math.random() * keys.length)];
+      const myCiv = randomMe.checked ? pick() : mine.value;
+      const aiCiv = randomBox.checked ? pick() : theirs.value;
+      const kits = await Promise.all([myCiv, aiCiv].map(async (civ) => buildKit({ data, strings, tree: await loadTree(civ), civ })));
       const assets = await loadAssets(kits);
       store.set('sg-played', '1');
       status.hidden = true;
-      openGame({ data, strings, kits, assets, level, civNames: [mine.value, aiCiv].map((c) => nameText(strings[data.civs[c].name_string_id] || c)) });
+      openGame({ data, strings, kits, assets, level, civNames: [myCiv, aiCiv].map((c) => nameText(strings[data.civs[c].name_string_id] || c)) });
     } catch (err) {
       console.error(err);
       status.textContent = `Couldn't start: ${err.message}`;
@@ -137,8 +144,11 @@ function openGame({ data, kits, assets, level, civNames }) {
   const clock = el('span', { className: 'sg-clock', textContent: '0:00' });
   const castleBar = (side) => {
     const fill = el('i');
-    const wrap = el('div', { className: `sg-castle sg-castle-${side ? 'red' : 'blue'}` }, el('span', { textContent: side ? civNames[1] : 'You' }), el('div', { className: 'sg-cbar' }, fill));
-    return { wrap, fill };
+    const count = el('b', { className: 'sg-count', textContent: '0' });
+    const wrap = el('div', { className: `sg-castle sg-castle-${side ? 'red' : 'blue'}` },
+      el('span', {}, side ? civNames[1] : `You (${civNames[0]})`), el('span', { className: 'sg-units', title: 'Soldiers on the map' }, '⚔ ', count),
+      el('div', { className: 'sg-cbar' }, fill));
+    return { wrap, fill, count };
   };
   const castles = [castleBar(0), castleBar(1)];
   const goBtn = el('button', { type: 'button', className: 'sg-go', textContent: 'GO', disabled: true, title: 'Send out every held unit at once' });
@@ -151,6 +161,11 @@ function openGame({ data, kits, assets, level, civNames }) {
   const armoryBtn = el('button', { type: 'button', className: 'sg-armory-btn', 'aria-label': 'Armory' },
     el('img', { src: bldIcon(103), alt: '' }), el('span', { className: 'sg-armory-dot', hidden: true }));
   const banner = el('div', { className: 'sg-banner', hidden: true });
+  const blastBtn = el('button', { type: 'button', className: 'sg-blast-btn', 'aria-label': 'Explosion (once per game)' },
+    el('span', { className: 'sg-blast-ic', textContent: '💥' }), el('small', { className: 'sg-blast-n', textContent: String(BLAST.per) }));
+  const dropBtn = el('button', { type: 'button', className: 'sg-drop', textContent: 'Drop here' });
+  const aimBar = el('div', { className: 'sg-aim', hidden: true }, el('span', { className: 'sg-aim-text', textContent: 'Tap where to drop the explosion' }), dropBtn,
+    el('button', { type: 'button', className: 'sg-btn', textContent: 'Cancel', onclick: () => setAim(false) }));
   const dock = el('section', { className: 'sg-dock' });
 
   const screen = el('div', { className: 'sg-run', role: 'dialog', 'aria-label': 'AOSiege game' },
@@ -158,7 +173,7 @@ function openGame({ data, kits, assets, level, civNames }) {
       el('div', { className: 'sg-gold' }, el('img', { src: 'img/res/gold.webp', alt: 'Gold', width: 28, height: 28 }), goldNum, incomeTxt),
       clock, goBtn, speedBtn, pauseBtn, closeBtn,
       el('div', { className: 'sg-castles' }, castles[0].wrap, castles[1].wrap)),
-    el('div', { className: 'sg-field' }, canvas, followBtn, armoryBtn, banner),
+    el('div', { className: 'sg-field' }, canvas, followBtn, armoryBtn, blastBtn, aimBar, banner),
     mini,
     dock);
   document.body.append(screen);
@@ -179,6 +194,22 @@ function openGame({ data, kits, assets, level, civNames }) {
     },
     holdBuilding: (b) => setMode({ kind: 'building', id: b.id }),
     tapEmpty: () => setMode({ kind: 'hint' }),
+    aimAt: (x, y) => { view.aimPoint = [x, y]; dropBtn.disabled = false; aimBar.querySelector('.sg-aim-text').textContent = 'Tap to move it, or'; },
+  });
+  function setAim(on) {
+    view.aiming = on && world.sides[ME].blasts > 0;
+    view.aimPoint = null;
+    dropBtn.disabled = true;
+    aimBar.querySelector('.sg-aim-text').textContent = 'Tap where to drop the explosion';
+    aimBar.hidden = !view.aiming;
+    blastBtn.classList.toggle('on', view.aiming);
+  }
+  blastBtn.addEventListener('click', () => setAim(!view.aiming));
+  dropBtn.addEventListener('click', () => {
+    if (!view.aimPoint) return;
+    world.blast(ME, view.aimPoint[0], view.aimPoint[1]);
+    navigator.vibrate?.([40, 30, 80]);
+    setAim(false);
   });
   view.setup(world, { ...assets, mySide: ME });
   screen.view = view;
@@ -369,7 +400,11 @@ function openGame({ data, kits, assets, level, civNames }) {
       for (const s of [0, 1]) {
         const c = world.sides[s].castle;
         castles[s].fill.style.width = `${Math.max(0, (c.hp / c.maxHp) * 100)}%`;
+        castles[s].count.textContent = String(world.alive[s]);
       }
+      const left = world.sides[ME].blasts;
+      blastBtn.disabled = left <= 0;
+      blastBtn.querySelector('.sg-blast-n').textContent = String(left);
       followBtn.hidden = view.follow;
       const ot = world.overtime();
       if (ot > 1 && world.winner === null) { banner.hidden = false; banner.textContent = `Overtime: castles crumbling, buildings take +${Math.round((ot - 1) * 100)}% damage`; }
@@ -427,6 +462,7 @@ function openGame({ data, kits, assets, level, civNames }) {
           row('Units trained', (i) => S[i].stats.trained),
           row('Enemies killed', (i) => S[i].stats.kills),
           row('Techs researched', (i) => S[i].researched.size),
+          row('Explosion used', (i) => (S[i].blasts > 0 ? 'No' : 'Yes')),
           row('Gold earned', (i) => Math.round(S[i].stats.earned)),
           row('Gold spent', (i) => Math.round(S[i].stats.spent)))),
       el('div', { className: 'sg-end-acts' },

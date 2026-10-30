@@ -489,7 +489,9 @@ body.sg-open { overflow: hidden; }
 .sg-gold-num { font-size: 1.45rem; color: #ffe08a; font-variant-numeric: tabular-nums; }
 .sg-income { font-size: .72rem; color: #cdb98a; white-space: nowrap; }
 .sg-castles { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; }
-.sg-castle { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 6px; font-size: .75rem; }
+.sg-castle { display: grid; grid-template-columns: minmax(0, auto) auto minmax(30px, 1fr); align-items: center; gap: 6px; font-size: .75rem; }
+.sg-units { white-space: nowrap; color: #ffe9a8; }
+.sg-count { font-variant-numeric: tabular-nums; }
 .sg-castle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sg-cbar { height: 8px; background: rgb(0 0 0 / .55); border-radius: 4px; overflow: hidden; }
 .sg-cbar i { display: block; height: 100%; width: 100%; transition: width .3s; }
@@ -565,3 +567,11 @@ body.sg-open { overflow: hidden; }
   .sg-opts { grid-template-columns: 1fr; }
 }
 .sg-go small { font-size: .7rem; font-weight: 700; }
+.sg-blast-btn { position: absolute; right: 8px; bottom: 8px; width: 56px; height: 56px; border: 2px solid #e0742a; border-radius: 50%; background: radial-gradient(#5a2a10, #2a1208); cursor: pointer; box-shadow: 0 2px 8px rgb(0 0 0 / .5); }
+.sg-blast-btn:disabled { opacity: .35; filter: grayscale(1); cursor: default; }
+.sg-blast-btn.on { box-shadow: 0 0 14px rgb(255 140 40 / .9); border-color: #ffb067; }
+.sg-blast-ic { font-size: 1.6rem; line-height: 1; }
+.sg-blast-n { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 9px; background: #e0742a; color: #fff; font-size: .7rem; font-weight: 800; line-height: 18px; }
+.sg-aim { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-radius: 22px; background: rgb(60 25 8 / .92); border: 1px solid #e0742a; color: #ffe0c2; font-size: .85rem; white-space: nowrap; z-index: 2; }
+.sg-drop { min-height: 36px; padding: 0 12px; border: 0; border-radius: 18px; background: #e0742a; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
+.sg-drop:disabled { opacity: .4; }

@@ -3,7 +3,7 @@
 // with their in-game animations, and a minimap. Also turns touches into
 // actions: drag to look around, tap a plot or building, press and hold a building.
 
-import { LANE, PLOTS, plotPos, CASTLE_X } from './world.js';
+import { LANE, PLOTS, plotPos, CASTLE_X, RIVER, BLAST } from './world.js';
 
 const TILE = 96 / Math.SQRT2;   // screen px per tile at zoom 1 (same as the Test arena)
 const DEPTH = 0.5;
@@ -53,7 +53,8 @@ export class SiegeView {
       if (c === this.canvas) { this.vw = width; this.vh = height; } else { this.mw = width; this.mh = height; }
     }
     // Fit the lane's width (top to bottom) to the view.
-    if (this.vh) this.cam.zoom = Math.max(0.3, Math.min(1, (this.vh - 70) / ((LANE.half * 2 + 3) * TILE * DEPTH)));
+    // (the outermost tile of each edge may be cut off, so units stay a readable size)
+    if (this.vh) this.cam.zoom = Math.max(0.3, Math.min(1, (this.vh - 50) / ((LANE.half * 2 - 1) * TILE * DEPTH)));
   }
 
   // ---------- Camera ----------
@@ -69,7 +70,7 @@ export class SiegeView {
       const r = this.canvas.getBoundingClientRect();
       p = { x0: e.clientX, y0: e.clientY, sx: e.clientX - r.left, sy: e.clientY - r.top, camX: this.cam.x, moved: false, used: false };
       const hit = this.hitTest(p.sx, p.sy);
-      if (hit?.b) {
+      if (hit?.b && !this.aiming) {
         p.timer = setTimeout(() => {
           if (p && !p.moved) { p.used = true; navigator.vibrate?.(20); this.handlers.holdBuilding?.(hit.b); }
         }, HOLD_MS);
@@ -87,7 +88,11 @@ export class SiegeView {
     const end = (e, cancelled) => {
       if (!p) return;
       clearTimeout(p.timer);
-      if (!cancelled && !p.moved && !p.used) {
+      if (!cancelled && !p.moved && !p.used && this.aiming) {
+        // Aiming the explosion: wherever was tapped
+        const [wx, wy] = this.toWorld(p.sx, p.sy);
+        this.handlers.aimAt?.(wx, wy);
+      } else if (!cancelled && !p.moved && !p.used) {
         const hit = this.hitTest(p.sx, p.sy);
         if (hit?.b) this.handlers.tapBuilding?.(hit.b);
         else if (hit?.plot !== undefined) this.handlers.tapPlot?.(hit.plot);
@@ -174,6 +179,12 @@ export class SiegeView {
     this.clampCam();
   }
 
+  /** Screen point (CSS px in the canvas) to lane position. */
+  toWorld(px, py) {
+    const ppt = TILE * this.cam.zoom;
+    return [this.cam.x + (px - this.vw / 2) / ppt, (py - this.vh * 0.56) / (ppt * DEPTH)];
+  }
+
   toScreen(x, y) {
     const ppt = TILE * this.cam.zoom;
     return [this.vw / 2 + (x - this.cam.x) * ppt, this.vh * 0.56 + y * ppt * DEPTH];
@@ -209,6 +220,8 @@ export class SiegeView {
     ctx.setLineDash([6, 8]);
     ctx.beginPath(); ctx.moveTo(mx, top); ctx.lineTo(mx, bottom); ctx.stroke();
     ctx.setLineDash([]);
+    this.drawRiver(t);
+    this.drawScorch(t);
 
     // Empty plots on your side
     const used = new Set(this.w.sides[this.me].plots.map((id, i) => (id ? i : -1)));
@@ -241,8 +254,91 @@ export class SiegeView {
       else this.drawUnit(it.u, it.x, it.uy, t, zoom);
     }
     this.drawShots(t, zoom, ppt);
+    this.drawBlasts(t);
     this.drawFloaters(t, zoom);
     this.drawMini();
+  }
+
+  // The river splitting the middle of the map into two lanes
+  drawRiver(t) {
+    const { ctx } = this;
+    const [x0, y0] = this.toScreen(RIVER.x0, -RIVER.half);
+    const [x1, y1] = this.toScreen(RIVER.x1, RIVER.half);
+    if (x1 < 0 || x0 > this.vw) return;
+    const g = ctx.createLinearGradient(0, y0, 0, y1);
+    g.addColorStop(0, '#2f5d73'); g.addColorStop(0.5, '#3d7590'); g.addColorStop(1, '#2f5d73');
+    ctx.fillStyle = '#6b5a3a';   // muddy banks
+    ctx.fillRect(x0 - 6, y0 - 5, x1 - x0 + 12, y1 - y0 + 10);
+    ctx.fillStyle = g;
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    // ripples drifting along
+    ctx.strokeStyle = 'rgb(220 240 255 / .25)';
+    ctx.lineWidth = 1.5;
+    const ppt = TILE * this.cam.zoom;
+    for (let k = 0; k < 6; k++) {
+      const yy = y0 + ((k + 0.5) / 6) * (y1 - y0);
+      const off = ((t * 0.6 + k * 1.7) % 3) * ppt;
+      for (let xx = x0 + off; xx < x1 - 10; xx += 3 * ppt) {
+        ctx.beginPath(); ctx.moveTo(xx, yy); ctx.quadraticCurveTo(xx + 6, yy - 3, xx + 12, yy); ctx.stroke();
+      }
+    }
+  }
+
+  ellipse(x, y, r, fill) {
+    const [sx, sy] = this.toScreen(x, y);
+    const ppt = TILE * this.cam.zoom;
+    this.ctx.beginPath();
+    this.ctx.ellipse(sx, sy, r * ppt, r * ppt * DEPTH, 0, 0, Math.PI * 2);
+    this.ctx.fillStyle = fill;
+    this.ctx.fill();
+  }
+
+  // Scorched ground where an explosion went off, fading over 8 seconds
+  drawScorch(t) {
+    for (const e of this.w.effects) {
+      const age = t - e.t;
+      if (age > 8) continue;
+      this.ellipse(e.x, e.y, BLAST.radius * 0.9, `rgb(30 20 10 / ${0.45 * (1 - age / 8)})`);
+    }
+  }
+
+  // The blast itself: a flash and an expanding ring of fire
+  drawBlasts(t) {
+    const { ctx } = this;
+    const ppt = TILE * this.cam.zoom;
+    for (const e of this.w.effects) {
+      const age = t - e.t;
+      if (age > 1.4) continue;
+      const k = age / 1.4;
+      const [sx, sy] = this.toScreen(e.x, e.y);
+      if (age < 0.25) this.ellipse(e.x, e.y, BLAST.radius * (0.4 + age * 2.4), `rgb(255 245 200 / ${0.85 - age * 2})`);
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, BLAST.radius * ppt * (0.3 + k * 0.8), BLAST.radius * ppt * DEPTH * (0.3 + k * 0.8), 0, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgb(255 140 40 / ${1 - k})`;
+      ctx.lineWidth = 10 * (1 - k) + 2;
+      ctx.stroke();
+      // a column of smoke and fire rising
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + e.x;
+        const rr = BLAST.radius * ppt * 0.35 * k;
+        ctx.fillStyle = i % 2 ? `rgb(255 120 30 / ${0.7 * (1 - k)})` : `rgb(70 60 50 / ${0.6 * (1 - k)})`;
+        ctx.beginPath();
+        ctx.arc(sx + Math.cos(a) * rr, sy - k * 60 - Math.sin(a) * rr * DEPTH, (10 + 18 * k) * this.cam.zoom * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // Aiming: the area it would hit, where you last tapped
+    if (this.aiming && this.aimPoint) {
+      const [ax, ay] = this.toScreen(this.aimPoint[0], this.aimPoint[1]);
+      this.ellipse(this.aimPoint[0], this.aimPoint[1], BLAST.radius, 'rgb(255 120 30 / .18)');
+      ctx.setLineDash([8, 6]);
+      ctx.strokeStyle = 'rgb(255 170 60 / .95)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.ellipse(ax, ay, BLAST.radius * ppt, BLAST.radius * ppt * DEPTH, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
 
   diamond(x, y, half, fill, stroke) {
@@ -476,6 +572,8 @@ export class SiegeView {
     const sy = (y) => ((y + LANE.half) / (LANE.half * 2)) * (mh - 6) + 3;
     c.fillStyle = '#3d5229';
     c.fillRect(0, 0, mw, mh);
+    c.fillStyle = '#3d7590';
+    c.fillRect(sx(RIVER.x0), sy(-RIVER.half), sx(RIVER.x1) - sx(RIVER.x0), sy(RIVER.half) - sy(-RIVER.half));
     for (const b of this.w.structures) {
       if (b.hp <= 0) continue;
       const s = b.kind === 'castle' ? 9 : 5;

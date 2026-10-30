@@ -13,7 +13,7 @@ import { CIV_EFFECTS, UNIT_CLASS } from '../duel/effects.js';
 
 export const TRAIN_AT = [12, 87, 101, 82];        // Barracks, Archery Range, Stable, Castle
 export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 82: 'Castle', 84: 'Market' };
-export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 175, income: 5, max: 3 };
+export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 250, income: 5, max: 3 };
 export const NOT_UNITS = new Set([440, 331]);    // Petard, Trebuchet: not lane fighters
 export const NEEDS = { 5: 47 };                // unit -> tech it needs (Hand Cannoneer: Chemistry)
 export const BUILD_COST = 150;
@@ -23,6 +23,9 @@ const UPGRADE_SHARE = 0.3;   // building upgrades cost this share of the real up
 const TECH_SHARE = 0.3;      // Armory techs: same idea (+25)
 const TECH_TIME = 0.3;       // and this share of the real research time
 
+// Building upgrades: 30% of the real upgrade's resources (+30) up to 600 of them, then
+// only 10% of the rest, so the last steps (Paladin, Elite unique units) stay affordable.
+const upgradePrice = (c) => round5(30 + UPGRADE_SHARE * Math.min(c, 600) + 0.1 * Math.max(0, c - 600));
 const total = (cost) => Object.values(cost || {}).reduce((a, b) => a + b, 0);
 const round5 = (n) => Math.round(n / 5) * 5;
 const clean = (s) => String(s || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -71,7 +74,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
           unitId: n.node_id,
           name: name(n),
           picture: n.picture_index,
-          upgrade: i ? round5(30 + UPGRADE_SHARE * total(up?.Cost || { Gold: 500 })) : 0,
+          upgrade: i ? upgradePrice(total(up?.Cost || { Gold: 500 })) : 0,
           every: Math.max(8, Math.min(45, Math.round((total(U[n.node_id].Cost) / OUTPUT) * 10) / 10)),
         };
       });
