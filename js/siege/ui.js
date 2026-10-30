@@ -4,8 +4,9 @@ import { loadCore, loadTree, imageUrl, civIconUrl, nameText } from '../data.js';
 import { Picker } from '../picker.js';
 import { civOptions } from '../techtree.js';
 import { loadPack, onPackProgress } from '../duel/spritepack.js';
+import { RANGED } from '../duel/ranged.js';
 import { buildKit, MARKET, BUILDING_NAMES, AGES } from './kit.js';
-import { World, Computer, DT, PLOTS, OVERTIME, START_GOLD, BLAST } from './world.js';
+import { World, Computer, DT, PLOTS, OVERTIME, START_GOLD, BLAST, LANE } from './world.js';
 import { SiegeView, COLOURS } from './view.js';
 export { COLOURS };
 import { COMMANDS, snapshot, applySnapshot } from './sync.js';
@@ -150,6 +151,7 @@ async function loadAssets(kits, onStatus = () => {}) {
         const f = kit.fighter(line.key, t);
         unitIds.add(f.unitId);
         if (f.projectile?.sprite) shotNames.add(f.projectile.sprite);
+        if (RANGED[f.unitId]?.fire) shotNames.add(RANGED[f.unitId].fire);   // burning, after Chemistry
         const pic = line.tiers[t].picture;
         if (pic !== undefined && !unitIcons[f.unitId]) jobs.push(loadImg(imageUrl('Unit', pic)).then((img) => { unitIcons[f.unitId] = img; }));
       }
@@ -162,8 +164,11 @@ async function loadAssets(kits, onStatus = () => {}) {
   // Unit and building colours are made during the game, as each one is needed.
   let sprites = null;
   if (pack) {
-    sprites = { pack, grass: await pack.grass(), projectiles: {} };
+    sprites = { pack, grass: await pack.grass(), projectiles: {}, textures: {}, rubble: {}, trees: {} };
     jobs.push(...[...shotNames].map(async (n) => { sprites.projectiles[n] = await pack.projectile(n); }));
+    jobs.push(...['water', 'shallow', 'beach', 'wetbeach'].map(async (n) => { sprites.textures[n] = await pack.texture(n); }));
+    jobs.push(...['barracks', 'archery', 'stable', 'castle', 'market', 'workshop', 'wonder'].map(async (n) => { sprites.rubble[n] = await pack.rubble(n); }));
+    jobs.push(pack.trees().then((t) => { sprites.trees = t; }));
   }
   await Promise.all(jobs);
   return { sprites, unitIcons, buildingIcons };
@@ -232,9 +237,11 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   }
   const blastBtn = el('button', { type: 'button', className: 'sg-blast-btn', 'aria-label': 'Explosion (once per game)' },
     el('span', { className: 'sg-blast-ic', textContent: '💥' }), el('small', { className: 'sg-blast-n', textContent: String(BLAST.per) }));
-  const dropBtn = el('button', { type: 'button', className: 'sg-drop', textContent: 'Drop here' });
-  const aimBar = el('div', { className: 'sg-aim', hidden: true }, el('span', { className: 'sg-aim-text', textContent: 'Tap your third of the map to aim' }), dropBtn,
-    el('button', { type: 'button', className: 'sg-btn', textContent: 'Cancel', onclick: () => setAim(false) }));
+  // Aiming the explosion: drag the circle with your finger; Drop and Cancel sit at the bottom, out of the way.
+  const dropBtn = el('button', { type: 'button', className: 'sg-drop', textContent: '💥 Drop' });
+  const aimBar = el('div', { className: 'sg-aim', hidden: true }, dropBtn,
+    el('button', { type: 'button', className: 'sg-btn', textContent: 'Cancel', onclick: () => setAim(false) }),
+    el('small', { className: 'sg-aim-text', textContent: 'Drag to aim' }));
   const dock = el('section', { className: 'sg-dock' });
 
   const screen = el('div', { className: 'sg-run', role: 'dialog', 'aria-label': 'Wonder Wars game' },
@@ -266,21 +273,30 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     holdBuilding: (b) => setMode({ kind: 'building', id: b.id }),
     tapEmpty: () => setMode({ kind: 'hint' }),
     aimAt: (x, y) => {
-      if (!world.canBlastAt(myTeam, x)) {
-        view.aimPoint = null; dropBtn.disabled = true;
-        aimBar.querySelector('.sg-aim-text').textContent = 'Only on your third of the map';
-        navigator.vibrate?.(20);
-        return;
-      }
-      view.aimPoint = [x, y]; dropBtn.disabled = false; aimBar.querySelector('.sg-aim-text').textContent = 'Tap to move it, or';
+      // Kept inside your third of the map (it's for defending) and on the field
+      const [z0, z1] = world.blastZone(myTeam);
+      const inside = world.canBlastAt(myTeam, x);
+      x = Math.max(z0, Math.min(z1, x));
+      y = Math.max(-LANE.half, Math.min(LANE.half, y));
+      view.aimPoint = [x, y];
+      dropBtn.disabled = false;
+      aimBar.querySelector('.sg-aim-text').textContent = inside ? 'Drag to aim' : 'Only your third';
     },
   });
   function setAim(on) {
     view.aiming = on && world.sides[ME].blasts > 0;
     view.aimPoint = null;
     dropBtn.disabled = true;
-    aimBar.querySelector('.sg-aim-text').textContent = 'Tap your third of the map to aim';
+    aimBar.querySelector('.sg-aim-text').textContent = 'Drag to aim';
     aimBar.hidden = !view.aiming;
+    if (view.aiming) {
+      // Start on the biggest enemy clump in your third (else its middle), and look there
+      const [z0, z1] = world.blastZone(myTeam);
+      const spot = world.blastSpot(myTeam);
+      view.aimPoint = spot ? [spot[0], spot[1]] : [(z0 + z1) / 2, 0];
+      dropBtn.disabled = false;
+      view.glideTo = view.aimPoint[0];
+    }
     blastBtn.classList.toggle('on', view.aiming);
   }
   blastBtn.addEventListener('click', () => setAim(!view.aiming));

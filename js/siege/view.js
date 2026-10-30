@@ -10,7 +10,8 @@ const TILE = 96 / Math.SQRT2;   // screen px per tile at zoom 1 (same as the Tes
 const DEPTH = 0.5;
 const SIDE = ['#4a8de3', '#d5473d'];
 const SIDE_DARK = ['#1f3f73', '#6e1f19'];
-const MAX_DPR = 2;   // sharper than this costs a lot of drawing on 3x phone screens for little visible gain
+const MAX_DPR = 2;
+const SHORE = { res: 40, margin: 1.4 };   // river image: px per tile, and how far the beach reaches past the water   // sharper than this costs a lot of drawing on 3x phone screens for little visible gain
 
 /** Player colours. The first two are the sprite pack's own blue and red; others are repainted. */
 export const COLOURS = [
@@ -64,6 +65,8 @@ export class SiegeView {
     this.paint = this.colours.map((hex) => (hex === COLOURS[0].hex ? 'blue' : hex === COLOURS[1].hex ? 'red' : rgbOf(hex)));
     this.civs = civs;
     this.grassPattern = null;
+    this.riverImg = undefined;
+    this.trees = null;
     this.glideTo = null;
     this.cam.x = CASTLE_X[this.myTeam] + (this.myTeam === 0 ? 6 : -6);
     this.floaters = [];
@@ -96,6 +99,12 @@ export class SiegeView {
       this.canvas.setPointerCapture(e.pointerId);
       const r = this.canvas.getBoundingClientRect();
       p = { x0: e.clientX, y0: e.clientY, sx: e.clientX - r.left, sy: e.clientY - r.top, camX: this.cam.x, moved: false, used: false };
+      if (this.aiming) {
+        // Aiming the explosion: the circle follows your finger
+        p.aim = true;
+        this.handlers.aimAt?.(...this.toWorld(p.sx, p.sy));
+        return;
+      }
       const hit = this.hitTest(p.sx, p.sy);
       if (hit?.b && !this.aiming) {
         p.timer = setTimeout(() => {
@@ -105,6 +114,15 @@ export class SiegeView {
     });
     this.canvas.addEventListener('pointermove', (e) => {
       if (!p) return;
+      if (p.aim) {
+        const r = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - r.left, sy = e.clientY - r.top;
+        // near the left/right edge, the view slides along so you can drag further
+        const edge = 36;
+        if (sx < edge || sx > this.vw - edge) { this.cam.x += (sx < edge ? -1 : 1) * 0.25; this.clampCam(); }
+        this.handlers.aimAt?.(...this.toWorld(sx, sy));
+        return;
+      }
       if (!p.moved && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) > SLOP) { p.moved = true; clearTimeout(p.timer); this.glideTo = null; }
       if (p.moved) {
         this.cam.x = p.camX - (e.clientX - p.x0) / (TILE * this.cam.zoom);
@@ -115,11 +133,8 @@ export class SiegeView {
     const end = (e, cancelled) => {
       if (!p) return;
       clearTimeout(p.timer);
-      if (!cancelled && !p.moved && !p.used && this.aiming) {
-        // Aiming the explosion: wherever was tapped
-        const [wx, wy] = this.toWorld(p.sx, p.sy);
-        this.handlers.aimAt?.(wx, wy);
-      } else if (!cancelled && !p.moved && !p.used) {
+      if (p.aim) { p = null; return; }
+      if (!cancelled && !p.moved && !p.used) {
         const hit = this.hitTest(p.sx, p.sy);
         if (hit?.b) this.handlers.tapBuilding?.(hit.b);
         else if (hit?.plot !== undefined) this.handlers.tapPlot?.(hit.plot);
@@ -286,6 +301,7 @@ export class SiegeView {
     // Everything that stands, back to front
     const items = [];
     for (const b of this.w.structures) items.push({ y: b.y, b });
+    for (const tr of this.treeList()) items.push({ y: tr.y, tree: tr });
     for (const u of this.w.units) {
       const x = u.px + (u.x - u.px) * alpha;
       const y = u.py + (u.y - u.py) * alpha;
@@ -294,6 +310,7 @@ export class SiegeView {
     items.sort((a, b) => a.y - b.y);
     for (const it of items) {
       if (it.b) this.drawStructure(it.b, t, ppt);
+      else if (it.tree) this.drawTree(it.tree, zoom);
       else this.drawUnit(it.u, it.x, it.uy, t, zoom);
     }
     this.drawShots(t, zoom, ppt);
@@ -307,24 +324,119 @@ export class SiegeView {
     const { ctx } = this;
     const [x0, y0] = this.toScreen(RIVER.x0, -RIVER.half);
     const [x1, y1] = this.toScreen(RIVER.x1, RIVER.half);
-    if (x1 < 0 || x0 > this.vw) return;
-    const g = ctx.createLinearGradient(0, y0, 0, y1);
-    g.addColorStop(0, '#2f5d73'); g.addColorStop(0.5, '#3d7590'); g.addColorStop(1, '#2f5d73');
-    ctx.fillStyle = '#6b5a3a';   // muddy banks
-    ctx.fillRect(x0 - 6, y0 - 5, x1 - x0 + 12, y1 - y0 + 10);
-    ctx.fillStyle = g;
-    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    if (x1 < -200 || x0 > this.vw + 200) return;
+    const img = this.riverImage();
+    if (img) {
+      // The game's water, shallows, wet sand and beach, made once (riverImage) and scaled to the view
+      const ppt = TILE * this.cam.zoom;
+      const [ox, oy] = this.toScreen(RIVER.x0 - SHORE.margin, -RIVER.half - SHORE.margin);
+      ctx.drawImage(img, ox, oy, img.width * (ppt / SHORE.res), img.height * (ppt / SHORE.res));
+    } else {
+      const g = ctx.createLinearGradient(0, y0, 0, y1);
+      g.addColorStop(0, '#2f5d73'); g.addColorStop(0.5, '#3d7590'); g.addColorStop(1, '#2f5d73');
+      ctx.fillStyle = '#6b5a3a';   // muddy banks
+      ctx.fillRect(x0 - 6, y0 - 5, x1 - x0 + 12, y1 - y0 + 10);
+      ctx.fillStyle = g;
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    }
     // ripples drifting along
-    ctx.strokeStyle = 'rgb(220 240 255 / .25)';
+    ctx.strokeStyle = 'rgb(220 240 255 / .22)';
     ctx.lineWidth = 1.5;
     const ppt = TILE * this.cam.zoom;
-    for (let k = 0; k < 6; k++) {
-      const yy = y0 + ((k + 0.5) / 6) * (y1 - y0);
+    for (let k = 0; k < 5; k++) {
+      const yy = y0 + ((k + 0.7) / 5.4) * (y1 - y0);
       const off = ((t * 0.6 + k * 1.7) % 3) * ppt;
-      for (let xx = x0 + off; xx < x1 - 10; xx += 3 * ppt) {
+      for (let xx = x0 + ppt + off; xx < x1 - ppt; xx += 3 * ppt) {
         ctx.beginPath(); ctx.moveTo(xx, yy); ctx.quadraticCurveTo(xx + 6, yy - 3, xx + 12, yy); ctx.stroke();
       }
     }
+  }
+
+  /**
+   * The river as the game draws water: deep water in the middle, lighter shallows,
+   * wet sand and beach out to a wavy shoreline, each edge feathered. Painted once
+   * into an image (SHORE.res px a tile, squashed like the ground) and reused.
+   */
+  riverImage() {
+    if (this.riverImg !== undefined) return this.riverImg;
+    const tex = this.sprites?.textures;
+    if (!tex?.water || !tex?.beach) { this.riverImg = null; return null; }
+    const R = SHORE.res, m = SHORE.margin;
+    const wTiles = RIVER.x1 - RIVER.x0 + 2 * m, hTiles = 2 * (RIVER.half + m);
+    const c = document.createElement('canvas');
+    c.width = Math.round(wTiles * R);
+    c.height = Math.round(hTiles * R * DEPTH);
+    const ctx = c.getContext('2d');
+    // Smooth wobble along each bank (the same shape every game)
+    const wob = (x, seed) => 0.18 * Math.sin(x * 0.9 + seed) + 0.12 * Math.sin(x * 2.3 + seed * 1.7) + 0.06 * Math.sin(x * 5.1 + seed * 0.4);
+    const shape = (d) => {
+      // outline of the water grown by d tiles, in image pixels; ends rounded
+      const pts = [];
+      const L = RIVER.x1 - RIVER.x0;
+      for (let i = 0; i <= 60; i++) { const x = (i / 60) * L; pts.push([x, -(RIVER.half + d + wob(x, 1))]); }
+      for (let i = 1; i < 12; i++) { const a = -Math.PI / 2 + (i / 12) * Math.PI; pts.push([L + Math.cos(a) * (0.2 + d), Math.sin(a) * (RIVER.half + d)]); }
+      for (let i = 60; i >= 0; i--) { const x = (i / 60) * L; pts.push([x, RIVER.half + d + wob(x, 4)]); }
+      for (let i = 1; i < 12; i++) { const a = Math.PI / 2 + (i / 12) * Math.PI; pts.push([Math.cos(a) * (0.2 + d), Math.sin(a) * (RIVER.half + d)]); }
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => { const px = (x + m) * R, py = (y + RIVER.half + m) * R * DEPTH; if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
+      ctx.closePath();
+    };
+    const pattern = (bmp, tiles) => {
+      const p = ctx.createPattern(bmp, 'repeat');
+      p.setTransform(new DOMMatrix().scaleSelf(1, DEPTH).rotateSelf(45).scaleSelf((tiles * R) / bmp.width));
+      return p;
+    };
+    const layer = (d, bmp, tiles, blur) => {
+      if (!bmp) return;
+      ctx.save();
+      ctx.filter = blur ? `blur(${blur}px)` : 'none';
+      shape(d);
+      ctx.fillStyle = pattern(bmp, tiles);
+      ctx.fill();
+      ctx.restore();
+    };
+    layer(m * 0.85, tex.beach, 5, R * 0.25);
+    layer(0.35, tex.wetbeach || tex.beach, 5, R * 0.15);
+    layer(0, tex.shallow || tex.water, 6, R * 0.12);
+    layer(-0.7, tex.water, 6, R * 0.35);
+    this.riverImg = c;
+    return c;
+  }
+
+  /** Trees, bushes and reeds along the river banks: placed the same way every game (decoration only). */
+  treeList() {
+    if (this.trees) return this.trees;
+    const all = this.sprites?.trees || {};
+    const out = [];
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const pick = (names) => names.filter((n) => all[n]);
+    const near = pick(['n_tree_reeds_x1', 'n_tree_bush_a_x1']);
+    const big = pick(['n_tree_oak_x1', 'n_tree_green_oak_x1', 'n_tree_willow_x1', 'n_tree_palm_x1', 'n_tree_pine_x1']);
+    if (!near.length && !big.length) { this.trees = []; return this.trees; }
+    const add = (x, y, names) => {
+      if (!names.length) return;
+      const n = names[Math.floor(rnd() * names.length)];
+      out.push({ x, y, name: n, frame: Math.floor(rnd() * all[n].frames.length) });
+    };
+    for (const side of [-1, 1]) {
+      // reeds and bushes right at the water's edge, a few trees just behind
+      for (let x = RIVER.x0 + 0.5; x < RIVER.x1 - 0.5; x += 1.1 + rnd() * 1.6) add(x, side * (RIVER.half + 0.35 + rnd() * 0.35), near);
+      for (let x = RIVER.x0 + 1.5; x < RIVER.x1 - 1.5; x += 3.5 + rnd() * 3) add(x, side * (RIVER.half + 1.1 + rnd() * 0.4), big);
+    }
+    // small groves at both ends of the river
+    for (const ex of [RIVER.x0 - 0.6, RIVER.x1 + 0.6]) for (let i = 0; i < 3; i++) add(ex + (rnd() - 0.5) * 0.8, (rnd() - 0.5) * 1.6, i ? near : big);
+    this.trees = out;
+    return out;
+  }
+
+  drawTree(tr, zoom) {
+    const sp = this.sprites?.trees?.[tr.name];
+    if (!sp) return;
+    const [sx, sy] = this.toScreen(tr.x, tr.y);
+    if (sx < -120 || sx > this.vw + 120) return;
+    const [fx, fy, fw, fh, ax, ay] = sp.frames[tr.frame];
+    this.ctx.drawImage(sp.atlas, fx, fy, fw, fh, sx - ax * zoom, sy - ay * zoom, fw * zoom, fh * zoom);
   }
 
   ellipse(x, y, r, fill) {
@@ -422,6 +534,7 @@ export class SiegeView {
     // The building itself: the game's graphic for the owner's civ, in their colour.
     // (Until it's ready, or without the graphics: a stone platform.)
     const bs = this.buildingSprite(b);
+    if (dead && bs) { ctx.globalAlpha = 1; this.drawCollapse(b, bs, t, rx - lx); return; }
     let spriteTop = null;
     if (bs) {
       const [fx, fy, fw, fh, ax, ay] = bs.frame;
@@ -528,6 +641,51 @@ export class SiegeView {
         ctx.strokeRect(ix - 5, y - 3, sz + 10, h + 6);
       }
     }
+  }
+
+  /**
+   * A building falling: it sinks into the ground behind a cloud of dust, leaving the
+   * game's rubble. (The game's own per-civ collapse animations would add tens of MB.)
+   */
+  drawCollapse(b, bs, t, boxW) {
+    const { ctx } = this;
+    const age = Math.max(0, t - b.diedAt);
+    const k = Math.min(1, age / 1.4);
+    const [gx, gy] = this.toScreen(b.x, b.y);
+    const [fx, fy, fw, fh, ax, ay] = bs.frame;
+    const sc = (boxW * (b.kind === 'castle' ? 1.55 : 1.3)) / fw;
+    const fade = age > 2.2 ? Math.max(0, 1 - (age - 2.2) / 0.8) : 1;
+    // rubble on the ground
+    const rub = this.sprites?.rubble?.[BUILDING_KIND[b.building]];
+    if (rub) {
+      const [rx0, ry0, rw, rh, rax, ray] = rub.frame;
+      const rs = sc * Math.min(1.2, fw / Math.max(1, rw));
+      ctx.globalAlpha = Math.min(1, age * 2) * fade;
+      ctx.drawImage(rub.atlas, rx0, ry0, rw, rh, gx - rax * rs, gy - ray * rs, rw * rs, rh * rs);
+    }
+    // the building, sinking and shaking, cut off at the ground
+    if (k < 1) {
+      ctx.save();
+      ctx.globalAlpha = (1 - k * 0.7) * fade;
+      const ground = gy - ay * sc + fh * sc;   // bottom of the sprite
+      ctx.beginPath(); ctx.rect(gx - fw * sc, gy - ay * sc - 20, fw * sc * 2, ground - (gy - ay * sc) + 20); ctx.clip();
+      const shake = Math.sin(age * 40) * 2 * (1 - k);
+      ctx.drawImage(bs.atlas, fx, fy, fw, fh, gx - ax * sc + shake, gy - ay * sc + k * k * fh * sc * 0.75, fw * sc, fh * sc);
+      ctx.restore();
+    }
+    // dust rolling out from the base
+    const puffs = 9;
+    for (let i = 0; i < puffs; i++) {
+      const a = (i / puffs) * Math.PI * 2 + b.id;
+      const spread = boxW * (0.25 + 0.45 * Math.min(1, age / 1.8));
+      const r = boxW * (0.12 + 0.12 * Math.min(1, age / 1.5));
+      ctx.globalAlpha = Math.max(0, 0.55 * (1 - age / 2.8));
+      ctx.fillStyle = i % 3 ? 'rgb(150 135 110)' : 'rgb(110 98 82)';
+      ctx.beginPath();
+      ctx.arc(gx + Math.cos(a) * spread, gy - r * 0.6 + Math.sin(a) * spread * DEPTH - age * 8, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   bar(x, y, w, h, frac) {
@@ -665,12 +823,16 @@ export class SiegeView {
       const [qx, qy] = at(Math.min(1, k + 0.03));
       const sprite = this.sprites?.projectiles?.[s.sprite];
       const seq = sprite?.frames?.[s.x1 >= s.x0 ? 'right' : 'left'];
-      if (seq?.length && sprite.mode === 'pitch') {
-        const ang = Math.atan2(qy - py, Math.abs(qx - px) || 1e-6);
-        const n = Math.round(Math.min(1, Math.max(0, (ang + Math.PI / 2.4) / (Math.PI / 1.2))) * (seq.length - 1));
+      if (seq?.length) {
+        // The game's projectile at the same scale as the units: arrows, bolts and spears tilt
+        // with the flight (pitch frames); stones, balls and axes tumble (spin frames).
+        let n;
+        if (sprite.mode === 'pitch') {
+          const ang = Math.atan2(qy - py, Math.abs(qx - px) || 1e-6);
+          n = Math.round(Math.min(1, Math.max(0, (ang + Math.PI / 2.4) / (Math.PI / 1.2))) * (seq.length - 1));
+        } else n = Math.floor((t - s.t0) / (sprite.fdur || 0.05)) % seq.length;
         const [fx, fy, fw, fh, ax, ay] = seq[n];
-        const z = Math.max(zoom, 0.7);
-        ctx.drawImage(sprite.atlas, fx, fy, fw, fh, px - ax * z, py - ay * z, fw * z, fh * z);
+        ctx.drawImage(sprite.atlas, fx, fy, fw, fh, px - ax * zoom, py - ay * zoom, fw * zoom, fh * zoom);
         continue;
       }
       const len = Math.hypot(qx - px, qy - py) || 1;

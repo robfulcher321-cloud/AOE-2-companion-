@@ -88,6 +88,8 @@ class Sprites {
       Object.assign(this.sets, f.meta.sets || {});
       if (f.meta.grass) this.grassFile = f;
       if (f.meta.projectiles) this.projFile = f;
+      if (f.meta.textures) this.terrainFile = f;
+      if (f.meta.rubble) this.rubbleFile = f;
     }
   }
 
@@ -105,6 +107,25 @@ class Sprites {
   }
 
   grass() { return this.grassFile ? this.once('grass', () => this.grassFile.bitmap(this.grassFile.meta.grass)) : Promise.resolve(null); }
+
+  /** Terrain textures (water, shallow, beach, wetbeach): ImageBitmap or null */
+  texture(name) {
+    const r = this.terrainFile?.meta.textures?.[name];
+    return r ? this.once(`t${name}`, () => this.terrainFile.bitmap(r)) : Promise.resolve(null);
+  }
+
+  /** Tree graphics: { name: { atlas, frames: [[x, y, w, h, ax, ay]...] } } (each frame a different tree) */
+  trees() {
+    const t = this.terrainFile?.meta.trees;
+    if (!t) return Promise.resolve({});
+    return this.once('trees', async () => Object.fromEntries(await Promise.all(Object.entries(t).map(async ([n, v]) => [n, { ...v, atlas: await this.terrainFile.bitmap(v.atlas) }]))));
+  }
+
+  /** Rubble a fallen building leaves: { atlas, frame } or null. kind: barracks, castle, wonder... */
+  rubble(kind) {
+    const r = this.rubbleFile?.meta.rubble?.[kind];
+    return r ? this.once(`r${kind}`, async () => ({ ...r, atlas: await this.rubbleFile.bitmap(r.atlas) })) : Promise.resolve(null);
+  }
 
   /** Projectile by graphic name: { mode, fdur, frames: { right, left }, atlas } or null */
   projectile(name) {

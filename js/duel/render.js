@@ -253,7 +253,7 @@ export class ArenaPlayer {
           n = stuck ? 0 : Math.floor((t - s.t0) / (sprite.fdur || 0.05)) % seq.length;
         }
         const [sx, sy, sw, sh, ax, ay] = seq[n];
-        const z = Math.max(zoom, 0.75); // keep tiny arrows visible when zoomed out
+        const z = zoom;   // same scale as the units (bigger made spears look oversized)
         ctx.drawImage(sprite.atlas, sx, sy, sw, sh, px - ax * z, py - ay * z, sw * z, sh * z);
       }
       if (!seq?.length) {

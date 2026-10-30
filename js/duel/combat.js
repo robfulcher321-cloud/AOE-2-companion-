@@ -311,7 +311,8 @@ export function buildFighter(unit, name, opts = {}) {
     projectile: ranged && {
       speed: ranged.speed,
       arc: ranged.arc,
-      sprite: ranged.sprite,
+      // Chemistry: burning arrows, bolts and stones, as in the game
+      sprite: effectOpts.chosen.includes(47) && ranged.fire ? ranged.fire : ranged.sprite,
       spread: ranged.spread,
       blast: ranged.blast,
       ballistics: hasBallistics,

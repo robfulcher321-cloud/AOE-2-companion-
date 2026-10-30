@@ -252,6 +252,15 @@ def main():
                 gid = dat.civs[1].units[u.type_50.projectile_unit_id].standing_graphic[0]
                 if gid >= 0:
                     names.add(gid)
+        # Chemistry's burning versions of every projectile it upgrades
+        chem = {c.a: c.b for c in dat.effects[dat.techs[47].effect_id].effect_commands if c.type == 3}
+        for uid in units:
+            u = dat.civs[1].units[uid]
+            pid = u.type_50.projectile_unit_id if u.type_50 else -1
+            if pid in chem and chem[pid] >= 0:
+                gid = dat.civs[1].units[chem[pid]].standing_graphic[0]
+                if gid >= 0:
+                    names.add(gid)
         for gid in sorted(names):
             g, sld = sld_for(gid)
             if not sld:
@@ -362,7 +371,56 @@ def main():
                     print(f'Building {name}: {img.width}x{img.height}')
                 sets[kind] = name
             pack.meta['sets'][key] = sets
+        # Rubble left where a building falls (the game's foundation rubble, the same for every civ)
+        pack.meta['rubble'] = {}
+        for kind, uid in BUILDINGS.items():
+            u = dat.civs[1].units[uid]
+            gid = u.building.destruction_rubble_graphic_id if u.building else -1
+            g, sld = sld_for(gid)
+            if not sld:
+                continue
+            comp = compose(sld.frame(0))
+            if comp is None:
+                continue
+            img, m, ax, ay = comp
+            atlas, _, rects = atlas_pair([img], [m], width=img.width)
+            pack.meta['rubble'][kind] = {'atlas': pack.add(atlas), 'frame': list(rects[0]) + [ax, ay]}
         finish(pack, 'buildings.aoe2pack')
+
+    # ---------- Terrain: water, shore, trees ----------
+    if 'terrain' not in skip:
+        pack = Pack('terrain')
+        tex = os.path.join(common, 'terrain', 'textures', '2x')
+        pack.meta['textures'] = {}
+        for name, file in (('water', 'g_wt2.dds'), ('shallow', 'g_wtr.dds'), ('beach', 'g_bch.dds'), ('wetbeach', 'g_beach_wet.dds')):
+            path = os.path.join(tex, file)
+            if not os.path.exists(path):
+                print(f'  missing {file}, skipped')
+                continue
+            b = io.BytesIO()
+            Image.open(path).convert('RGB').resize((512, 512), Image.LANCZOS).save(b, 'WEBP', quality=82)
+            pack.meta['textures'][name] = pack.add(b.getvalue())
+        pack.meta['trees'] = {}
+        for name in ('n_tree_oak_x1', 'n_tree_green_oak_x1', 'n_tree_pine_x1', 'n_tree_willow_x1', 'n_tree_palm_x1', 'n_tree_bush_a_x1', 'n_tree_reeds_x1'):
+            path = os.path.join(gfx_dir, name + '.sld')
+            if not os.path.exists(path):
+                continue
+            sld = SLD(path)
+            images, masks, frames = [], [], []
+            for f in range(len(sld.frames)):
+                comp = compose(sld.frame(f))
+                if comp is None:
+                    continue
+                img, m, ax, ay = comp
+                frames.append([len(images), ax, ay])
+                images.append(img)
+                masks.append(m)
+            if not images:
+                continue
+            atlas, _, rects = atlas_pair(images, masks)
+            pack.meta['trees'][name] = {'atlas': pack.add(atlas), 'frames': [list(rects[i]) + [ax, ay] for i, ax, ay in frames]}
+            print(f'Tree {name}: {len(images)} variations')
+        finish(pack, 'terrain.aoe2pack')
 
     manifest_path = os.path.join(args.out_dir, 'manifest.json')
     old = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {'files': []}

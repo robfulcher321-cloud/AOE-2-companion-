@@ -70,6 +70,12 @@ def ranged_record(dat, uid):
         # chakrams fly through and hit everything in their path
         'pierces': int(p.projectile.hit_mode) == 1 and int(p.projectile.vanish_mode) == 1,
     }
+    # Chemistry (tech 47) swaps the projectile for a burning one
+    for c in dat.effects[dat.techs[47].effect_id].effect_commands:
+        if c.type == 3 and c.a == pid and c.b >= 0:
+            fg = dat.civs[1].units[c.b].standing_graphic[0]
+            if fg >= 0:
+                rec['fire'] = dat.graphics[fg].file_name
     sec = u.creatable.secondary_projectile_unit
     if rec['count'] > 1 and sec >= 0:
         s = dat.civs[1].units[sec]

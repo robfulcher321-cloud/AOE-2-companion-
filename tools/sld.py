@@ -60,6 +60,11 @@ class Layer:
         self.x1, self.y1, self.w, self.h, self.img = x1, y1, w, h, img
 
 
+def frame_reuses(frame, lt):
+    layer = frame['layers'].get(lt)
+    return bool(layer and layer[1])
+
+
 class SLD:
     def __init__(self, path):
         self.data = data = open(path, 'rb').read()
@@ -109,7 +114,15 @@ class SLD:
         if lt not in frame['layers']:
             return None
         (x1, y1, w, h), reuse, off, ncmd = frame['layers'][lt]
-        prev = self._decode_layer(fi - 1, lt) if reuse and fi > 0 else None
+        # A frame that reuses blocks takes them from its angle's key frame (the last frame
+        # that doesn't reuse), not from the frame just before: chaining frame to frame
+        # leaves after-images of moving parts (trebuchet arms, elephant riders).
+        prev = None
+        if reuse and fi > 0:
+            k = fi - 1
+            while k > 0 and frame_reuses(self.frames[k], lt):
+                k -= 1
+            prev = self._decode_layer(k, lt)
         data = self.data
         cmds = np.frombuffer(data, np.uint8, 2 * ncmd, off).reshape(ncmd, 2).astype(int)
         nblocks = int(cmds[:, 1].sum())
@@ -119,22 +132,27 @@ class SLD:
         bw, bh = (w + 3) // 4, (h + 3) // 4
         shape = (bh * 4, bw * 4, 4) if color else (bh * 4, bw * 4)
         img = np.zeros(shape, np.uint8)
-        if prev is not None:
-            # skipped blocks keep the previous frame's pixels at the same canvas position
-            px, py = x1 - prev.x1, y1 - prev.y1
-            sy0, sx0 = max(0, -py), max(0, -px)
-            sy1, sx1 = min(img.shape[0], prev.img.shape[0] - py), min(img.shape[1], prev.img.shape[1] - px)
-            if sy1 > sy0 and sx1 > sx0:
-                img[sy0:sy1, sx0:sx1] = prev.img[sy0 + py:sy1 + py, sx0 + px:sx1 + px]
+        skipped = np.zeros(bh * bw, bool)
         pos = 0
         k = 0
         for skip, draw in cmds:
+            skipped[pos:pos + skip] = True
             pos += skip
             for _ in range(draw):
                 by, bx = divmod(pos, bw)
                 img[by * 4:by * 4 + 4, bx * 4:bx * 4 + 4] = dec[k]
                 k += 1
                 pos += 1
+        if prev is not None and skipped.any():
+            # skipped blocks: the key frame's pixels at the same canvas position
+            base = np.zeros(shape, np.uint8)
+            px, py = x1 - prev.x1, y1 - prev.y1
+            sy0, sx0 = max(0, -py), max(0, -px)
+            sy1, sx1 = min(base.shape[0], prev.img.shape[0] - py), min(base.shape[1], prev.img.shape[1] - px)
+            if sy1 > sy0 and sx1 > sx0:
+                base[sy0:sy1, sx0:sx1] = prev.img[sy0 + py:sy1 + py, sx0 + px:sx1 + px]
+            m = np.kron(skipped.reshape(bh, bw), np.ones((4, 4), bool))
+            img[m] = base[m]
         layer = Layer(x1, y1, w, h, img)
         self._cache[key] = layer
         return layer
