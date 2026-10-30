@@ -10,7 +10,9 @@ import { UNIT_CLASS, CIV_EFFECTS, PLAYER_TECHS, UNIT_UPGRADES } from './effects.
 import { RANGED, PROJECTILE_CLASS } from './ranged.js';
 import { SPECIALS } from './specials.js';
 
-export const CLASS = { INFANTRY: 1, PIERCE: 3, MELEE: 4, ELEPHANT: 5, CAVALRY: 8, ARCHER: 15, SHIP: 16, RAM: 17, SIEGE: 20 };
+export const CLASS = { INFANTRY: 1, PIERCE: 3, MELEE: 4, ELEPHANT: 5, CAVALRY: 8, ARCHER: 15, SHIP: 16, RAM: 17, SIEGE: 20, CAMEL: 30 };
+// Units that fight by blowing themselves up (Flaming Camel, Petard): not lane fighters.
+const SUICIDE = new Set([1263, 440]);
 
 // Blacksmith lines: index = number of upgrades researched. Which line applies to
 // a unit is read from the techs' own effects (e.g. Fletching for archers and
@@ -49,12 +51,15 @@ const armourClasses = (u) => new Set((u.Armours || []).map((a) => a.Class));
 export const isInfantry = (u) => armourClasses(u).has(CLASS.INFANTRY);
 export const isCavalry = (u) => armourClasses(u).has(CLASS.CAVALRY);
 
-/** Units the duel supports: land units that fight, melee or ranged; no siege, rams or ships. */
+/**
+ * Units the duel supports: land units that fight, melee or ranged; no siege, rams or ships.
+ * Camels (including the Mameluke) have their own armour class, not Cavalry, so they're listed too.
+ */
 export function isDuelEligible(u) {
-  if (!u || !(u.Attack > 0)) return false;
+  if (!u || !(u.Attack > 0) || SUICIDE.has(u.ID)) return false;
   const c = armourClasses(u);
   if (c.has(CLASS.SHIP) || c.has(CLASS.SIEGE) || c.has(CLASS.RAM)) return false;
-  return c.has(CLASS.INFANTRY) || c.has(CLASS.CAVALRY) || c.has(CLASS.ELEPHANT) || c.has(CLASS.ARCHER);
+  return c.has(CLASS.INFANTRY) || c.has(CLASS.CAVALRY) || c.has(CLASS.ELEPHANT) || c.has(CLASS.ARCHER) || c.has(CLASS.CAMEL);
 }
 
 export const isRanged = (u) => Boolean(RANGED[u?.ID]);
@@ -64,7 +69,7 @@ export const isRanged = (u) => Boolean(RANGED[u?.ID]);
 export function radiusOf(u) {
   if (RADII[u.ID] !== undefined) return RADII[u.ID];
   const c = armourClasses(u);
-  if (c.has(CLASS.ELEPHANT) || c.has(CLASS.CAVALRY)) return 0.25;
+  if (c.has(CLASS.ELEPHANT) || c.has(CLASS.CAVALRY) || c.has(CLASS.CAMEL)) return 0.25;
   return 0.2;
 }
 

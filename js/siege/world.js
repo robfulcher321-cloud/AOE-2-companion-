@@ -540,7 +540,7 @@ export function kindOf(line, f) {
   const root = Number(String(line).split('-')[1]);
   if (root === 93) return 'spear';     // Spearman line
   if (root === 7) return 'skirm';      // Skirmisher line
-  if (f.armours.has(CLASS.CAVALRY) || f.armours.has(CLASS.ELEPHANT)) return 'cavalry';
+  if (f.armours.has(CLASS.CAVALRY) || f.armours.has(CLASS.ELEPHANT) || f.armours.has(CLASS.CAMEL)) return 'cavalry';
   if (f.projectile) return 'archer';
   return 'infantry';
 }

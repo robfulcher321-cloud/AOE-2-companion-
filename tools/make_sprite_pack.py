@@ -52,7 +52,10 @@ def duel_eligible(u):
         return False
     if classes & {16, 17, 20}:
         return False
-    return bool(classes & {1, 5, 8, 15})
+    # 30: camels (incl. Mameluke) have their own class, not Cavalry. 1263 Flaming Camel, 440 Petard: suicide units.
+    if u.get('ID') in (1263, 440):
+        return False
+    return bool(classes & {1, 5, 8, 15, 30})
 
 
 def projectile_entry(g, sld):

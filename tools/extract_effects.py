@@ -39,7 +39,10 @@ def duel_eligible(u):
     classes = {a['Class'] for a in u['Armours']}
     if not u['Attack'] > 0 or classes & {16, 17, 20}:
         return False
-    return bool(classes & {1, 5, 8, 15})
+    # 30: camels (incl. Mameluke) have their own class, not Cavalry. 1263 Flaming Camel, 440 Petard: suicide units.
+    if u.get('ID') in (1263, 440):
+        return False
+    return bool(classes & {1, 5, 8, 15, 30})
 
 
 def ranged_record(dat, uid):

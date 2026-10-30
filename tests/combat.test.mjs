@@ -187,4 +187,11 @@ console.log('Special ability checks passed.');
 const r = simulate(buildFighter(U[567], 'A', full), buildFighter(U[567], 'B', full));
 assert.equal(r.winner, null);
 assert.equal(r.timedOut, false);
+// Camels have their own armour class (not Cavalry): they must still be offered, and beat knights.
+assert.ok(isDuelEligible(U[329]) && isDuelEligible(U[282]) && isDuelEligible(U[1755]), 'camels and the Mameluke are offered');
+assert.ok(!isDuelEligible(U[1263]), 'Flaming Camel is not');
+const camel = buildFighter(U[330], 'Heavy Camel Rider', allTechs);
+const kn = buildFighter(U[283], 'Cavalier', allTechs);
+assert.ok(damagePerHit(camel, kn) > damagePerHit(kn, camel), 'camels hit cavalry harder than cavalry hits them');
+assert.ok(buildFighter(U[282], 'Mameluke').projectile, 'the Mameluke throws its scimitar');
 console.log('All combat tests passed.');
