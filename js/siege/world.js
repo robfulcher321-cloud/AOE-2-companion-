@@ -13,7 +13,7 @@
 // Times are game seconds (Normal speed runs 1.7 game seconds per real second).
 
 import { damagePerHit, CLASS } from '../duel/combat.js';
-import { MARKET, structureStats } from './kit.js';
+import { MARKET, AGES, structureStats } from './kit.js';
 
 export const DT = 1 / 30;
 export const LANE = { length: 86, half: 10 };
@@ -109,15 +109,22 @@ export class World {
       gold: START_GOLD,
       incomeMult: income[s],
       researched: new Set(),   // Armory techs done
-      researchKey: '',
+      researchKey: '|1',
       research: null,          // { id, endsAt, time } being researched
       markets: 0,
       plots: null,
       stats: { trained: 0, kills: 0, lost: 0, earned: 0, spent: 0 },
       blasts: BLAST.per,       // explosions left
+      age: 1,                  // 1 Dark, 2 Feudal, 3 Castle, 4 Imperial
+      aging: null,             // { to, endsAt, time } while advancing
     }));
     for (const s of this.sides) s.plots = Array(this.layout(s).length).fill(null);
-    for (const t of [0, 1]) this.castle(t, structureStats(data, 82));
+    // Each team's Wonder is the one from a random player's civ on that team.
+    for (const t of [0, 1]) {
+      const ps = this.teams[t].players;
+      this.teams[t].wonderOwner = ps[Math.floor(this.rand() * ps.length)];
+      this.castle(t, structureStats(data, 82));
+    }
     this.castles = this.teams.map((t) => t.castle);
     this.buildingStats = (id) => structureStats(data, id);
   }
@@ -138,7 +145,8 @@ export class World {
 
   castle(team, st) {
     const c = {
-      id: this.nextId++, side: team, kind: 'castle', building: 82, x: CASTLE_X[team], y: 0, r: 2.2,
+      // The team's Wonder: drawn as a Wonder (276), defended like a Castle (its arrows and armour).
+      id: this.nextId++, side: team, kind: 'castle', building: 276, x: CASTLE_X[team], y: 0, r: 2.2,
       hp: st.hp, maxHp: st.hp, f: st, ready: 2,
     };
     this.structures.push(c);
@@ -188,20 +196,23 @@ export class World {
     switch (kind) {
       case 'build': {
         const line = this.line(side, key);
-        return line && plotFree && this.unlocked(side, line) ? line.cost : null;
+        return line && plotFree && this.unlocked(side, line) && line.age <= s.age ? this.kits[side].linePrice(line, s.age) : null;
       }
       case 'market':
-        return s.markets < MARKET.max && plotFree ? MARKET.cost : null;
+        return s.markets < MARKET.max && plotFree && s.age >= MARKET.age ? MARKET.cost : null;
       case 'upgrade': {
         const b = this.building(key);
         if (!b || b.owner !== side || b.line === 'market') return null;
         const line = this.line(side, b.line);
-        return b.tier + 1 < line.tiers.length ? line.tiers[b.tier + 1].upgrade : null;
+        const next = line.tiers[b.tier + 1];
+        return next && next.age <= s.age ? next.upgrade : null;
       }
       case 'research': {
         const t = this.tech(side, key);
-        return this.techOpen(side, t) && !s.research ? t.cost : null;
+        return this.techOpen(side, t) && !s.research && t.age <= s.age ? t.cost : null;
       }
+      case 'age':
+        return s.age < 4 && !s.aging ? AGES[s.age + 1].cost : null;
       default: return null;
     }
   }
@@ -242,6 +253,9 @@ export class World {
     } else if (kind === 'research') {
       const t = this.tech(side, key);
       s.research = { id: t.id, endsAt: this.t + t.time, time: t.time };
+    } else if (kind === 'age') {
+      const a = AGES[s.age + 1];
+      s.aging = { to: s.age + 1, endsAt: this.t + a.time, time: a.time };
     }
     this.events.push({ t: this.t, type: kind, side, key });
     return true;
@@ -336,10 +350,10 @@ export class World {
   /** Researched techs reach units already on the field, as in the game. */
   refit(side) {
     const s = this.sides[side];
-    s.researchKey = [...s.researched].sort().join(',');
+    s.researchKey = `${[...s.researched].sort().join(',')}|${s.age}`;
     for (const u of this.units) {
       if (u.owner !== side || u.hp <= 0) continue;
-      const f = this.kits[side].fighter(u.line, u.tier, s.researched, s.researchKey);
+      const f = this.kits[side].fighter(u.line, u.tier, s.researched, s.researchKey, s.age);
       u.hp += Math.max(0, f.hp - u.f.hp);
       u.f = f;
     }
@@ -355,7 +369,7 @@ export class World {
     this.alive[team] += 1;
     s.out = (s.out ?? 0) + 1;
     const tier = b.tier;
-    const f = this.kits[side].fighter(b.line, tier, s.researched, s.researchKey);
+    const f = this.kits[side].fighter(b.line, tier, s.researched, s.researchKey, s.age);
     const dir = team === 0 ? 1 : -1;
     // Which lane: by the building's row; the middle row takes turns.
     b.nextLane = -(b.nextLane || 1);
@@ -367,6 +381,7 @@ export class World {
       attackStart: null, diedAt: null, face: dir, moving: false, bornAt: this.t, stuck: 0, lastGap: null, sidestep: 0,
     };
     u.px = u.x; u.py = u.y;
+    if (f.packs) { u.packed = true; u.packing = null; }   // trebuchets come out packed
     s.stats.trained += 1;
     this.units.push(u);
   }
@@ -556,9 +571,15 @@ export class World {
       }
       this.sides.forEach((s, i) => { const g = this.income(i); s.gold += g; s.stats.earned += g; });
     }
-    // Armory research finishing
+    // Armory research and ages finishing
     for (let side = 0; side < this.sides.length; side++) {
       const s = this.sides[side];
+      if (s.aging && t >= s.aging.endsAt) {
+        s.age = s.aging.to;
+        s.aging = null;
+        this.events.push({ t, type: 'aged', side: s.team, owner: side, age: s.age });
+        this.refit(side);
+      }
       if (s.research && t >= s.research.endsAt) {
         s.researched.add(s.research.id);
         this.events.push({ t, type: 'researched', side, key: s.research.id });
@@ -613,6 +634,23 @@ export class World {
           if (tg.hp > 0) this.release(u, tg);
         }
         continue;
+      }
+      // Trebuchets: unpack to fire, pack to move; neither can do anything while (un)packing.
+      if (u.f.packs) {
+        if (u.packing) {
+          if (t < u.packUntil) continue;
+          u.packed = u.packing === 'pack';
+          u.packing = null;
+        }
+        const g = u.target ? hyp(u.target.x - u.x, u.target.y - u.y) - u.target.r - u.r : Infinity;
+        const inRange = g <= u.f.range + 0.1 + (u.target?.kind ? BUILDING_SLACK : 0) && g >= (u.f.minRange || 0);
+        if (inRange === u.packed) {
+          u.packing = inRange ? 'unpack' : 'pack';
+          u.packStart = t;
+          u.packUntil = t + u.f.packs;
+          if (inRange) u.face = Math.sign(u.target.x - u.x) || u.face;
+          continue;
+        }
       }
       const tg = u.target;
       const dir = u.side === 0 ? 1 : -1;
@@ -873,6 +911,11 @@ export class Computer {
       if (p === null) continue;
       const kind = kindOf(b.line, kit.fighter(b.line, b.tier));
       options.push({ kind: 'upgrade', key: b.id, score: 1 + 0.5 * vs(kind) - b.tier * 0.25 + (w.t > 180 ? 0.5 : 0) - p / 1500 });
+    }
+    // Ages: when the army is growing and the gold is there (Easy waits longer).
+    const nextAge = w.price(side, 'age');
+    if (nextAge !== null && military.length >= s.age + (this.level === 'easy' ? 2 : this.level === 'hard' ? 0 : 1)) {
+      options.push({ kind: 'age', key: null, score: 4 + military.length * 0.1 - s.age * 0.3 });
     }
     // Armory: once there's an army to make better
     if (military.length >= 3 && !s.research) {

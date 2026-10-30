@@ -9,25 +9,36 @@
 // makes, so cheap units come in numbers and expensive ones in quality.
 
 import { buildFighter, otherTechsFor, isDuelEligible, buildingsOnly, trackFor, affectsUnit, TRACKS, OTHER_TECHS } from '../duel/combat.js';
-import { CIV_EFFECTS, UNIT_CLASS } from '../duel/effects.js';
+import { CIV_EFFECTS, UNIT_CLASS, PLAYER_TECHS } from '../duel/effects.js';
 
 export const TRAIN_AT = [12, 87, 101, 49, 82];    // Barracks, Archery Range, Stable, Siege Workshop, Castle
 export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 49: 'Siege Workshop', 82: 'Castle', 84: 'Market' };
-export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 275, income: 5, max: 3 };
+export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 275, income: 5, max: 3, age: 2 };
 export const NOT_UNITS = new Set([440]);         // Petard: not a lane fighter
 // The tech tree lists the Trebuchet packed; it fights unpacked.
 const FIGHTS_AS = { 331: 42 };
 const SIEGE_CLASSES = [17, 20];
 const isSiege = (u) => (u?.Armours || []).some((a) => SIEGE_CLASSES.includes(a.Class));
 export const NEEDS = { 5: 47, 36: 47 };         // unit -> tech it needs (Hand Cannoneer, Bombard Cannon: Chemistry)
-// What a building costs depends on what it trains: cheap counters (spears,
-// skirmishers), standard infantry, archers and scouts, dearer cavalry, and
-// elephants dearest. Castle (unique unit) buildings cost 40% more again.
-export const BUILD_PRICES = { spear: 140, skirm: 150, standard: 175, scout: 185, cavalry: 215, siege: 230, elephant: 270 };
-const UNIQUE_MARKUP = 1.4;
-// Stronger units also take longer to come out (on top of time scaling with the unit's cost).
-const BUILD_TIME = { spear: 0.9, skirm: 0.9, standard: 1, scout: 1, cavalry: 1.25, siege: 1.3, elephant: 1.5 };
-const UNIQUE_TIME = 1.1;
+// What a building costs follows what its unit costs in the game, with this
+// civ's bonuses (Goths' cheap infantry, Mayan archers...) at the player's age.
+// Gold (and stone) count double, so gold-heavy units, and their upgrades, cost more.
+const weight = (c) => (c.Food || 0) + (c.Wood || 0) + 2 * ((c.Gold || 0) + (c.Stone || 0));
+export const unitPrice = (w) => round5(60 + Math.min(w, 200) + 0.6 * Math.max(0, w - 200));
+const UNIQUE_MARKUP = 1.15;
+const MARKUP = { 42: 1.25 };   // Trebuchets: a bit dearer still
+// How often a building sends out a unit: the unit's real training time (with civ bonuses), in game seconds.
+const TRAIN_SCALE = 1;
+// Ages: 1 Dark, 2 Feudal, 3 Castle, 4 Imperial. Everyone starts in the Dark Age.
+export const AGES = [
+  null,
+  { name: 'Dark Age', tech: 104 },
+  { name: 'Feudal Age', tech: 101, cost: 150, time: 15 },
+  { name: 'Castle Age', tech: 102, cost: 350, time: 22 },
+  { name: 'Imperial Age', tech: 103, cost: 650, time: 30 },
+];
+// Trebuchets: half their real range in this lane, and they pack/unpack (quicker than the game's).
+export const TREB = { id: 42, packed: 331, rangeShare: 0.5, packTime: 2 };
 const ARMOUR = { ELEPHANT: 5, CAVALRY: 8, CAMEL: 30 };
 /** Which price band a line's first unit falls in. */
 export function priceBand(rootId, unit) {
@@ -40,7 +51,6 @@ export function priceBand(rootId, unit) {
   if (armours.has(ARMOUR.CAVALRY) || armours.has(ARMOUR.CAMEL)) return 'cavalry';
   return 'standard';
 }
-const OUTPUT = 4.5;          // resources' worth of units a building trains per game second
 const UPGRADE_SHARE = 0.3;   // building upgrades cost this share of the real upgrade's resources (+30)
 const TECH_SHARE = 0.33;     // Armory techs: same idea (+25)
 const TECH_TIME = 0.3;       // and this share of the real research time
@@ -98,8 +108,8 @@ export function buildKit({ data, strings = {}, tree, civ }) {
           unitId: FIGHTS_AS[n.node_id] ?? n.node_id,
           name: name(n),
           picture: n.picture_index,
-          upgrade: i ? upgradePrice(total(up?.Cost || { Gold: 500 })) : 0,
-          every: Math.max(8, Math.min(75, Math.round((total(U[FIGHTS_AS[n.node_id] ?? n.node_id].Cost) / OUTPUT) * BUILD_TIME[band] * (building === 82 ? UNIQUE_TIME : 1) * 10) / 10)),
+          age: n.age_id || 1,
+          realUpgrade: i ? total(up?.Cost || { Gold: 500 }) : 0,
         };
       });
       lines.push({
@@ -108,7 +118,8 @@ export function buildKit({ data, strings = {}, tree, civ }) {
         unique: building === 82,
         label: tiers[0].name,
         band,
-        cost: building === 82 ? round5(BUILD_PRICES[band] * UNIQUE_MARKUP) : BUILD_PRICES[band],
+        age: root.age_id || 1,
+        markup: (building === 82 && !isSiege(U[FIGHTS_AS[root.node_id] ?? root.node_id]) ? UNIQUE_MARKUP : 1) * (MARKUP[FIGHTS_AS[root.node_id] ?? root.node_id] || 1),
         needs: NEEDS[root.node_id] ?? null,
         tiers,
       });
@@ -124,7 +135,8 @@ export function buildKit({ data, strings = {}, tree, civ }) {
   };
   const techRec = (id, group, label, extra = {}) => {
     const n = techNode.get(id);
-    return { id, group, name: n ? clean(strings[n.name_string_id] || n.name) : label, picture: n?.picture_index, ...techCost(id), ...extra };
+    const age = n?.age_id || PLAYER_TECHS[id]?.age || (CIV_EFFECTS[civ]?.uts || []).find((u) => u.id === id)?.age || 2;
+    return { id, group, name: n ? clean(strings[n.name_string_id] || n.name) : label, picture: n?.picture_index, age, ...techCost(id), ...extra };
   };
   const techs = [];
   // Blacksmith: each line in order (Forging before Iron Casting)
@@ -150,16 +162,36 @@ export function buildKit({ data, strings = {}, tree, civ }) {
 
   const buildingPicture = new Map((tree.buildings || []).map((b) => [b.node_id ?? b.building_id, b.picture_index]));
   const cache = new Map();
+  const civStats = (unitId, age) => buildFighter(U[unitId], '', { civ, age, units: U });
+  const priceCache = new Map();
+  /** A line's building price at an age (civ cost bonuses depend on the age). */
+  const linePrice = (line, age) => {
+    const k = `${line.key}|${age}`;
+    if (!priceCache.has(k)) priceCache.set(k, round5(unitPrice(weight(civStats(line.tiers[0].unitId, Math.max(age, line.age)).cost)) * line.markup));
+    return priceCache.get(k);
+  };
+  for (const line of lines) {
+    line.cost = linePrice(line, line.age);
+    for (const t of line.tiers) {
+      const st = civStats(t.unitId, 4);
+      t.every = Math.max(6, Math.min(70, Math.round(st.trainTime * TRAIN_SCALE * 10) / 10));
+      // Upgrades: the real upgrade's resources, scaled down; dearer the more gold the unit costs.
+      t.upgrade = t.realUpgrade ? round5(upgradePrice(t.realUpgrade) * (1 + ((st.cost.Gold || 0) + (st.cost.Stone || 0)) / 200)) : 0;
+    }
+  }
 
   return {
     civ,
     lines,
     techs,
     buildingPicture: (id) => buildingPicture.get(id),
+    /** Icon of an age's tech (Feudal, Castle, Imperial). */
+    agePicture: (age) => techNode.get(AGES[age]?.tech)?.picture_index,
     line: (key) => lines.find((l) => l.key === key),
     /** Fighter stats for a line at a tier with the researched techs (a Set of tech ids). */
-    fighter(lineKey, tier, researched = new Set(), key = [...researched].sort().join(',')) {
-      const ck = `${lineKey}|${tier}|${key}`;
+    linePrice,
+    fighter(lineKey, tier, researched = new Set(), key = [...researched].sort().join(','), age = 4) {
+      const ck = `${lineKey}|${tier}|${key}|${age}`;
       if (!cache.has(ck)) {
         const line = lines.find((l) => l.key === lineKey);
         const t = line.tiers[Math.min(tier, line.tiers.length - 1)];
@@ -173,6 +205,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
         };
         const f = buildFighter(unit, t.name, {
           civ,
+          age,
           attackLevel: level('attack'),
           armourLevel: level('armour'),
           techs: otherTechsFor(unit).map((o) => o.id).filter((id) => researched.has(id)),
@@ -183,6 +216,11 @@ export function buildKit({ data, strings = {}, tree, civ }) {
         f.buildingsOnly = buildingsOnly(unit);
         const packed = Object.entries(FIGHTS_AS).find(([, v]) => v === t.unitId)?.[0];
         if (!(f.speed > 0) && packed) { f.speed = U[packed].Speed; f.walkAs = Number(packed); }
+        if (t.unitId === TREB.id) {
+          f.range *= TREB.rangeShare;
+          f.minRange = (f.minRange || 0) * TREB.rangeShare;
+          f.packs = TREB.packTime;
+        }
         cache.set(ck, f);
       }
       return cache.get(ck);

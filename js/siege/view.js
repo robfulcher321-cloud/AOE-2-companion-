@@ -22,7 +22,7 @@ const rgbOf = (hex) => {
   const m = Math.max(...c, 1);
   return c.map((v) => Math.round((v * 236) / m));
 };
-const BUILDING_KIND = { 12: 'barracks', 87: 'archery', 101: 'stable', 82: 'castle', 84: 'market', 103: 'blacksmith', 49: 'workshop', 104: 'monastery' };
+const BUILDING_KIND = { 276: 'wonder', 12: 'barracks', 87: 'archery', 101: 'stable', 82: 'castle', 84: 'market', 103: 'blacksmith', 49: 'workshop', 104: 'monastery' };
 
 export class SiegeView {
   /** handlers: { tapPlot(i), tapBuilding(b), holdBuilding(b) } */
@@ -35,7 +35,8 @@ export class SiegeView {
     this.mini = mini;
     this.mctx = mini.getContext('2d');
     this.cam = { x: 14, zoom: 0.55 };
-    this.follow = true;
+    this.follow = false;
+    this.glideTo = null;
     this.lastTouch = 0;
     this.floaters = [];
     this.seen = 0;
@@ -63,7 +64,7 @@ export class SiegeView {
     this.paint = this.colours.map((hex) => (hex === COLOURS[0].hex ? 'blue' : hex === COLOURS[1].hex ? 'red' : rgbOf(hex)));
     this.civs = civs;
     this.grassPattern = null;
-    this.follow = true;
+    this.glideTo = null;
     this.cam.x = CASTLE_X[this.myTeam] + (this.myTeam === 0 ? 6 : -6);
     this.floaters = [];
     this.seen = world.events.length;
@@ -104,7 +105,7 @@ export class SiegeView {
     });
     this.canvas.addEventListener('pointermove', (e) => {
       if (!p) return;
-      if (!p.moved && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) > SLOP) { p.moved = true; clearTimeout(p.timer); this.follow = false; }
+      if (!p.moved && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) > SLOP) { p.moved = true; clearTimeout(p.timer); this.glideTo = null; }
       if (p.moved) {
         this.cam.x = p.camX - (e.clientX - p.x0) / (TILE * this.cam.zoom);
         this.clampCam();
@@ -134,7 +135,7 @@ export class SiegeView {
       const r = this.mini.getBoundingClientRect();
       this.cam.x = ((e.clientX - r.left) / r.width) * LANE.length;
       this.clampCam();
-      this.follow = false;
+      this.glideTo = null;
       this.lastTouch = performance.now();
     };
     let mdown = false;
@@ -185,10 +186,20 @@ export class SiegeView {
     this.cam.x = Math.max(half - 1, Math.min(LANE.length + 1 - half, this.cam.x));
   }
 
-  /** Follow the fighting: the furthest your units have pushed, or where the enemy is coming. */
+  /**
+   * The camera stays where you put it. "To the fight" glides it once to where the
+   * armies meet (or the front of whichever army exists), then leaves it there.
+   */
+  jumpToFight() { this.glideTo = this.fightX(); }
+
   autoCam() {
-    if (!this.follow && performance.now() - this.lastTouch > 8000) this.follow = true;
-    if (!this.follow) return;
+    if (this.glideTo === null || this.glideTo === undefined) return;
+    this.cam.x += (this.glideTo - this.cam.x) * 0.15;
+    if (Math.abs(this.glideTo - this.cam.x) < 0.05) this.glideTo = null;
+    this.clampCam();
+  }
+
+  fightX() {
     const live = this.w.units.filter((u) => u.hp > 0);
     const team = this.myTeam;
     const dir = team === 0 ? 1 : -1;
@@ -202,8 +213,7 @@ export class SiegeView {
     if (a !== null && b !== null) target = dir > 0 ? Math.min(a, b) + 2 : Math.max(a, b) - 2;
     else if (a !== null) target = a;
     else if (b !== null) target = b;
-    this.cam.x += (target - this.cam.x) * 0.04;
-    this.clampCam();
+    return target;
   }
 
   /** Screen point (CSS px in the canvas) to lane position. */
@@ -416,7 +426,7 @@ export class SiegeView {
     if (bs) {
       const [fx, fy, fw, fh, ax, ay] = bs.frame;
       const [gx, gy] = this.toScreen(b.x, b.y);
-      const k = ((rx - lx) * (b.kind === 'castle' ? 1.3 : 1.3)) / fw;
+      const k = ((rx - lx) * (b.kind === 'castle' ? 1.55 : 1.3)) / fw;
       if (selected) this.diamond(b.x, b.y, b.r * 1.05, 'rgb(255 217 122 / .18)', '#ffd97a');
       ctx.drawImage(bs.atlas, fx, fy, fw, fh, gx - ax * k, gy - ay * k, fw * k, fh * k);
       if (dead) ctx.globalAlpha *= 0.5;
@@ -557,7 +567,7 @@ export class SiegeView {
     const pack = this.sprites?.pack;
     const kind = BUILDING_KIND[b.building];
     if (!pack || !kind) return null;
-    const player = b.owner ?? this.w.teams[b.side].players[0];
+    const player = b.owner ?? this.w.teams[b.side].wonderOwner ?? this.w.teams[b.side].players[0];
     const name = pack.buildingSet(this.civs?.[player])?.[kind];
     if (!name) return null;
     const paint = this.paint?.[player] ?? 'blue';
@@ -579,8 +589,9 @@ export class SiegeView {
     const [sx, sy] = this.toScreen(x, y);
     if (sx < -80 || sx > this.vw + 80) return;
     const dead = u.hp <= 0;
-    // (A trebuchet walks packed: a different unit's graphics.)
-    const { sprite, side } = this.spriteFor(u.moving && u.f.walkAs ? u.f.walkAs : u.f.unitId, u.owner ?? this.w.teams[u.side].players[0]);
+    // (A trebuchet uses the packed unit's graphics while packed.)
+    const packedLook = u.f.walkAs && (u.packed || u.moving) && !u.packing;
+    const { sprite, side } = this.spriteFor(packedLook ? u.f.walkAs : u.f.unitId, u.owner ?? this.w.teams[u.side].players[0]);
     let fr = null;
     if (sprite) {
       const { anims } = sprite;
@@ -593,7 +604,13 @@ export class SiegeView {
         return fs[n];
       };
       if (dead) fr = at('death', t - u.diedAt, false);
-      else {
+      else if (u.packing && seq('pack')?.length) {
+        // (Un)packing: the assembly stages forwards to unpack, backwards to pack.
+        const fs = seq('pack');
+        const k = Math.max(0, Math.min(0.999, (t - u.packStart) / (u.f.packs || 1)));
+        const i = Math.floor(k * (fs.length + 1));
+        fr = u.packing === 'unpack' ? (i < fs.length ? fs[i] : at('idle', 0, true)) : (i === 0 ? at('idle', 0, true) : fs[fs.length - i] || fs[0]);
+      } else {
         const atk = seq('attack');
         if (u.attackStart !== null && atk && t - u.attackStart < atk.length * anims.attack.fdur) fr = at('attack', t - u.attackStart, false);
         else if (u.moving) fr = at('walk', t + u.id * 0.13, true) || at('idle', t, true);

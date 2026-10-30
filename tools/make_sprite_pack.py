@@ -50,7 +50,9 @@ VERSION = 2
 
 # Imperial-look buildings the app draws, by the unit ID that has that look
 BUILDINGS = {'barracks': 20, 'archery': 14, 'stable': 153, 'castle': 82, 'market': 137,
-             'blacksmith': 19, 'workshop': 150, 'monastery': 104}
+             'blacksmith': 19, 'workshop': 150, 'monastery': 104, 'wonder': 276}
+# Extra animations: the Trebuchet's assembly stages (its build graphic) play as packing/unpacking.
+EXTRA_ANIMS = {42: {'pack': (137, 0.2)}}
 # Game data civ names that differ from aoe2techtree's civ keys
 CIV_KEYS = {'British': 'Britons', 'French': 'Franks', 'Byzantine': 'Byzantines', 'Mayan': 'Mayans'}
 
@@ -295,6 +297,20 @@ def main():
                     images.append(img)
                     masks.append(m)
                 entries[anim] = {'fdur': g.frame_duration * step, 'frames': seq}
+            for anim, (gid, fdur) in EXTRA_ANIMS.get(uid, {}).items():
+                g, sld = sld_for(gid)
+                if not sld:
+                    continue
+                seq = []
+                for f in range(max(1, g.frame_count)):
+                    comp = compose(sld.frame(f))
+                    if comp is None:
+                        continue
+                    img, m, ax, ay = comp
+                    seq.append([len(images), ax, ay])
+                    images.append(img)
+                    masks.append(m)
+                entries[anim] = {'fdur': fdur, 'frames': seq}
             if not images:
                 continue
             atlas, mask, rects = atlas_pair(images, masks)

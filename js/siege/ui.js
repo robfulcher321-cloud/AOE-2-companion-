@@ -4,7 +4,7 @@ import { loadCore, loadTree, imageUrl, civIconUrl, nameText } from '../data.js';
 import { Picker } from '../picker.js';
 import { civOptions } from '../techtree.js';
 import { loadPack, onPackProgress } from '../duel/spritepack.js';
-import { buildKit, MARKET, BUILDING_NAMES } from './kit.js';
+import { buildKit, MARKET, BUILDING_NAMES, AGES } from './kit.js';
 import { World, Computer, DT, PLOTS, OVERTIME, START_GOLD, BLAST } from './world.js';
 import { SiegeView, COLOURS } from './view.js';
 export { COLOURS };
@@ -86,18 +86,20 @@ export async function initSiege(root) {
     el('details', { className: 'sg-how', open: !store.get('sg-played') },
       el('summary', { textContent: 'How to play' }),
       el('ul', {},
-        el('li', { textContent: 'Each side has a Castle at the end of one lane. Destroy the enemy Castle to win.' }),
-        el('li', { textContent: `You don't control units. Tap an empty plot (up to ${PLOTS}; 12 each in a 2v2) to build: each building trains one unit line on a timer, and the units march down the lane and fight on their own. Your civ gets every unit its Barracks, Archery Range, Stable and Castle can train.` }),
+        el('li', { textContent: 'Each team has a Wonder (a random civ\'s from that team) at its end of the lane. Destroy the enemy Wonder to win. Wonders shoot arrows like a Castle.' }),
+        el('li', { textContent: 'Everyone starts in the Dark Age with just Militia. The age button (above the anvil) advances you for gold in a few seconds; each age opens its units, upgrades and Armory techs, as in the game. Locked ones are greyed with the age they need. Everyone sees who aged up.' }),
+        el('li', { textContent: `You don't control units. Tap an empty plot (up to ${PLOTS}; 12 each in a 2v2) to build: each building trains one unit line on a timer, and the units march down the lane and fight on their own. Your civ gets every unit its Barracks, Archery Range, Stable, Siege Workshop and Castle can train.` }),
         el('li', { textContent: 'Press and hold a building to upgrade it to the next unit in its line (Militia → Man-at-Arms → … → Champion), or to sell it for half of what you put in. Each building upgrades on its own: lots of cheap units, or fewer strong ones?' }),
         el('li', { textContent: 'Tap a building to hold it: its bar turns blue and the unit waits when ready. Tap GO to send every waiting unit out at once.' }),
         el('li', { textContent: 'The Armory (anvil, bottom left) has Blacksmith upgrades, Ballistics, Chemistry, Bloodlines and your civ\'s unique techs. One at a time; each one reaches all your units, even those already fighting.' }),
         el('li', { textContent: 'The middle of the map is split by a river into two lanes. Buildings in your top row send units down the top lane, the bottom row the bottom lane, the middle row takes turns. Arrows fly over the river; soldiers cross only near the bases.' }),
         el('li', { textContent: `One explosion each (the fire button): tap it, tap where, then Drop. It hurts every enemy soldier within ${BLAST.radius} tiles for ${Math.round(BLAST.share * 100)}% of their HP. It can only be dropped on your own third of the map: it's for defending against a deathball, not for pushing.` }),
         el('li', { textContent: 'Gold comes in every few seconds; Markets add more, and kills pay a bounty. In team games the base income is split between teammates, so a 2v2 team earns what one player does in a 1v1 (your own Markets still pay you in full).' }),
-        el('li', { textContent: 'Buildings cost more the stronger the unit: spears and skirmishers are cheapest, then infantry, archers and scouts, then cavalry, then elephants. Castle (unique unit) buildings cost 40% more.' }),
+        el('li', { textContent: 'Prices follow the game: a building costs what its unit costs (with your civ\'s discounts, like Goths\' cheap infantry), gold counting double, so gold-heavy units and their upgrades cost more. Each unit comes out at its real training time.' }),
+        el('li', { textContent: 'Rams and Trebuchets only attack buildings. Trebuchets unpack to fire and pack up to move, so keep them behind your army.' }),
         el('li', { textContent: 'Counter what the computer builds: spearmen beat cavalry, skirmishers beat archers, cavalry and infantry beat archers.' }),
-        el('li', { textContent: 'Drag the battlefield or tap the minimap to look around; it follows the fighting again after a few seconds.' }),
-        el('li', { textContent: `After ${OVERTIME / 60} game minutes (about ${Math.round(OVERTIME / 60 / 1.7)} real minutes) it's overtime: both castles crumble and buildings take more damage every minute, so games always end.` }))),
+        el('li', { textContent: 'Drag the battlefield or tap the minimap to look around. The camera stays put; tap "To the fight" to jump to where the armies meet.' }),
+        el('li', { textContent: `After ${OVERTIME / 60} game minutes (about ${Math.round(OVERTIME / 60 / 1.7)} real minutes) it's overtime: both Wonders crumble and buildings take more damage every minute, so games always end.` }))),
   );
 
   start.addEventListener('click', async () => {
@@ -213,10 +215,17 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   const closeBtn = el('button', { type: 'button', className: 'sg-btn sg-close', textContent: '×', 'aria-label': 'Quit game' });
   const canvas = el('canvas', { className: 'sg-canvas', 'aria-label': 'Battlefield: tap a plot to build, tap a building to hold it, press and hold a building for upgrades' });
   const mini = el('canvas', { className: 'sg-mini', 'aria-label': 'Minimap: tap to look there' });
-  const followBtn = el('button', { type: 'button', className: 'sg-follow', textContent: 'Follow fight', hidden: true });
+  const followBtn = el('button', { type: 'button', className: 'sg-follow', textContent: '⚔ To the fight' });
   const armoryBtn = el('button', { type: 'button', className: 'sg-armory-btn', 'aria-label': 'Armory' },
     el('img', { src: bldIcon(103), alt: '' }), el('span', { className: 'sg-armory-dot', hidden: true }));
+  const ageIcon = (age) => {
+    const pic = age === 1 ? undefined : kit.agePicture(age);
+    return pic !== undefined ? imageUrl('Tech', pic) : bldIcon(109);
+  };
+  const ageBtn = el('button', { type: 'button', className: 'sg-age-btn', 'aria-label': 'Ages' },
+    el('img', { src: '', alt: '' }), el('small', { className: 'sg-age-name' }), el('i', { className: 'sg-age-ring' }));
   const banner = el('div', { className: 'sg-banner', hidden: true });
+  const notices = el('div', { className: 'sg-notices', 'aria-live': 'polite' });
   if (!assets.sprites) {   // never silently: say so if the in-game graphics didn't load
     banner.hidden = false; banner.textContent = 'In-game graphics didn\'t load: showing icons';
     setTimeout(() => { banner.hidden = true; }, 6000);
@@ -228,14 +237,14 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     el('button', { type: 'button', className: 'sg-btn', textContent: 'Cancel', onclick: () => setAim(false) }));
   const dock = el('section', { className: 'sg-dock' });
 
-  const screen = el('div', { className: 'sg-run', role: 'dialog', 'aria-label': 'AOSiege game' },
+  const screen = el('div', { className: 'sg-run', role: 'dialog', 'aria-label': 'Wonder Wars game' },
     el('header', { className: 'sg-head' },
       el('div', { className: 'sg-gold' },
         el('img', { className: 'sg-flag', src: players[ME].civ ? civIconUrl(players[ME].civ) : '', alt: players[ME].civName || '', title: `You: ${players[ME].civName || ''}`, style: `--pc:${players[ME].colour}` }),
         el('img', { className: 'sg-gold-ic', src: 'img/res/gold.webp', alt: 'Gold', width: 28, height: 28 }), goldNum, incomeTxt),
       clock, goBtn, speedBtn, pauseBtn, closeBtn,
       el('div', { className: 'sg-castles' }, castles[0].wrap, castles[1].wrap)),
-    el('div', { className: 'sg-field' }, canvas, followBtn, armoryBtn, blastBtn, aimBar, banner),
+    el('div', { className: 'sg-field' }, canvas, followBtn, ageBtn, armoryBtn, blastBtn, aimBar, banner, notices),
     mini,
     dock);
   document.body.append(screen);
@@ -284,8 +293,9 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   view.setup(world, { ...assets, mySide: ME, colours: players.map((p) => p.colour), civs: players.map((p) => p.civ) });
   screen.view = view;
   view.resize();
-  followBtn.addEventListener('click', () => { view.follow = true; });
+  followBtn.addEventListener('click', () => view.jumpToFight());
   armoryBtn.addEventListener('click', () => setMode(pmode.kind === 'armory' ? { kind: 'hint' } : { kind: 'armory' }));
+  ageBtn.addEventListener('click', () => setMode(pmode.kind === 'age' ? { kind: 'hint' } : { kind: 'age' }));
   goBtn.addEventListener('click', () => { act('go'); navigator.vibrate?.(30); refresh(true); });
 
   function setMode(m) {
@@ -293,6 +303,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     view.selected = m.kind === 'building' ? m.id : null;
     view.selectedPlot = m.kind === 'build' ? m.plot : null;
     armoryBtn.classList.toggle('on', m.kind === 'armory');
+    ageBtn.classList.toggle('on', m.kind === 'age');
     lastKey = '';
     refresh(true);
   }
@@ -335,23 +346,28 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       out.push(el('h4', { className: 'sg-group' }, el('img', { src: bldIcon(building), alt: '' }), BUILDING_NAMES[building] || 'Building'));
       out.push(el('div', { className: 'sg-opts' }, lines.map((line) => {
         const p = world.price(ME, 'build', line.key, plot);
-        const needs = line.needs && !world.unlocked(ME, line) ? `Needs ${kit.techs.find((t) => t.id === line.needs)?.name || 'a tech'} (Armory)` : null;
+        const locked = line.age > s.age ? `${AGES[line.age].name}` : null;
+        const needs = locked || (line.needs && !world.unlocked(ME, line) ? `Needs ${kit.techs.find((t) => t.id === line.needs)?.name || 'a tech'} (Armory)` : null);
         const steps = line.tiers.length > 1 ? `→ ${line.tiers.at(-1).name}` : 'no upgrades';
-        return option(line.tiers[0].name, `1 per ${Math.round(line.tiers[0].every / GAME_SPEED)}s · ${steps}`, unitIcon(line.tiers[0].unitId, line.tiers[0].picture),
-          line.cost, () => { if (world.canBuy(ME, 'build', line.key, plot) && act('build', { key: line.key, plot })) setMode({ kind: 'hint' }); },
+        const btn = option(line.tiers[0].name, `1 per ${Math.round(line.tiers[0].every / GAME_SPEED)}s · ${steps}`, unitIcon(line.tiers[0].unitId, line.tiers[0].picture),
+          kit.linePrice(line, s.age), () => { if (world.canBuy(ME, 'build', line.key, plot) && act('build', { key: line.key, plot })) setMode({ kind: 'hint' }); },
           p === null, needs);
+        if (locked) btn.classList.add('locked');
+        return btn;
       })));
     }
     const mp = world.price(ME, 'market', null, plot);
     out.push(el('h4', { className: 'sg-group' }, el('img', { src: bldIcon(84), alt: '' }), 'Economy'));
-    out.push(el('div', { className: 'sg-opts' }, option('Market', `+${MARKET.income} gold every 4s · ${s.markets}/${MARKET.max} built`, bldIcon(84), MARKET.cost,
-      () => { if (world.canBuy(ME, 'market', null, plot) && act('market', { plot })) setMode({ kind: 'hint' }); }, mp === null)));
+    const mkt = option('Market', `+${MARKET.income} gold every 4s · ${s.markets}/${MARKET.max} built`, bldIcon(84), MARKET.cost,
+      () => { if (world.canBuy(ME, 'market', null, plot) && act('market', { plot })) setMode({ kind: 'hint' }); }, mp === null, s.age < MARKET.age ? AGES[MARKET.age].name : null);
+    if (s.age < MARKET.age) mkt.classList.add('locked');
+    out.push(el('div', { className: 'sg-opts' }, mkt));
     return out;
   }
 
   function buildingView(id) {
     const b = world.building(id);
-    if (!b || b.side !== ME) { setTimeout(() => setMode({ kind: 'hint' })); return []; }
+    if (!b || b.owner !== ME) { setTimeout(() => setMode({ kind: 'hint' })); return []; }
     const s = world.sides[ME];
     const sellBtn = el('button', { type: 'button', className: 'sg-sell', onclick: () => { act('sell', { id: b.id }); setMode({ kind: 'hint' }); } },
       'Sell for ', goldImg(), String(world.sellValue(b.id)));
@@ -361,7 +377,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     const line = world.line(ME, b.line);
     const cur = line.tiers[b.tier];
     const next = line.tiers[b.tier + 1];
-    const f = kit.fighter(b.line, b.tier, s.researched, s.researchKey);
+    const f = kit.fighter(b.line, b.tier, s.researched, s.researchKey, s.age);
     const stat = (x) => Math.round(x * 10) / 10;
     const atk = f.projectile ? f.attacks.get(3) : f.attacks.get(4);
     const steps = el('div', { className: 'sg-steps' }, line.tiers.map((t, i) => el('span', { className: `sg-step${i === b.tier ? ' now' : i < b.tier ? ' done' : ''}` },
@@ -372,8 +388,8 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       steps,
       el('p', { className: 'sg-note', textContent: `${Math.floor(f.hp)} HP · ${stat(atk ?? 0)} attack · ${stat(f.armours.get(4) ?? 0)}/${stat(f.armours.get(3) ?? 0)} armour · 1 every ${Math.round(b.every / GAME_SPEED)}s` }),
       el('div', { className: 'sg-acts' },
-        next ? priced(el('button', { type: 'button', className: 'sg-buy', onclick: () => { act('upgrade', { id: b.id }); refresh(true); } },
-          el('span', { className: 'sg-buy-label', textContent: `Upgrade to ${next.name}` }), priceTag(next.upgrade)), next.upgrade, upPrice === null)
+        next ? priced(el('button', { type: 'button', className: `sg-buy${next.age > s.age ? ' locked' : ''}`, onclick: () => { act('upgrade', { id: b.id }); refresh(true); } },
+          el('span', { className: 'sg-buy-label', textContent: next.age > s.age ? `${next.name}: needs the ${AGES[next.age].name}` : `Upgrade to ${next.name}` }), priceTag(next.upgrade)), next.upgrade, upPrice === null)
           : el('p', { className: 'sg-note', textContent: 'Fully upgraded.' }),
         el('button', { type: 'button', className: `sg-hold${b.hold ? ' on' : ''}`, onclick: () => { act('hold', { id: b.id }); refresh(true); },
           textContent: b.hold ? (b.waiting ? 'Release now' : 'Stop holding') : 'Hold next unit' }),
@@ -389,6 +405,51 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     return { r, frac: 1 - left / r.time, secs: Math.ceil(left / GAME_SPEED) };
   };
   /** Strip at the top of the panel, whatever it's showing, while a tech is being researched. */
+  // Advancing to the next age: how far along and real seconds left.
+  const agingState = () => {
+    const a = world.sides[ME].aging;
+    if (!a) return null;
+    const left = Math.max(0, a.endsAt - world.t);
+    return { a, frac: 1 - left / a.time, secs: Math.ceil(left / GAME_SPEED) };
+  };
+  function agingBar() {
+    const st = agingState();
+    if (!st) return null;
+    return el('button', { type: 'button', className: 'sg-research sg-aging', onclick: () => setMode({ kind: 'age' }) },
+      el('img', { src: ageIcon(st.a.to), alt: '' }),
+      el('span', { className: 'sg-rname' }, el('small', { textContent: 'Advancing to' }), el('b', { textContent: AGES[st.a.to].name })),
+      el('span', { className: 'sg-rleft sg-aleft', textContent: `${st.secs}s` }),
+      el('div', { className: 'sg-rbar sg-abar' }, el('i', { style: `width:${Math.round(st.frac * 100)}%` })));
+  }
+  /** The ages: where you are, what the next one costs and opens up. */
+  function ageView() {
+    const s = world.sides[ME];
+    const out = [closeRow('Ages')];
+    const unlocks = (age) => {
+      const units = kit.lines.filter((l) => l.age === age).map((l) => l.tiers[0].name);
+      const ups = kit.lines.flatMap((l) => l.tiers.filter((t, i) => i > 0 && t.age === age).map((t) => t.name));
+      const techs = kit.techs.filter((t) => t.age === age).length;
+      return [units.length ? `New: ${units.join(', ')}` : '', ups.length ? `Upgrades: ${ups.join(', ')}` : '', techs ? `${techs} Armory tech${techs > 1 ? 's' : ''}` : '', age === MARKET.age ? 'Markets' : '']
+        .filter(Boolean).join(' · ');
+    };
+    for (let age = 1; age <= 4; age++) {
+      const done = age <= s.age;
+      const next = age === s.age + 1;
+      const going = s.aging?.to === age;
+      const p = next ? world.price(ME, 'age') : null;
+      const a = AGES[age];
+      const card = el('button', { type: 'button', className: `sg-opt sg-age-opt${done ? ' done' : ''}${going ? ' researching' : ''}`,
+        onclick: () => { if (next) { act('age'); refresh(true); } } },
+        going ? el('i', { className: 'sg-opt-fill sg-age-fill', style: `width:${Math.round((agingState()?.frac || 0) * 100)}%` }) : null,
+        el('img', { className: 'sg-opt-ic', src: ageIcon(age), alt: '' }),
+        el('span', { className: 'sg-opt-text' }, el('b', { textContent: a.name }),
+          el('small', { textContent: done ? (age === s.age ? 'Your age now' : 'Done') : going ? 'Advancing…' : `${Math.round(a.time / GAME_SPEED)}s · ${unlocks(age)}` })),
+        done ? el('span', { className: 'sg-tick', textContent: '✓' }) : a.cost ? priceTag(a.cost) : null);
+      out.push(done || !next ? Object.assign(card, { disabled: !going && !done }) : priced(card, a.cost, p === null));
+    }
+    out.push(el('p', { className: 'sg-note', textContent: 'Everyone sees when a player advances. Ages are separate from the Armory, so you can do both at once.' }));
+    return out;
+  }
   function researchBar() {
     const st = researchState();
     if (!st) return null;
@@ -411,10 +472,11 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       out.push(el('div', { className: 'sg-opts' }, list.map((t) => {
         const done = s.researched.has(t.id);
         const p = world.price(ME, 'research', t.id);
-        const blocked = t.after && !s.researched.has(t.after);
+        const ageLock = !done && t.age > s.age;
+        const blocked = (t.after && !s.researched.has(t.after)) || ageLock;
         const now = s.research?.id === t.id;
-        const note = done ? 'Researched' : now ? 'Researching…' : blocked ? `After ${kit.techs.find((x) => x.id === t.after)?.name}` : `${Math.round(t.time / GAME_SPEED)}s to research`;
-        return priced(el('button', { type: 'button', className: `sg-opt${done ? ' done' : ''}${now ? ' researching' : ''}`,
+        const note = done ? 'Researched' : now ? 'Researching…' : ageLock ? AGES[t.age].name : blocked ? `After ${kit.techs.find((x) => x.id === t.after)?.name}` : `${Math.round(t.time / GAME_SPEED)}s to research`;
+        return priced(el('button', { type: 'button', className: `sg-opt${done ? ' done' : ''}${now ? ' researching' : ''}${ageLock ? ' locked' : ''}`,
           onclick: () => { act('research', { id: t.id }); refresh(true); } },
           now ? el('i', { className: 'sg-opt-fill', style: `width:${Math.round((researchState()?.frac || 0) * 100)}%` }) : null,
           el('img', { className: 'sg-opt-ic', src: t.picture !== undefined ? imageUrl('Tech', t.picture) : '', alt: '' }),
@@ -435,26 +497,43 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     goBtn.replaceChildren('GO', held.length ? el('small', { textContent: `${waiting}/${held.length}` }) : '');
     goBtn.classList.toggle('ready', waiting > 0);
     armoryBtn.querySelector('.sg-armory-dot').hidden = !s.research;
+    // Age button: your age, and a ring filling while you advance
+    const shownAge = s.aging?.to ?? s.age;
+    if (ageBtn.dataset.age !== `${shownAge}-${s.age}`) {
+      ageBtn.dataset.age = `${shownAge}-${s.age}`;
+      ageBtn.querySelector('img').src = ageIcon(shownAge);
+      ageBtn.querySelector('.sg-age-name').textContent = AGES[s.age].name.replace(' Age', '');
+    }
+    ageBtn.classList.toggle('aging', Boolean(s.aging));
+    ageBtn.classList.toggle('can', !s.aging && s.age < 4 && s.gold >= AGES[s.age + 1].cost);
+    ageBtn.style.setProperty('--p', s.aging ? String(agingState()?.frac ?? 0) : '0');
     // Rebuild the dock only when something it shows has changed.
     const b = pmode.kind === 'building' ? world.building(pmode.id) : null;
-    const key = [pmode.kind, pmode.plot, pmode.id, s.plots.join(), s.markets, s.researched.size, s.research?.id,
+    const key = [pmode.kind, pmode.plot, pmode.id, s.plots.join(), s.markets, s.researched.size, s.research?.id, s.age, s.aging?.to,
       b ? `${b.tier}${b.hold}${b.waiting}` : '', held.length, world.winner].join('|');
     if (!force && key === lastKey) {
       // Same content: just keep prices and the research bar current.
       for (const btn of dock.querySelectorAll('[data-price]')) btn.disabled = btn.dataset.blocked === '1' || s.gold < Number(btn.dataset.price);
+      const ag = agingState();
+      if (ag) {
+        const w2 = `${Math.round(ag.frac * 100)}%`;
+        for (const bar of dock.querySelectorAll('.sg-abar i, .sg-age-fill')) bar.style.width = w2;
+        const left = dock.querySelector('.sg-aleft');
+        if (left) left.textContent = `${ag.secs}s`;
+      }
       const st = researchState();
       if (st) {
         const w = `${Math.round(st.frac * 100)}%`;
-        for (const bar of dock.querySelectorAll('.sg-rbar i, .sg-opt-fill')) bar.style.width = w;
-        const left = dock.querySelector('.sg-rleft');
+        for (const bar of dock.querySelectorAll('.sg-rbar:not(.sg-abar) i, .sg-opt-fill:not(.sg-age-fill)')) bar.style.width = w;
+        const left = dock.querySelector('.sg-rleft:not(.sg-aleft)');
         if (left) left.textContent = `${st.secs}s`;
       }
       return;
     }
     lastKey = key;
-    const content = pmode.kind === 'build' ? buildView(pmode.plot) : pmode.kind === 'building' ? buildingView(pmode.id) : pmode.kind === 'armory' ? armoryView() : hintView();
+    const content = pmode.kind === 'build' ? buildView(pmode.plot) : pmode.kind === 'building' ? buildingView(pmode.id) : pmode.kind === 'armory' ? armoryView() : pmode.kind === 'age' ? ageView() : hintView();
     const scroll = dock.scrollTop;
-    dock.replaceChildren(...[researchBar(), ...content].flat().filter(Boolean));
+    dock.replaceChildren(...[agingBar(), researchBar(), ...content].flat().filter(Boolean));
     dock.scrollTop = scroll;
   }
 
@@ -466,6 +545,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   let raf = 0;
   let wake = null;
   let hudAt = 0;
+  const seenAges = new Set();
   let ended = false;
   const lockScreen = async () => { if ('wakeLock' in navigator) { try { wake = await navigator.wakeLock.request('screen'); } catch { wake = null; } } };
   lockScreen();
@@ -548,9 +628,20 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       const left = world.sides[ME].blasts;
       blastBtn.disabled = left <= 0;
       blastBtn.querySelector('.sg-blast-n').textContent = String(left);
-      followBtn.hidden = view.follow;
       const ot = world.overtime();
-      if (ot > 1 && world.winner === null) { banner.hidden = false; banner.textContent = `Overtime: castles crumbling, buildings take +${Math.round((ot - 1) * 100)}% damage`; }
+      // "Rob advanced to the Castle Age", for everyone, as in the game
+      for (const e of world.events) {
+        if (e.type !== 'aged') continue;
+        const k = `${e.owner}-${e.age}`;
+        if (seenAges.has(k)) continue;
+        seenAges.add(k);
+        const who = e.owner === ME ? 'You' : players[e.owner].name;
+        const n = el('div', { className: 'sg-notice', style: `--pc:${players[e.owner].colour}` },
+          el('img', { src: ageIcon(e.age), alt: '' }), `${who} advanced to the ${AGES[e.age].name}`);
+        notices.append(n);
+        setTimeout(() => n.remove(), 4500);
+      }
+      if (ot > 1 && world.winner === null) { banner.hidden = false; banner.textContent = `Overtime: Wonders crumbling, buildings take +${Math.round((ot - 1) * 100)}% damage`; }
       refresh();
     }
     if (world.winner !== null && !ended) { ended = true; setTimeout(showEnd, 1200); }
@@ -609,7 +700,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     const row = (label, f) => el('tr', {}, el('th', { scope: 'row', textContent: label }), el('td', { textContent: f(0) }), el('td', { textContent: f(1) }));
     const box = el('div', { className: `sg-end ${won ? 'won' : 'lost'}` },
       el('h2', { textContent: won ? 'Victory!' : 'Defeat' }),
-      el('p', { textContent: `${won ? 'Your team knocked down the enemy castle' : 'The enemy took your castle'} after ${fmt(world.t / GAME_SPEED)} (${fmt(world.t)} game time).` }),
+      el('p', { textContent: `${won ? 'Your team brought down the enemy Wonder' : 'The enemy brought down your Wonder'} after ${fmt(world.t / GAME_SPEED)} (${fmt(world.t)} game time).` }),
       el('table', { className: 'result-table' },
         el('thead', {}, el('tr', {}, el('th'), el('th', { textContent: `Blue: ${civNames[0]}` }), el('th', { textContent: `Red: ${civNames[1]}` }))),
         el('tbody', {},

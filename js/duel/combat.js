@@ -82,7 +82,7 @@ const ATTR = { HP: 0, SPEED: 5, ARMOUR: 8, ATTACK: 9, RELOAD: 10, ACCURACY: 11, 
 // Special-ability attributes (UGC guide numbering), kept in stats.sp
 const SP_ATTRS = new Set([22, 24, 59, 60, 61, 62, 63, 109, 115, 118]);
 // Cost attributes: 100 every resource, then one resource each
-const COST_ATTRS = { 103: 'Food', 104: 'Wood', 105: 'Stone', 106: 'Gold' };
+const COST_ATTRS = { 103: 'Food', 104: 'Wood', 105: 'Gold', 106: 'Stone' };
 
 /** Armour/attack effect values pack class * 256 + amount (amount may be negative). */
 function unpack(value) {
@@ -107,6 +107,10 @@ function applyCommand(stats, [type, unit, unitClass, attr, value], me) {
     case 100:
       if (!stats.cost) return false;
       for (const k of Object.keys(stats.cost)) stats.cost[k] = op(stats.cost[k]);
+      break;
+    case 101:
+      if (stats.trainTime === undefined) return false;
+      stats.trainTime = op(stats.trainTime);
       break;
     case 103: case 104: case 105: case 106:
       if (!stats.cost) return false;
@@ -168,7 +172,7 @@ export function playerTechIds(unit, { attackLevel = 0, armourLevel = 0, bloodlin
  * that accounts for Bloodlines replaces the one that doesn't).
  * Returns the names of civ bonuses that changed this unit.
  */
-export function applyEffects(stats, me, { civEffects, playerTechs, chosen }) {
+export function applyEffects(stats, me, { civEffects, playerTechs, chosen, maxAge = 4 }) {
   const active = new Set();
   const disabled = new Set();
   const done = new Set();
@@ -184,7 +188,7 @@ export function applyEffects(stats, me, { civEffects, playerTechs, chosen }) {
   const ready = (rec) => rec.req.filter((r) => active.has(r)).length >= rec.count;
   const bonuses = [...(civEffects?.bonuses || [])].sort((a, b) => a.id - b.id);
   const picks = chosen.map((id) => playerTechs[id]).filter(Boolean);
-  for (let age = 1; age <= 4; age++) {
+  for (let age = 1; age <= maxAge; age++) {
     active.add(age === 1 ? 104 : 99 + age); // 104 Dark, 101 Feudal, 102 Castle, 103 Imperial
     for (const rec of picks.filter((r) => r.age === age).sort((a, b) => a.id - b.id)) runTech(rec);
     let progress = true;
@@ -226,6 +230,7 @@ export function buildFighter(unit, name, opts = {}) {
     armours: new Map((unit.Armours || []).map((a) => [a.Class, a.Amount])),
     sp: spBase(SPECIALS[unit.ID]),
     cost: { Food: 0, Wood: 0, Gold: 0, Stone: 0, ...(unit.Cost || {}) },
+    trainTime: unit.TrainTime || 0,
   };
   const me = meOf(unit);
   const civEffects = civ ? CIV_EFFECTS[civ] : null;
@@ -236,6 +241,7 @@ export function buildFighter(unit, name, opts = {}) {
     civEffects,
     playerTechs: { ...PLAYER_TECHS, ...utRecs, ...(upgrade ? { [upgrade.id]: upgrade } : {}) },
     chosen: [...playerTechIds(unit, opts), ...uts, ...(upgrade ? [upgrade.id] : [])],
+    maxAge: opts.age ?? 4,   // civ bonuses up to this age (AOSiege: the player's age)
   };
   const bonuses = applyEffects(stats, me, effectOpts);
   const hasBallistics = effectOpts.chosen.includes(93) && Boolean(ranged?.ballistics);
@@ -301,6 +307,7 @@ export function buildFighter(unit, name, opts = {}) {
     special,
     dismount,
     cost: Object.fromEntries(Object.entries(stats.cost).map(([k, v]) => [k, Math.round(v)]).filter(([, v]) => v > 0)),
+    trainTime: Math.round(stats.trainTime * 10) / 10,
     projectile: ranged && {
       speed: ranged.speed,
       arc: ranged.arc,

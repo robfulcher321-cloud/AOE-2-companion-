@@ -217,7 +217,7 @@ export function openLobby({ data, strings, action, name }) {
   // ---------- Joining ----------
   function join() {
     if (!lan) {
-      show(head('Join a game'), el('p', { className: 'sg-note', textContent: 'Joining works in the Android app: everyone on the same Wi-Fi opens AOSiege, one creates a game, the others join it.' }));
+      show(head('Join a game'), el('p', { className: 'sg-note', textContent: 'Joining works in the Android app: everyone on the same Wi-Fi opens Wonder Wars, one creates a game, the others join it.' }));
       return;
     }
     const games = new Map();

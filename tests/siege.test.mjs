@@ -77,6 +77,14 @@ for (const [i, [a, b]] of games.entries()) {
   const v = new World([k, k], data, { seed: 3 });
   v.sides[0].gold = 5000;
   const knights = k.lines.find((l) => l.tiers[0].unitId === 38).key;
+  assert.ok(!v.buy(0, 'build', knights, 4), 'knights need the Castle Age');
+  // Ages: pay, wait, and the next age's units open up
+  assert.ok(v.buy(0, 'age'));
+  assert.equal(v.price(0, 'age'), null, 'one age at a time');
+  while (v.sides[0].aging) v.step();
+  assert.equal(v.sides[0].age, 2);
+  assert.ok(v.events.some((e) => e.type === 'aged' && e.owner === 0 && e.age === 2), 'everyone hears about it');
+  v.sides[0].age = 4;
   assert.ok(v.buy(0, 'build', knights, 4));
   assert.ok(v.buy(0, 'build', knights, 5));
   const [b1, b2] = v.buildings(0);
@@ -160,8 +168,14 @@ for (const [i, [a, b]] of games.entries()) {
   assert.equal(w.blast(0, 60, 0), 0, 'blue can\'t drop it on the middle or red\'s side');
   assert.equal(w.sides[0].blasts, 1, 'a refused drop isn\'t used up');
   assert.ok(w.canBlastAt(0, 20) && !w.canBlastAt(0, 40) && w.canBlastAt(1, 70) && !w.canBlastAt(1, 50));
-  const every = (band) => k.lines.find((l) => l.band === band).tiers[0].every;
-  assert.ok(every('spear') < every('standard') && every('standard') < every('cavalry') && every('cavalry') < every('elephant'), 'spears quickest, elephants slowest');
+  const line = (band) => k.lines.find((l) => l.band === band);
+  assert.equal(line('standard').tiers[0].every, 21, 'Militia every 21 game seconds, its real training time');
+  assert.ok(line('spear').cost < line('standard').cost && line('cavalry').cost > line('standard').cost, 'prices follow real costs');
+  // Trebuchets: half range, and they pack/unpack
+  const treb = k.lines.find((l) => l.tiers[0].unitId === 42);
+  const tf = k.fighter(treb.key, 0);
+  assert.equal(tf.range, 8, 'trebuchet range halved');
+  assert.ok(tf.packs > 0 && tf.walkAs === 331);
 }
 // Territory: soldiers in the enemy's third add 5 gold a tick.
 {

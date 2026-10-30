@@ -18,6 +18,7 @@ export const COMMANDS = {
   hold: (w, p, a) => w.toggleHold(p, a.id),
   go: (w, p) => w.go(p),
   blast: (w, p, a) => w.blast(p, a.x, a.y),
+  age: (w, p) => w.buy(p, 'age'),
 };
 
 /** Snapshot of the host's world. `since`: send only events after this game time. */
@@ -29,7 +30,7 @@ export function snapshot(w, since) {
     territory: w.territory,
     players: w.sides.map((s) => ({
       gold: Math.floor(s.gold), markets: s.markets, plots: s.plots, researched: [...s.researched],
-      research: s.research, blasts: s.blasts, stats: s.stats, out: s.out || 0,
+      research: s.research, blasts: s.blasts, stats: s.stats, out: s.out || 0, age: s.age, aging: s.aging,
     })),
     structures: w.structures.map((b) => [
       b.id, b.kind === 'castle' ? 0 : 1, b.side, b.owner ?? -1, b.building, b.line ?? '', b.plot ?? -1,
@@ -39,6 +40,7 @@ export function snapshot(w, since) {
     units: w.units.map((u) => [
       u.id, u.side, u.owner, u.line, u.tier, r2(u.x), r2(u.y), Math.max(0, Math.round(u.hp * 10) / 10),
       u.face, u.moving ? 1 : 0, u.attackStart ?? -1, u.diedAt ?? -1,
+      u.f.packs ? (u.packing === 'pack' ? 2 : u.packing === 'unpack' ? 3 : u.packed ? 1 : 0) : 0, r2(u.packStart ?? 0),
     ]),
     shots: w.shots.filter((s) => !s.done || w.t - s.t1 < 0.6).map((s) => [
       r2(s.x0), r2(s.y0), r2(s.x1), r2(s.y1), r2(s.t0), r2(s.t1), s.sprite || '', s.arc || 0, s.castle ? 1 : 0, s.landed ? 1 : 0,
@@ -56,10 +58,11 @@ export function applySnapshot(w, snap) {
   w.territory = snap.territory;
   snap.players.forEach((p, i) => {
     const s = w.sides[i];
-    Object.assign(s, { gold: p.gold, markets: p.markets, plots: p.plots, research: p.research, blasts: p.blasts, stats: p.stats, out: p.out });
-    if (p.researched.length !== s.researched.size) {
+    Object.assign(s, { gold: p.gold, markets: p.markets, plots: p.plots, research: p.research, blasts: p.blasts, stats: p.stats, out: p.out, aging: p.aging });
+    if (p.researched.length !== s.researched.size || p.age !== s.age) {
       s.researched = new Set(p.researched);
-      s.researchKey = [...s.researched].sort().join(',');
+      s.age = p.age;
+      s.researchKey = `${[...s.researched].sort().join(',')}|${s.age}`;
     }
   });
   // Buildings and castles, keeping the same objects so the screen's selection sticks
@@ -79,18 +82,19 @@ export function applySnapshot(w, snap) {
   w.sides.forEach((s) => { s.castle = w.castles[s.team]; });
   // Soldiers: last positions become the starting point for this round of sliding
   const units = new Map(w.units.map((u) => [u.id, u]));
-  w.units = snap.units.map(([id, side, owner, line, tier, x, y, hp, face, moving, attackStart, diedAt]) => {
+  w.units = snap.units.map(([id, side, owner, line, tier, x, y, hp, face, moving, attackStart, diedAt, pack, packStart]) => {
     let u = units.get(id);
     const s = w.sides[owner];
     if (!u) u = { id, x, y, r: 0.2 };
     u.px = u.x; u.py = u.y;
     if (u.line !== line || u.tier !== tier || u.key !== s.researchKey) {
-      u.f = w.kits[owner].fighter(line, tier, s.researched, s.researchKey);
+      u.f = w.kits[owner].fighter(line, tier, s.researched, s.researchKey, s.age);
       u.key = s.researchKey;
       u.r = u.f.radius;
     }
     Object.assign(u, { side, owner, line, tier, x, y, hp, face, moving: Boolean(moving),
-      attackStart: attackStart < 0 ? null : attackStart, diedAt: diedAt < 0 ? null : diedAt });
+      attackStart: attackStart < 0 ? null : attackStart, diedAt: diedAt < 0 ? null : diedAt,
+      packed: pack === 1, packing: pack === 2 ? 'pack' : pack === 3 ? 'unpack' : null, packStart });
     return u;
   });
   w.shots = snap.shots.map(([x0, y0, x1, y1, t0, t1, sprite, arc, castle, landed]) => ({ x0, y0, x1, y1, t0, t1, sprite, arc, castle: Boolean(castle), landed: Boolean(landed) }));
