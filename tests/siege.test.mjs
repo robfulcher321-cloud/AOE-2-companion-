@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildKit } from '../js/siege/kit.js';
 import { World, Computer, DT, PLOTS } from '../js/siege/world.js';
+import { snapshot, applySnapshot, COMMANDS } from '../js/siege/sync.js';
 
 const dir = process.argv[2];
 const get = async (p) => (dir
@@ -105,5 +106,61 @@ for (const [i, [a, b]] of games.entries()) {
   assert.ok(v.sides[0].researched.has(forging.id));
   const knight = v.units.find((u) => u.side === 0 && u.hp > 0);
   if (knight) assert.notEqual(knight.f, hp0, 'research reaches units on the field');
+}
+// 2v2: each player has their own base half, gold and buildings; the game still ends.
+{
+  const kits = [await kitFor('Franks'), await kitFor('Britons'), await kitFor('Goths'), await kitFor('Mongols')];
+  const w = new World(kits, data, { seed: 5, teams: [0, 0, 1, 1] });
+  assert.equal(w.plotCount(0), 12);
+  assert.ok(w.plotPos(0, 0)[1] < 0 && w.plotPos(1, 0)[1] > 0, 'top player above the castle, bottom player below');
+  assert.ok(w.plotPos(2, 0)[0] > 43, 'red team builds on the right');
+  const ais = kits.map((_, i) => new Computer(w, i, { level: 'normal' }));
+  let territorySeen = false;
+  while (w.winner === null && w.t < 3600) {
+    for (const a of ais) a.think();
+    w.step();
+    if (w.territory[0] || w.territory[1]) territorySeen = true;
+  }
+  assert.notEqual(w.winner, null, '2v2 game ends');
+  assert.ok(w.sides.every((s) => s.stats.trained > 20), 'every player trained an army');
+  assert.ok(territorySeen, 'someone held the enemy third at some point');
+  console.log(`2v2 Franks+Britons v Goths+Mongols: team ${w.winner} won after ${(w.t / 60).toFixed(1)} game min; trained ${w.sides.map((s) => s.stats.trained)}`);
+}
+// Wi-Fi sync: a joined phone's copy matches the host after snapshots (through JSON, like the network).
+{
+  const kits = [await kitFor('Franks'), await kitFor('Persians'), await kitFor('Goths'), await kitFor('Saracens')];
+  const host = new World(kits, data, { seed: 8, teams: [0, 1, 0, 1] });
+  const copy = new World(kits, data, { seed: 8, teams: [0, 1, 0, 1] });
+  const ais = [1, 2, 3].map((i) => new Computer(host, i, { level: 'normal' }));
+  host.sides[0].gold = 500;
+  assert.ok(COMMANDS.build(host, 0, { key: kits[0].lines[0].key, plot: 0 }), 'command from a joined player builds');
+  let sent = 0;
+  for (let i = 0; i < 30 * 200; i++) {
+    for (const a of ais) a.think();
+    host.step();
+    if (i % 3 === 0) { applySnapshot(copy, JSON.parse(JSON.stringify(snapshot(host, sent)))); sent = host.t; }
+  }
+  applySnapshot(copy, JSON.parse(JSON.stringify(snapshot(host, sent))));
+  assert.equal(copy.units.length, host.units.length);
+  assert.deepEqual(copy.alive, host.alive);
+  assert.deepEqual(copy.sides.map((s) => Math.floor(s.gold)), host.sides.map((s) => Math.floor(s.gold)));
+  assert.deepEqual(copy.structures.map((b) => `${b.id}:${b.owner}:${b.tier}:${b.hp}`), host.structures.map((b) => `${b.id}:${b.owner}:${b.tier ?? 0}:${Math.max(0, Math.round(b.hp))}`));
+  const u = host.units.find((x) => x.hp > 0);
+  assert.equal(copy.units.find((x) => x.id === u.id).f.unitId, u.f.unitId, 'same unit type on the copy');
+  const bytes = JSON.stringify(snapshot(host, host.t - 0.1)).length;
+  console.log(`Wi-Fi snapshot with ${host.units.length} soldiers: ${(bytes / 1024).toFixed(1)} KB`);
+}
+// Territory: soldiers in the enemy's third add 5 gold a tick.
+{
+  const k = await kitFor('Franks');
+  const w = new World([k, k], data, { seed: 2 });
+  const base = w.income(0);
+  w.sides[0].gold = 1000;
+  w.buy(0, 'build', k.lines[0].key, 0);
+  for (let i = 0; i < 30 * 30; i++) w.step();
+  const u = w.units.find((x) => x.side === 0 && x.hp > 0);
+  u.x = 80; u.y = 0;   // walk it into red's third
+  for (let i = 0; i < 30 * 5; i++) w.step();
+  if (w.units.includes(u) && u.hp > 0) assert.equal(w.income(0), base + 5, 'territory bonus');
 }
 console.log('AOSiege checks passed.');

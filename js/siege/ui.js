@@ -7,8 +7,16 @@ import { loadPack } from '../duel/spritepack.js';
 import { buildKit, MARKET, BUILDING_NAMES } from './kit.js';
 import { World, Computer, DT, PLOTS, OVERTIME, START_GOLD, BLAST } from './world.js';
 import { SiegeView } from './view.js';
+import { COMMANDS, snapshot, applySnapshot } from './sync.js';
+import { openLanMenu } from './lobby.js';
 
 const GAME_SPEED = 1.7;
+// Player colours (AoE II's), for names, buildings and the minimap. Soldiers wear their team's blue or red.
+export const COLOURS = [
+  { name: 'Blue', hex: '#2f6fe0' }, { name: 'Red', hex: '#d6322b' }, { name: 'Green', hex: '#3bb143' }, { name: 'Yellow', hex: '#e8cf2b' },
+  { name: 'Teal', hex: '#2bc8d6' }, { name: 'Purple', hex: '#a04fe0' }, { name: 'Grey', hex: '#a0a0a0' }, { name: 'Orange', hex: '#ee8a2b' },
+];
+const SNAP_MS = 100;   // Wi-Fi games: the host sends the game state this often
 // game seconds per real second at Normal speed
 const LEVELS = { easy: { income: 0.8, label: 'Easy' }, normal: { income: 1, label: 'Normal' }, hard: { income: 1.25, label: 'Hard' } };
 
@@ -28,6 +36,8 @@ const loadImg = (src) => new Promise((res) => {
   img.onload = img.onerror = () => res(img);
   img.src = src;
 });
+
+export { loadAssets, openGame, LEVELS };
 
 export async function initSiege(root) {
   const { data, strings } = await loadCore();
@@ -56,11 +66,15 @@ export async function initSiege(root) {
     el('label', { className: 'toggle' }, randomBox, el('span', { textContent: 'Random civ for the computer' })),
     el('div', { className: 'field' }, el('span', { textContent: 'Difficulty' }), el('div', { className: 'sg-levels' }, levelBtns)),
     start, status,
+    el('div', { className: 'sg-wifi' },
+      el('h3', { textContent: 'Play with friends' }),
+      el('p', { className: 'sg-note', textContent: 'Up to 4 players (2v2) on the same Wi-Fi. One phone hosts, the others see the game and join; no IP addresses.' }),
+      el('button', { type: 'button', className: 'sg-btn sg-big', textContent: 'Wi-Fi game', onclick: () => openLanMenu({ data, strings }) })),
     el('details', { className: 'sg-how', open: !store.get('sg-played') },
       el('summary', { textContent: 'How to play' }),
       el('ul', {},
         el('li', { textContent: 'Each side has a Castle at the end of one lane. Destroy the enemy Castle to win.' }),
-        el('li', { textContent: `You don't control units. Tap an empty plot (up to ${PLOTS}) to build: each building trains one unit line on a timer, and the units march down the lane and fight on their own. Your civ gets every unit its Barracks, Archery Range, Stable and Castle can train.` }),
+        el('li', { textContent: `You don't control units. Tap an empty plot (up to ${PLOTS}; 12 each in a 2v2) to build: each building trains one unit line on a timer, and the units march down the lane and fight on their own. Your civ gets every unit its Barracks, Archery Range, Stable and Castle can train.` }),
         el('li', { textContent: 'Press and hold a building to upgrade it to the next unit in its line (Militia → Man-at-Arms → … → Champion), or to sell it for half of what you put in. Each building upgrades on its own: lots of cheap units, or fewer strong ones?' }),
         el('li', { textContent: 'Tap a building to hold it: its bar turns blue and the unit waits when ready. Tap GO to send every waiting unit out at once.' }),
         el('li', { textContent: 'The Armory (anvil, bottom left) has Blacksmith upgrades, Ballistics, Chemistry, Bloodlines and your civ\'s unique techs. One at a time; each one reaches all your units, even those already fighting.' }),
@@ -85,7 +99,14 @@ export async function initSiege(root) {
       const assets = await loadAssets(kits);
       store.set('sg-played', '1');
       status.hidden = true;
-      openGame({ data, strings, kits, assets, level, civNames: [myCiv, aiCiv].map((c) => nameText(strings[data.civs[c].name_string_id] || c)) });
+      const civName = (c) => nameText(strings[data.civs[c].name_string_id] || c);
+      openGame({
+        data, kits, assets, me: 0, mode: 'solo',
+        players: [
+          { name: 'You', civName: civName(myCiv), colour: COLOURS[0].hex, team: 0, kind: 'human' },
+          { name: civName(aiCiv), civName: civName(aiCiv), colour: COLOURS[1].hex, team: 1, kind: 'ai', level },
+        ],
+      });
     } catch (err) {
       console.error(err);
       status.textContent = `Couldn't start: ${err.message}`;
@@ -128,11 +149,28 @@ async function loadAssets(kits) {
   return { sprites, unitIcons, buildingIcons };
 }
 
-function openGame({ data, kits, assets, level, civNames }) {
-  const seed = Math.floor(Math.random() * 1e9);
-  const world = new World(kits, data, { seed, income: [1, LEVELS[level].income] });
-  const ai = new Computer(world, 1, { level });
-  const ME = 0;
+/**
+ * players: [{ name, civName, colour, team, kind: 'human'|'ai', level }] in player order.
+ * me: which player this phone is. mode: 'solo' (vs computer), 'host' or 'client' (Wi-Fi).
+ * net (Wi-Fi): { lan, peers: Map(player -> peer id), onLeave() }.
+ */
+function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, seed = Math.floor(Math.random() * 1e9) }) {
+  const world = new World(kits, data, {
+    seed, teams: players.map((p) => p.team),
+    income: players.map((p) => (p.kind === 'ai' ? LEVELS[p.level || 'normal'].income : 1)),
+  });
+  const ME = me;
+  const myTeam = players[ME].team;
+  const client = mode === 'client';
+  const ais = client ? [] : players.map((p, i) => (p.kind === 'ai' ? new Computer(world, i, { level: p.level || 'normal' }) : null)).filter(Boolean);
+  const teamName = (t) => players.filter((p) => p.team === t).map((p) => (players.indexOf(p) === ME ? 'You' : p.name)).join(' + ');
+  const civNames = [teamName(0), teamName(1)];
+  // Every action goes through here: run it (solo, or on the host), or send it to the host.
+  const act = (cmd, args = {}) => {
+    if (!client) return COMMANDS[cmd](world, ME, args);
+    net.lan.send(JSON.stringify({ t: 'cmd', cmd, args }));
+    return true;
+  };
   const kit = kits[ME];
   const unitIcon = (id, pic) => (pic !== undefined ? imageUrl('Unit', pic) : assets.unitIcons[id]?.src || '');
   const bldIcon = (id) => { const pic = kit.buildingPicture(id); return pic !== undefined ? imageUrl('Building', pic) : ''; };
@@ -146,7 +184,7 @@ function openGame({ data, kits, assets, level, civNames }) {
     const fill = el('i');
     const count = el('b', { className: 'sg-count', textContent: '0' });
     const wrap = el('div', { className: `sg-castle sg-castle-${side ? 'red' : 'blue'}` },
-      el('span', {}, side ? civNames[1] : `You (${civNames[0]})`), el('span', { className: 'sg-units', title: 'Soldiers on the map' }, '⚔ ', count),
+      el('span', {}, civNames[side]), el('span', { className: 'sg-units', title: 'Soldiers on the map' }, '⚔ ', count),
       el('div', { className: 'sg-cbar' }, fill));
     return { wrap, fill, count };
   };
@@ -181,14 +219,14 @@ function openGame({ data, kits, assets, level, civNames }) {
   document.body.classList.add('sg-open');
 
   // ---------- The dock: what you can do right now ----------
-  // mode: { kind: 'hint' } | { kind: 'build', plot } | { kind: 'building', id } | { kind: 'armory' }
-  let mode = { kind: 'hint' };
+  // pmode: { kind: 'hint' } | { kind: 'build', plot } | { kind: 'building', id } | { kind: 'armory' }
+  let pmode = { kind: 'hint' };
   let lastKey = '';
   const view = new SiegeView(canvas, mini, {
     tapPlot: (i) => setMode({ kind: 'build', plot: i }),
     tapBuilding: (b) => {
       if (b.line === 'market') { setMode({ kind: 'building', id: b.id }); return; }
-      world.toggleHold(ME, b.id);
+      act('hold', { id: b.id });
       navigator.vibrate?.(10);
       refresh(true);
     },
@@ -207,19 +245,19 @@ function openGame({ data, kits, assets, level, civNames }) {
   blastBtn.addEventListener('click', () => setAim(!view.aiming));
   dropBtn.addEventListener('click', () => {
     if (!view.aimPoint) return;
-    world.blast(ME, view.aimPoint[0], view.aimPoint[1]);
+    act('blast', { x: view.aimPoint[0], y: view.aimPoint[1] });
     navigator.vibrate?.([40, 30, 80]);
     setAim(false);
   });
-  view.setup(world, { ...assets, mySide: ME });
+  view.setup(world, { ...assets, mySide: ME, colours: players.map((p) => p.colour) });
   screen.view = view;
   view.resize();
   followBtn.addEventListener('click', () => { view.follow = true; });
-  armoryBtn.addEventListener('click', () => setMode(mode.kind === 'armory' ? { kind: 'hint' } : { kind: 'armory' }));
-  goBtn.addEventListener('click', () => { world.go(ME); navigator.vibrate?.(30); refresh(true); });
+  armoryBtn.addEventListener('click', () => setMode(pmode.kind === 'armory' ? { kind: 'hint' } : { kind: 'armory' }));
+  goBtn.addEventListener('click', () => { act('go'); navigator.vibrate?.(30); refresh(true); });
 
   function setMode(m) {
-    mode = m;
+    pmode = m;
     view.selected = m.kind === 'building' ? m.id : null;
     view.selectedPlot = m.kind === 'build' ? m.plot : null;
     armoryBtn.classList.toggle('on', m.kind === 'armory');
@@ -238,7 +276,7 @@ function openGame({ data, kits, assets, level, civNames }) {
     const held = world.held(ME).length;
     return [
       el('div', { className: 'sg-dock-head' }, el('b', { textContent: 'Your base' }),
-        el('span', { className: 'sg-plots', textContent: `${s.plots.filter(Boolean).length}/${PLOTS} plots` })),
+        el('span', { className: 'sg-plots', textContent: `${s.plots.filter(Boolean).length}/${world.plotCount(ME)} plots` })),
       el('ul', { className: 'sg-hints' },
         el('li', {}, el('b', { textContent: 'Tap an empty plot' }), ' to build.'),
         el('li', {}, el('b', { textContent: 'Tap a building' }), ' to hold its next unit (blue bar); ', el('b', { textContent: 'GO' }), ' sends all held units together.'),
@@ -269,14 +307,14 @@ function openGame({ data, kits, assets, level, civNames }) {
         const needs = line.needs && !world.unlocked(ME, line) ? `Needs ${kit.techs.find((t) => t.id === line.needs)?.name || 'a tech'} (Armory)` : null;
         const steps = line.tiers.length > 1 ? `→ ${line.tiers.at(-1).name}` : 'no upgrades';
         return option(line.tiers[0].name, `1 per ${Math.round(line.tiers[0].every / GAME_SPEED)}s · ${steps}`, unitIcon(line.tiers[0].unitId, line.tiers[0].picture),
-          line.cost, () => { if (world.buy(ME, 'build', line.key, plot)) setMode({ kind: 'hint' }); },
+          line.cost, () => { if (world.canBuy(ME, 'build', line.key, plot) && act('build', { key: line.key, plot })) setMode({ kind: 'hint' }); },
           p === null, needs);
       })));
     }
     const mp = world.price(ME, 'market', null, plot);
     out.push(el('h4', { className: 'sg-group' }, el('img', { src: bldIcon(84), alt: '' }), 'Economy'));
     out.push(el('div', { className: 'sg-opts' }, option('Market', `+${MARKET.income} gold every 4s · ${s.markets}/${MARKET.max} built`, bldIcon(84), MARKET.cost,
-      () => { if (world.buy(ME, 'market', null, plot)) setMode({ kind: 'hint' }); }, mp === null)));
+      () => { if (world.canBuy(ME, 'market', null, plot) && act('market', { plot })) setMode({ kind: 'hint' }); }, mp === null)));
     return out;
   }
 
@@ -284,7 +322,7 @@ function openGame({ data, kits, assets, level, civNames }) {
     const b = world.building(id);
     if (!b || b.side !== ME) { setTimeout(() => setMode({ kind: 'hint' })); return []; }
     const s = world.sides[ME];
-    const sellBtn = el('button', { type: 'button', className: 'sg-sell', onclick: () => { world.sell(ME, b.id); setMode({ kind: 'hint' }); } },
+    const sellBtn = el('button', { type: 'button', className: 'sg-sell', onclick: () => { act('sell', { id: b.id }); setMode({ kind: 'hint' }); } },
       'Sell for ', goldImg(), String(world.sellValue(b.id)));
     if (b.line === 'market') {
       return [closeRow('Market'), el('p', { className: 'sg-note', textContent: `Adds ${MARKET.income} gold every 4 seconds.` }), sellBtn];
@@ -303,10 +341,10 @@ function openGame({ data, kits, assets, level, civNames }) {
       steps,
       el('p', { className: 'sg-note', textContent: `${Math.floor(f.hp)} HP · ${stat(atk ?? 0)} attack · ${stat(f.armours.get(4) ?? 0)}/${stat(f.armours.get(3) ?? 0)} armour · 1 every ${Math.round(b.every / GAME_SPEED)}s` }),
       el('div', { className: 'sg-acts' },
-        next ? priced(el('button', { type: 'button', className: 'sg-buy', onclick: () => { world.buy(ME, 'upgrade', b.id); refresh(true); } },
+        next ? priced(el('button', { type: 'button', className: 'sg-buy', onclick: () => { act('upgrade', { id: b.id }); refresh(true); } },
           el('span', { className: 'sg-buy-label', textContent: `Upgrade to ${next.name}` }), priceTag(next.upgrade)), next.upgrade, upPrice === null)
           : el('p', { className: 'sg-note', textContent: 'Fully upgraded.' }),
-        el('button', { type: 'button', className: `sg-hold${b.hold ? ' on' : ''}`, onclick: () => { world.toggleHold(ME, b.id); refresh(true); },
+        el('button', { type: 'button', className: `sg-hold${b.hold ? ' on' : ''}`, onclick: () => { act('hold', { id: b.id }); refresh(true); },
           textContent: b.hold ? (b.waiting ? 'Release now' : 'Stop holding') : 'Hold next unit' }),
         sellBtn),
     ];
@@ -335,7 +373,7 @@ function openGame({ data, kits, assets, level, civNames }) {
         const blocked = t.after && !s.researched.has(t.after);
         const note = done ? 'Researched' : s.research?.id === t.id ? 'Researching…' : blocked ? `After ${kit.techs.find((x) => x.id === t.after)?.name}` : `${Math.round(t.time / GAME_SPEED)}s to research`;
         return priced(el('button', { type: 'button', className: `sg-opt${done ? ' done' : ''}`,
-          onclick: () => { world.buy(ME, 'research', t.id); refresh(true); } },
+          onclick: () => { act('research', { id: t.id }); refresh(true); } },
           el('img', { className: 'sg-opt-ic', src: t.picture !== undefined ? imageUrl('Tech', t.picture) : '', alt: '' }),
           el('span', { className: 'sg-opt-text' }, el('b', { textContent: t.name }), el('small', { textContent: note })),
           done ? el('span', { className: 'sg-tick', textContent: '✓' }) : priceTag(t.cost)), t.cost, done || p === null);
@@ -355,8 +393,8 @@ function openGame({ data, kits, assets, level, civNames }) {
     goBtn.classList.toggle('ready', waiting > 0);
     armoryBtn.querySelector('.sg-armory-dot').hidden = !s.research;
     // Rebuild the dock only when something it shows has changed.
-    const b = mode.kind === 'building' ? world.building(mode.id) : null;
-    const key = [mode.kind, mode.plot, mode.id, s.plots.join(), s.markets, s.researched.size, s.research?.id,
+    const b = pmode.kind === 'building' ? world.building(pmode.id) : null;
+    const key = [pmode.kind, pmode.plot, pmode.id, s.plots.join(), s.markets, s.researched.size, s.research?.id,
       b ? `${b.tier}${b.hold}${b.waiting}` : '', held.length, world.winner].join('|');
     if (!force && key === lastKey) {
       // Same content: just keep prices and the research bar current.
@@ -366,7 +404,7 @@ function openGame({ data, kits, assets, level, civNames }) {
       return;
     }
     lastKey = key;
-    const content = mode.kind === 'build' ? buildView(mode.plot) : mode.kind === 'building' ? buildingView(mode.id) : mode.kind === 'armory' ? armoryView() : hintView();
+    const content = pmode.kind === 'build' ? buildView(pmode.plot) : pmode.kind === 'building' ? buildingView(pmode.id) : pmode.kind === 'armory' ? armoryView() : hintView();
     const scroll = dock.scrollTop;
     dock.replaceChildren(...content.flat().filter(Boolean));
     dock.scrollTop = scroll;
@@ -384,24 +422,76 @@ function openGame({ data, kits, assets, level, civNames }) {
   const lockScreen = async () => { if ('wakeLock' in navigator) { try { wake = await navigator.wakeLock.request('screen'); } catch { wake = null; } } };
   lockScreen();
 
+  // Wi-Fi: the host sends snapshots and runs joined players' commands; a joined phone draws the snapshots.
+  let snapAt = 0;
+  let snapT = 0;
+  let sentT = 0;
+  let lastSnap = 0;
+  const offs = [];
+  if (mode === 'host') {
+    offs.push(net.lan.on('message', (m) => {
+      let msg; try { msg = JSON.parse(m.data); } catch { return; }
+      const p = [...net.peers].find(([, peer]) => peer === m.peer)?.[0];
+      if (p === undefined || msg.t !== 'cmd' || !COMMANDS[msg.cmd]) return;
+      COMMANDS[msg.cmd](world, p, msg.args || {});
+    }));
+    offs.push(net.lan.on('peer', (e) => {
+      if (e.state !== 'leave') return;
+      // A player who drops out is replaced by the computer.
+      for (const [p, peer] of net.peers) {
+        if (peer !== e.peer) continue;
+        net.peers.delete(p);
+        players[p].kind = 'ai';
+        ais.push(new Computer(world, p, { level: 'normal' }));
+        banner.hidden = false; banner.textContent = `${players[p].name} left; the computer plays for them`;
+        setTimeout(() => { banner.hidden = true; }, 4000);
+      }
+    }));
+  }
+  if (client) {
+    offs.push(net.lan.on('message', (m) => {
+      let msg; try { msg = JSON.parse(m.data); } catch { return; }
+      if (msg.t === 'snap') {
+        applySnapshot(world, msg.s);
+        snapAt = performance.now(); snapT = msg.s.t;
+        if (msg.paused !== !running) setRunning(!msg.paused, true);
+      }
+    }));
+    offs.push(net.lan.on('closed', () => {
+      if (world.winner !== null) return;
+      banner.hidden = false; banner.textContent = 'Lost the connection to the host';
+    }));
+  }
+
   const frame = (now) => {
     const dt = Math.min(0.25, (now - last) / 1000);
     last = now;
-    if (running && world.winner === null) {
+    if (!client && running && world.winner === null) {
       acc += dt * GAME_SPEED * speed;
       let n = 0;
-      while (acc >= DT && n < 40) { ai.think(); world.step(); acc -= DT; n++; }
+      while (acc >= DT && n < 40) { for (const a of ais) a.think(); world.step(); acc -= DT; n++; }
       if (n === 40) acc = 0;
     }
-    view.draw(running ? Math.min(1, acc / DT) : 1);
+    if (mode === 'host' && (now - lastSnap >= SNAP_MS || (world.winner !== null && !ended))) {
+      lastSnap = now;
+      net.lan.broadcast(JSON.stringify({ t: 'snap', s: snapshot(world, sentT), paused: !running }));
+      sentT = world.t;
+    }
+    if (client) {
+      // Slide soldiers between snapshots, and keep animations ticking.
+      const since = (now - snapAt) / 1000;
+      if (snapAt && running) world.t = snapT + Math.min(0.2, since) * GAME_SPEED;
+      view.draw(snapAt ? Math.min(1, since / (SNAP_MS / 1000)) : 1);
+    } else view.draw(running ? Math.min(1, acc / DT) : 1);
     if (now - hudAt > 150) {
       hudAt = now;
       clock.textContent = fmt(world.t / GAME_SPEED);
       for (const s of [0, 1]) {
-        const c = world.sides[s].castle;
-        castles[s].fill.style.width = `${Math.max(0, (c.hp / c.maxHp) * 100)}%`;
+        const c = world.teams[s].castle;
+        if (c) castles[s].fill.style.width = `${Math.max(0, (c.hp / c.maxHp) * 100)}%`;
         castles[s].count.textContent = String(world.alive[s]);
       }
+      incomeTxt.classList.toggle('bonus', world.territory[myTeam]);
       const left = world.sides[ME].blasts;
       blastBtn.disabled = left <= 0;
       blastBtn.querySelector('.sg-blast-n').textContent = String(left);
@@ -415,7 +505,8 @@ function openGame({ data, kits, assets, level, civNames }) {
   };
   raf = requestAnimationFrame(frame);
 
-  const setRunning = (on) => {
+  const setRunning = (on, fromHost = false) => {
+    if (client && !fromHost) return;   // only the host can pause a Wi-Fi game
     running = on;
     pauseBtn.textContent = on ? '❚❚' : '▶';
     pauseBtn.setAttribute('aria-label', on ? 'Pause' : 'Resume');
@@ -427,8 +518,11 @@ function openGame({ data, kits, assets, level, civNames }) {
   const onVis = () => { if (document.hidden && running && world.winner === null) setRunning(false); };
   document.addEventListener('visibilitychange', onVis);
 
+  if (client) { pauseBtn.hidden = true; speedBtn.hidden = true; }
   function close() {
     cancelAnimationFrame(raf);
+    for (const off of offs) off();
+    if (net) net.onLeave?.();
     document.removeEventListener('visibilitychange', onVis);
     wake?.release?.();
     screen.remove();
@@ -450,23 +544,29 @@ function openGame({ data, kits, assets, level, civNames }) {
   }
 
   function showEnd() {
-    const won = world.winner === ME;
-    const S = world.sides;
+    const won = world.winner === myTeam;
+    // Totals per team (one player each in a 1v1)
+    const team = (t) => world.sides.filter((s) => s.team === t);
+    const S = [0, 1].map((t) => ({
+      stats: Object.fromEntries(['trained', 'kills', 'earned', 'spent'].map((k) => [k, team(t).reduce((a, s) => a + (s.stats[k] || 0), 0)])),
+      researched: { size: team(t).reduce((a, s) => a + s.researched.size, 0) },
+      blasts: team(t).reduce((a, s) => a + s.blasts, 0),
+    }));
     const row = (label, f) => el('tr', {}, el('th', { scope: 'row', textContent: label }), el('td', { textContent: f(0) }), el('td', { textContent: f(1) }));
     const box = el('div', { className: `sg-end ${won ? 'won' : 'lost'}` },
       el('h2', { textContent: won ? 'Victory!' : 'Defeat' }),
-      el('p', { textContent: `${won ? `You knocked down the ${civNames[1]} castle` : `The ${civNames[1]} took your castle`} after ${fmt(world.t / GAME_SPEED)} (${fmt(world.t)} game time).` }),
+      el('p', { textContent: `${won ? 'Your team knocked down the enemy castle' : 'The enemy took your castle'} after ${fmt(world.t / GAME_SPEED)} (${fmt(world.t)} game time).` }),
       el('table', { className: 'result-table' },
-        el('thead', {}, el('tr', {}, el('th'), el('th', { textContent: `You (${civNames[0]})` }), el('th', { textContent: civNames[1] }))),
+        el('thead', {}, el('tr', {}, el('th'), el('th', { textContent: `Blue: ${civNames[0]}` }), el('th', { textContent: `Red: ${civNames[1]}` }))),
         el('tbody', {},
           row('Units trained', (i) => S[i].stats.trained),
           row('Enemies killed', (i) => S[i].stats.kills),
           row('Techs researched', (i) => S[i].researched.size),
-          row('Explosion used', (i) => (S[i].blasts > 0 ? 'No' : 'Yes')),
+          row('Explosions left', (i) => S[i].blasts),
           row('Gold earned', (i) => Math.round(S[i].stats.earned)),
           row('Gold spent', (i) => Math.round(S[i].stats.spent)))),
       el('div', { className: 'sg-end-acts' },
-        el('button', { type: 'button', className: 'fight', textContent: 'Play again', onclick: () => { close(); openGame({ data, kits, assets, level, civNames }); } }),
+        mode === 'solo' ? el('button', { type: 'button', className: 'fight', textContent: 'Play again', onclick: () => { close(); openGame({ data, kits, assets, players, me, mode }); } }) : null,
         el('button', { type: 'button', className: 'sg-btn', textContent: 'Back', onclick: close })));
     screen.append(box);
   }

@@ -22,15 +22,20 @@ export const LANE = { length: 86, half: 10 };
 export const RIVER = { x0: 31, x1: 55, half: 2.6 };
 const LANE_Y = (RIVER.half + LANE.half) / 2;   // centre line of each lane
 export const CASTLE_X = [13, 73];
-// Building plots for blue (red mirrors them), in the order the computer fills them:
-// three columns in front of the castle, one each side of it, two columns behind it.
+// Building plots for blue (red mirrors them), in the order the computer fills them.
+// One player a team: three columns in front of the castle, one each side of it,
+// two columns behind it. Two a team: each gets two rows, top player above the
+// castle (top lane), bottom player below it (bottom lane).
 const ROWS = [0, -6, 6];
 const PLOT_LAYOUT = [
   ...[18.5, 22, 25.5].flatMap((x) => ROWS.map((y) => [x, y])),
   [13, -7], [13, 7],
   ...[8, 4.5].flatMap((x) => ROWS.map((y) => [x, y])),
 ];
-export const PLOTS = PLOT_LAYOUT.length;   // building plots per side
+const HALF_LAYOUT = (rows) => [18.5, 22, 25.5, 29, 8, 4.5].flatMap((x) => rows.map((y) => [x, y]));
+const TEAM_LAYOUTS = { 1: [PLOT_LAYOUT], 2: [HALF_LAYOUT([-3.6, -7.6]), HALF_LAYOUT([3.6, 7.6])] };
+export const PLOTS = PLOT_LAYOUT.length;   // building plots for a player alone on their team
+export const TERRITORY = { share: 1 / 3, bonus: 5 };   // +5 gold a tick while you hold the enemy's third
 const BIN = 2;                 // tiles: units are bucketed along the lane for "who's near" lookups
 const MELEE_SLACK = 0.35;      // tiles: a melee unit this close counts as touching (no running on the spot in a crowd)
 const BUILDING_SLACK = 0.45;   // tiles: buildings are big; a unit at their foot can hit them
@@ -60,10 +65,10 @@ export function mulberry32(seed) {
   };
 }
 
-/** Plot centre for side 0 or 1. */
-export function plotPos(side, i) {
+/** Plot centre for a lone player on team 0 or 1 (kept for older callers). */
+export function plotPos(team, i) {
   const [x, y] = PLOT_LAYOUT[i];
-  return side === 0 ? [x, y] : [LANE.length - x, y];
+  return team === 0 ? [x, y] : [LANE.length - x, y];
 }
 
 // Math.hypot is slow in hot loops; this is the same for two values.
@@ -72,10 +77,16 @@ const cost = (f) => Object.values(f.cost || {}).reduce((a, b) => a + b, 0);
 
 export class World {
   /**
-   * kits: [blue kit, red kit] from buildKit; data: aoe2techtree data (for building stats).
-   * opts.income: per-side income multipliers (the computer's difficulty).
+   * kits: one per player, from buildKit; data: aoe2techtree data (for building stats).
+   * opts.teams: each player's team (0 blue, 1 red); default one player a team.
+   * opts.income: per-player income multipliers (the computer's difficulty).
+   *
+   * Players ("sides" below, for history) each have their own gold, buildings,
+   * Armory and explosion. Teams share a castle; soldiers fight for their team.
    */
-  constructor(kits, data, { seed = 1, income = [1, 1] } = {}) {
+  constructor(kits, data, { seed = 1, income = null, teams = null } = {}) {
+    teams ||= kits.map((_, i) => i);
+    income ||= kits.map(() => 1);
     this.kits = kits;
     this.rand = mulberry32(seed);
     this.t = 0;
@@ -87,37 +98,59 @@ export class World {
     this.nextId = 1;
     this.sbins = [];
     this.incomeAt = INCOME_EVERY;
-    this.alive = [0, 0];       // living units per side
+    this.alive = [0, 0];       // living units per team
+    this.territory = [false, false];   // team holding the enemy's third of the map this tick
     this.effects = [];         // explosions, for drawing: { t, x, y, side }
     this.bins = [];            // living units by lane position, rebuilt each step
-    this.sides = [0, 1].map((s) => ({
+    this.teams = [0, 1].map((t) => ({ players: teams.map((x, i) => (x === t ? i : -1)).filter((i) => i >= 0), castle: null }));
+    this.sides = kits.map((_, s) => ({
+      team: teams[s],
+      rank: this.teams[teams[s]].players.indexOf(s),   // 0 = top half of the base, 1 = bottom
       gold: START_GOLD,
       incomeMult: income[s],
       researched: new Set(),   // Armory techs done
       researchKey: '',
       research: null,          // { id, endsAt, time } being researched
       markets: 0,
-      plots: Array(PLOTS).fill(null),
+      plots: null,
       stats: { trained: 0, kills: 0, lost: 0, earned: 0, spent: 0 },
       blasts: BLAST.per,       // explosions left
     }));
-    for (const s of [0, 1]) this.castle(s, structureStats(data, 82));
+    for (const s of this.sides) s.plots = Array(this.layout(s).length).fill(null);
+    for (const t of [0, 1]) this.castle(t, structureStats(data, 82));
+    this.castles = this.teams.map((t) => t.castle);
     this.buildingStats = (id) => structureStats(data, id);
   }
 
-  castle(side, st) {
+  layout(s) {
+    const n = this.teams[s.team].players.length;
+    return (TEAM_LAYOUTS[n] || TEAM_LAYOUTS[2])[Math.min(s.rank, 1)];
+  }
+
+  /** Where player p's plot i is. */
+  plotPos(p, i) {
+    const s = this.sides[p];
+    const [x, y] = this.layout(s)[i];
+    return s.team === 0 ? [x, y] : [LANE.length - x, y];
+  }
+
+  plotCount(p) { return this.sides[p].plots.length; }
+
+  castle(team, st) {
     const c = {
-      id: this.nextId++, side, kind: 'castle', building: 82, x: CASTLE_X[side], y: 0, r: 2.2,
+      id: this.nextId++, side: team, kind: 'castle', building: 82, x: CASTLE_X[team], y: 0, r: 2.2,
       hp: st.hp, maxHp: st.hp, f: st, ready: 2,
     };
     this.structures.push(c);
-    this.sides[side].castle = c;
+    this.teams[team].castle = c;
+    for (const p of this.teams[team].players) this.sides[p].castle = c;
     return c;
   }
 
+  /** Gold player p gets each tick: base, Markets, and the territory bonus. */
   income(side) {
     const s = this.sides[side];
-    return Math.round((BASE_INCOME + MARKET.income * s.markets) * s.incomeMult);
+    return Math.round((BASE_INCOME + MARKET.income * s.markets + (this.territory[s.team] ? TERRITORY.bonus : 0)) * s.incomeMult);
   }
 
   // ---------- Spending ----------
@@ -125,7 +158,7 @@ export class World {
   line(side, key) { return this.kits[side].line(key); }
   freePlot(side) { return this.sides[side].plots.indexOf(null); }
   building(id) { return this.structures.find((b) => b.id === id && b.kind === 'building' && b.hp > 0) || null; }
-  buildings(side) { return this.structures.filter((b) => b.side === side && b.kind === 'building' && b.hp > 0); }
+  buildings(side) { return this.structures.filter((b) => b.owner === side && b.kind === 'building' && b.hp > 0); }
   count(side, key) { return this.buildings(side).filter((b) => b.line === key).length; }
   tech(side, id) { return this.kits[side].techs.find((t) => t.id === id) || null; }
 
@@ -155,7 +188,7 @@ export class World {
         return s.markets < MARKET.max && plotFree ? MARKET.cost : null;
       case 'upgrade': {
         const b = this.building(key);
-        if (!b || b.side !== side || b.line === 'market') return null;
+        if (!b || b.owner !== side || b.line === 'market') return null;
         const line = this.line(side, b.line);
         return b.tier + 1 < line.tiers.length ? line.tiers[b.tier + 1].upgrade : null;
       }
@@ -180,12 +213,12 @@ export class World {
     s.stats.spent += p;
     if (kind === 'build' || kind === 'market') {
       const i = plot ?? this.freePlot(side);
-      const [x, y] = plotPos(side, i);
+      const [x, y] = this.plotPos(side, i);
       const isMarket = kind === 'market';
       const line = isMarket ? null : this.line(side, key);
       const st = this.buildingStats(isMarket ? MARKET.building : line.building);
       const b = {
-        id: this.nextId++, side, kind: 'building', building: isMarket ? MARKET.building : line.building,
+        id: this.nextId++, side: s.team, owner: side, kind: 'building', building: isMarket ? MARKET.building : line.building,
         line: isMarket ? 'market' : key, plot: i, x, y, r: 1.5, hp: st.hp, maxHp: st.hp, f: st,
         tier: 0, invested: p, hold: false, waiting: false,
         timer: isMarket ? 0 : Math.min(8, line.tiers[0].every * 0.4), every: isMarket ? 0 : line.tiers[0].every, builtAt: this.t,
@@ -218,20 +251,20 @@ export class World {
     s.blasts -= 1;
     let hit = 0;
     for (const v of this.units) {
-      if (v.side === side || v.hp <= 0) continue;
+      if (v.side === s.team || v.hp <= 0) continue;
       if (hyp(v.x - x, v.y - y) - v.r > BLAST.radius) continue;
-      this.damage(side, v, v.f.hp * BLAST.share + BLAST.flat, { side });
+      this.damage(s.team, v, v.f.hp * BLAST.share + BLAST.flat, { side: s.team, owner: side });
       hit += 1;
     }
-    this.effects.push({ t: this.t, x, y, side, hit });
-    this.events.push({ t: this.t, type: 'blast', side, x, y, hit });
+    this.effects.push({ t: this.t, x, y, side: s.team, owner: side, hit });
+    this.events.push({ t: this.t, type: 'blast', side: s.team, owner: side, x, y, hit });
     return hit;
   }
 
-  /** Best spot for an explosion against `side`'s enemies: [x, y, how many it would hit]. */
-  blastSpot(side) {
+  /** Best spot for an explosion against team `team`'s enemies: [x, y, how many it would hit]. */
+  blastSpot(team) {
     let best = null;
-    const foes = this.units.filter((v) => v.side !== side && v.hp > 0);
+    const foes = this.units.filter((v) => v.side !== team && v.hp > 0);
     for (const a of foes) {
       let n = 0;
       for (const v of foes) if (hyp(v.x - a.x, v.y - a.y) <= BLAST.radius) n += 1;
@@ -243,7 +276,7 @@ export class World {
   /** Knock down your own building for half of what you put into it (frees the plot). */
   sell(side, id) {
     const b = this.building(id);
-    if (!b || b.side !== side || this.winner !== null) return false;
+    if (!b || b.owner !== side || this.winner !== null) return false;
     const s = this.sides[side];
     const back = Math.round(b.invested * SELL_BACK);
     s.gold += back;
@@ -259,7 +292,7 @@ export class World {
   /** Tap a building: hold its next unit (it waits when ready), or stop holding. */
   toggleHold(side, id) {
     const b = this.building(id);
-    if (!b || b.side !== side || b.line === 'market') return false;
+    if (!b || b.owner !== side || b.line === 'market') return false;
     b.hold = !b.hold;
     if (!b.hold && b.waiting) this.releaseUnit(b);
     return true;
@@ -282,7 +315,7 @@ export class World {
   releaseUnit(b) {
     b.waiting = false;
     b.timer = b.every;
-    this.spawn(b.side, b);
+    this.spawn(b.owner, b);
   }
 
   /** Researched techs reach units already on the field, as in the game. */
@@ -290,7 +323,7 @@ export class World {
     const s = this.sides[side];
     s.researchKey = [...s.researched].sort().join(',');
     for (const u of this.units) {
-      if (u.side !== side || u.hp <= 0) continue;
+      if (u.owner !== side || u.hp <= 0) continue;
       const f = this.kits[side].fighter(u.line, u.tier, s.researched, s.researchKey);
       u.hp += Math.max(0, f.hp - u.f.hp);
       u.f = f;
@@ -301,16 +334,19 @@ export class World {
 
   spawn(side, b) {
     const s = this.sides[side];
-    if (this.alive[side] >= CAP) return;
-    this.alive[side] += 1;
+    const team = s.team;
+    // The unit cap is per team, shared fairly between its players.
+    if (this.alive[team] >= CAP || (s.out ?? 0) >= Math.ceil(CAP / this.teams[team].players.length)) return;
+    this.alive[team] += 1;
+    s.out = (s.out ?? 0) + 1;
     const tier = b.tier;
     const f = this.kits[side].fighter(b.line, tier, s.researched, s.researchKey);
-    const dir = side === 0 ? 1 : -1;
+    const dir = team === 0 ? 1 : -1;
     // Which lane: by the building's row; the middle row takes turns.
     b.nextLane = -(b.nextLane || 1);
     const lane = b.y < -1 ? -1 : b.y > 1 ? 1 : b.nextLane;
     const u = {
-      id: this.nextId++, side, line: b.line, tier, f, r: f.radius, lane,
+      id: this.nextId++, side: team, owner: side, line: b.line, tier, f, r: f.radius, lane,
       x: b.x + dir * (b.r + f.radius + 0.3), y: b.y + (this.rand() - 0.5) * 0.6,
       px: 0, py: 0, hp: f.hp, target: null, retarget: 0, ready: 0, pending: null,
       attackStart: null, diedAt: null, face: dir, moving: false, bornAt: this.t, stuck: 0, lastGap: null, sidestep: 0,
@@ -320,7 +356,7 @@ export class World {
     this.units.push(u);
   }
 
-  enemyCastle(side) { return this.sides[1 - side].castle; }
+  enemyCastle(team) { return this.teams[1 - team].castle; }
 
   /** Calls fn(v) for living units whose lane position is within r of x (a quick pre-filter). */
   near(x, r, fn) {
@@ -402,9 +438,10 @@ export class World {
     target.hp -= amount;
     if (target.hp > 0) return;
     target.diedAt = this.t;
-    if (!target.kind) this.alive[target.side] -= 1;
-    const s = this.sides[side];
-    const o = this.sides[1 - side];
+    if (!target.kind) { this.alive[target.side] -= 1; this.sides[target.owner].out -= 1; }
+    // Bounties go to the player whose soldier (or explosion) did it; castle arrows pay the team's first player.
+    const s = this.sides[by?.owner ?? this.teams[side].players[0]];
+    const o = this.sides[target.owner ?? this.teams[target.side].players[0]];
     if (target.kind === 'castle') {
       this.winner = side;
       this.events.push({ t: this.t, type: 'castle', side });
@@ -413,13 +450,13 @@ export class World {
       if (target.line === 'market') o.markets -= 1;
       const bounty = 50;
       s.gold += bounty; s.stats.earned += bounty;
-      this.events.push({ t: this.t, type: 'razed', side, key: target.line, x: target.x, y: target.y, bounty });
+      this.events.push({ t: this.t, type: 'razed', side, owner: by?.owner, key: target.line, x: target.x, y: target.y, bounty });
     } else {
       s.stats.kills += 1;
       o.stats.lost += 1;
       const bounty = Math.max(2, Math.round(cost(target.f) * 0.1));
       s.gold += bounty; s.stats.earned += bounty;
-      if (by) this.events.push({ t: this.t, type: 'kill', side, x: target.x, y: target.y, bounty });
+      if (by) this.events.push({ t: this.t, type: 'kill', side, owner: by.owner, x: target.x, y: target.y, bounty });
     }
   }
 
@@ -457,19 +494,24 @@ export class World {
     const t = (this.t += DT);
     // Overtime: both castles crumble, so even a deadlocked game ends.
     if (t > OVERTIME) {
-      for (const side of [0, 1]) {
-        const c = this.sides[side].castle;
-        if (c.hp > 0) this.damage(1 - side, c, (c.maxHp * CRUMBLE * DT) / this.overtime(), null);
+      for (const team of [0, 1]) {
+        const c = this.teams[team].castle;
+        if (c.hp > 0) this.damage(1 - team, c, (c.maxHp * CRUMBLE * DT) / this.overtime(), null);
         if (this.winner !== null) return;
       }
     }
     // Income
     if (t >= this.incomeAt) {
       this.incomeAt += INCOME_EVERY;
-      for (const side of [0, 1]) { const g = this.income(side); this.sides[side].gold += g; this.sides[side].stats.earned += g; }
+      // Territory: a team with soldiers in the enemy's third of the map earns extra (like Direct Strike).
+      for (const team of [0, 1]) {
+        const line = team === 0 ? LANE.length * (1 - TERRITORY.share) : LANE.length * TERRITORY.share;
+        this.territory[team] = this.units.some((u) => u.side === team && u.hp > 0 && (team === 0 ? u.x > line : u.x < line));
+      }
+      this.sides.forEach((s, i) => { const g = this.income(i); s.gold += g; s.stats.earned += g; });
     }
     // Armory research finishing
-    for (const side of [0, 1]) {
+    for (let side = 0; side < this.sides.length; side++) {
       const s = this.sides[side];
       if (s.research && t >= s.research.endsAt) {
         s.researched.add(s.research.id);
@@ -702,7 +744,7 @@ export class World {
     }
     for (const b of this.structures) {
       if (b.side !== side || b.kind !== 'building' || b.hp <= 0 || b.line === 'market') continue;
-      m[kindOf(b.line, this.kits[side].fighter(b.line, b.tier))] += 2;
+      m[kindOf(b.line, this.kits[b.owner].fighter(b.line, b.tier))] += 2;
     }
     return m;
   }
@@ -745,15 +787,16 @@ export class Computer {
     this.next = w.t + (this.level === 'easy' ? 4 : 2.5);
     const side = this.side;
     const s = w.sides[side];
+    const team = s.team;
     // The explosion: on a big enough clump, or when the castle is in danger.
     if (s.blasts > 0) {
-      const spot = w.blastSpot(side);
-      const castle = s.castle;
-      const nearCastle = w.units.filter((v) => v.side !== side && v.hp > 0 && Math.abs(v.x - castle.x) < 16).length;
+      const spot = w.blastSpot(team);
+      const castle = w.teams[team].castle;
+      const nearCastle = w.units.filter((v) => v.side !== team && v.hp > 0 && Math.abs(v.x - castle.x) < 16).length;
       const need = this.level === 'easy' ? 22 : this.level === 'hard' ? 11 : 15;
       if (spot && (spot[2] >= need || (nearCastle >= 10 && spot[2] >= 6))) { w.blast(side, spot[0], spot[1]); return; }
     }
-    const foe = w.mix(1 - side);
+    const foe = w.mix(1 - team);
     const foeTotal = 1 + Object.values(foe).reduce((a, b) => a + b, 0);
     const kit = w.kits[side];
     const builds = w.buildings(side);

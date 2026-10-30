@@ -3,7 +3,7 @@
 // with their in-game animations, and a minimap. Also turns touches into
 // actions: drag to look around, tap a plot or building, press and hold a building.
 
-import { LANE, PLOTS, plotPos, CASTLE_X, RIVER, BLAST } from './world.js';
+import { LANE, CASTLE_X, RIVER, BLAST } from './world.js';
 
 const TILE = 96 / Math.SQRT2;   // screen px per tile at zoom 1 (same as the Test arena)
 const DEPTH = 0.5;
@@ -30,15 +30,22 @@ export class SiegeView {
     this.bindPan();
   }
 
-  setup(world, { sprites = null, unitIcons = {}, buildingIcons = {}, mySide = 0 } = {}) {
+  /**
+   * mySide: the player this screen belongs to. colours: each player's chosen colour
+   * (buildings, frames, minimap); soldiers wear their team's colour (blue or red),
+   * since those are the only colours their sprites come in.
+   */
+  setup(world, { sprites = null, unitIcons = {}, buildingIcons = {}, mySide = 0, colours = null } = {}) {
     this.w = world;
     this.sprites = sprites;
     this.unitIcons = unitIcons;
     this.buildingIcons = buildingIcons;
     this.me = mySide;
+    this.myTeam = world.sides[mySide].team;
+    this.colours = colours || world.sides.map((s) => SIDE[s.team]);
     this.grassPattern = null;
     this.follow = true;
-    this.cam.x = CASTLE_X[mySide] + (mySide === 0 ? 6 : -6);
+    this.cam.x = CASTLE_X[this.myTeam] + (this.myTeam === 0 ? 6 : -6);
     this.floaters = [];
     this.seen = world.events.length;
   }
@@ -123,16 +130,16 @@ export class SiegeView {
     // Buildings: their platform and the icon standing on it
     let best = null;
     for (const b of this.w.structures) {
-      if (b.side !== this.me || b.kind !== 'building' || b.hp <= 0) continue;
+      if (b.owner !== this.me || b.kind !== 'building' || b.hp <= 0) continue;
       const box = this.boxOf(b);
       if (px >= box.x0 - 6 && px <= box.x1 + 6 && py >= box.y0 - 6 && py <= box.y1 + 6) {
         if (!best || box.y1 > best.box.y1) best = { b, box };
       }
     }
     if (best) return { b: best.b };
-    for (let i = 0; i < PLOTS; i++) {
+    for (let i = 0; i < this.w.plotCount(this.me); i++) {
       if (this.w.sides[this.me].plots[i]) continue;
-      const [x, y] = plotPos(this.me, i);
+      const [x, y] = this.w.plotPos(this.me, i);
       const [lx, ty] = this.toScreen(x - 1.5, y - 1.5);
       const [rx, by] = this.toScreen(x + 1.5, y + 1.5);
       if (px >= lx && px <= rx && py >= ty - 10 && py <= by + 4) return { plot: i };
@@ -164,14 +171,15 @@ export class SiegeView {
     if (!this.follow && performance.now() - this.lastTouch > 8000) this.follow = true;
     if (!this.follow) return;
     const live = this.w.units.filter((u) => u.hp > 0);
-    const dir = this.me === 0 ? 1 : -1;
-    let target = CASTLE_X[this.me] + dir * 8;
-    const mine = live.filter((u) => u.side === this.me);
-    const theirs = live.filter((u) => u.side !== this.me);
+    const team = this.myTeam;
+    const dir = team === 0 ? 1 : -1;
+    let target = CASTLE_X[team] + dir * 8;
+    const mine = live.filter((u) => u.side === team);
+    const theirs = live.filter((u) => u.side !== team);
     // Where the two armies meet, else the front of whichever army exists.
     const front = (arr, s) => (arr.length ? (s === 0 ? Math.max(...arr.map((u) => u.x)) : Math.min(...arr.map((u) => u.x))) : null);
-    const a = front(mine, this.me);
-    const b = front(theirs, 1 - this.me);
+    const a = front(mine, team);
+    const b = front(theirs, 1 - team);
     if (a !== null && b !== null) target = dir > 0 ? Math.min(a, b) + 2 : Math.max(a, b) - 2;
     else if (a !== null) target = a;
     else if (b !== null) target = b;
@@ -225,9 +233,9 @@ export class SiegeView {
 
     // Empty plots on your side
     const used = new Set(this.w.sides[this.me].plots.map((id, i) => (id ? i : -1)));
-    for (let i = 0; i < PLOTS; i++) {
+    for (let i = 0; i < this.w.plotCount(this.me); i++) {
       if (used.has(i)) continue;
-      const [x, y] = plotPos(this.me, i);
+      const [x, y] = this.w.plotPos(this.me, i);
       const sel = this.selectedPlot === i;
       this.diamond(x, y, 1.4, sel ? 'rgb(255 217 122 / .25)' : 'rgb(255 248 220 / .06)', sel ? '#ffd97a' : 'rgb(255 248 220 / .22)');
       if (!this.w.t || this.w.sides[this.me].plots.every((p) => !p)) {
@@ -365,12 +373,13 @@ export class SiegeView {
     ctx.fillStyle = dead ? '#3a3328' : '#7a7160';
     ctx.fillRect(lx, ty - lift, rx - lx, by - ty);
     const selected = this.selected === b.id;
-    ctx.strokeStyle = selected ? '#ffd97a' : SIDE[b.side]; ctx.lineWidth = selected ? 3 : 2;
+    const own = b.owner !== undefined ? this.colours[b.owner] : SIDE[b.side];
+    ctx.strokeStyle = selected ? '#ffd97a' : own; ctx.lineWidth = selected ? 3 : 2;
     ctx.strokeRect(lx, ty - lift, rx - lx, by - ty);
     // The picture on the platform: for a training building, the unit it makes now
     // (it changes when you upgrade), with the building's own icon small in the corner.
     const trains = b.kind === 'building' && b.line !== 'market';
-    const line = trains ? this.w.line(b.side, b.line) : null;
+    const line = trains ? this.w.line(b.owner, b.line) : null;
     const unitImg = trains ? this.unitIcons[line.tiers[b.tier].unitId] : null;
     const bImg = this.buildingIcons[b.building];
     const main = unitImg?.complete && unitImg.naturalWidth ? unitImg : bImg;
@@ -390,7 +399,7 @@ export class SiegeView {
       ctx.fillStyle = '#8a7a5a';
       ctx.fillRect(ix, iy2, sz, sz);
     }
-    const frame = selected ? '#ffd97a' : b.hold ? '#6cc3ff' : SIDE[b.side];
+    const frame = selected ? '#ffd97a' : b.hold ? '#6cc3ff' : own;
     ctx.strokeStyle = frame; ctx.lineWidth = 2.5;
     ctx.strokeRect(ix - 2, iy2 - 2, sz + 4, sz + 4);
     if (since < 1.2 && !dead) {
@@ -547,7 +556,7 @@ export class SiegeView {
     if (this.seen > ev.length) this.seen = 0;
     for (; this.seen < ev.length; this.seen++) {
       const e = ev[this.seen];
-      if ((e.type === 'kill' || e.type === 'razed') && e.side === this.me) this.floaters.push({ t: e.t, x: e.x, y: e.y, text: `+${e.bounty}` });
+      if ((e.type === 'kill' || e.type === 'razed') && e.owner === this.me) this.floaters.push({ t: e.t, x: e.x, y: e.y, text: `+${e.bounty}` });
     }
     const { ctx } = this;
     ctx.font = `700 ${Math.round(11 + 4 * zoom)}px "Merriweather", Georgia, serif`;
@@ -577,7 +586,7 @@ export class SiegeView {
     for (const b of this.w.structures) {
       if (b.hp <= 0) continue;
       const s = b.kind === 'castle' ? 9 : 5;
-      c.fillStyle = SIDE[b.side];
+      c.fillStyle = b.owner !== undefined ? this.colours[b.owner] : SIDE[b.side];
       c.fillRect(sx(b.x) - s / 2, sy(b.y) - s / 2, s, s);
     }
     for (const u of this.w.units) {
