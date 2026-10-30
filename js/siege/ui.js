@@ -8,7 +8,7 @@ import { buildKit, MARKET, BUILDING_NAMES } from './kit.js';
 import { World, Computer, DT, PLOTS, OVERTIME, START_GOLD, BLAST } from './world.js';
 import { SiegeView } from './view.js';
 import { COMMANDS, snapshot, applySnapshot } from './sync.js';
-import { openLanMenu } from './lobby.js';
+import { openLobby } from './lobby.js';
 
 const GAME_SPEED = 1.7;
 // Player colours (AoE II's), for names, buildings and the minimap. Soldiers wear their team's blue or red.
@@ -21,7 +21,11 @@ const SNAP_MS = 100;   // Wi-Fi games: the host sends the game state this often
 const LEVELS = { easy: { income: 0.8, label: 'Easy' }, normal: { income: 1, label: 'Normal' }, hard: { income: 1.25, label: 'Hard' } };
 
 const el = (tag, props = {}, ...children) => {
-  const n = Object.assign(document.createElement(tag), props);
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k.startsWith('aria-') || k.startsWith('data-')) n.setAttribute(k, v);
+    else n[k] = v;
+  }
   for (const c of children.flat(Infinity)) if (c != null && c !== false) n.append(c);
   return n;
 };
@@ -59,17 +63,29 @@ export async function initSiege(root) {
   });
   const start = el('button', { type: 'button', className: 'fight', textContent: 'Start game' });
   const status = el('p', { className: 'status', hidden: true });
+  const nameIn = el('input', { type: 'text', className: 'sg-name', maxLength: 16, value: store.get('sg-name') || '', placeholder: 'Your name', autocomplete: 'nickname', 'aria-label': 'Your name' });
+  const lobby = (action) => () => {
+    const name = nameIn.value.trim();
+    if (!name) { nameIn.focus(); nameIn.classList.add('need'); return; }
+    nameIn.classList.remove('need');
+    store.set('sg-name', name);
+    openLobby({ data, strings, action, name });
+  };
   root.replaceChildren(
+    el('div', { className: 'sg-create' },
+      el('h3', { textContent: 'Custom game' }),
+      el('p', { className: 'sg-note', textContent: 'Up to 4 players, 2 a team. Put the computer in any place, or leave places open for friends on the same Wi-Fi to join.' }),
+      el('label', { className: 'field' }, el('span', { textContent: 'Your name' }), nameIn),
+      el('div', { className: 'sg-create-acts' },
+        el('button', { type: 'button', className: 'fight', textContent: 'Create game', onclick: lobby('create') }),
+        el('button', { type: 'button', className: 'sg-btn sg-big', textContent: 'Join a game', onclick: lobby('join') }))),
+    el('h3', { className: 'sg-quick-h', textContent: 'Quick game: you vs one computer' }),
     el('div', { className: 'field' }, el('span', { textContent: 'Your civilisation' }), mine.button),
     el('label', { className: 'toggle' }, randomMe, el('span', { textContent: 'Random civ for me' })),
     el('div', { className: 'field' }, el('span', { textContent: 'Computer' }), theirs.button),
     el('label', { className: 'toggle' }, randomBox, el('span', { textContent: 'Random civ for the computer' })),
     el('div', { className: 'field' }, el('span', { textContent: 'Difficulty' }), el('div', { className: 'sg-levels' }, levelBtns)),
     start, status,
-    el('div', { className: 'sg-wifi' },
-      el('h3', { textContent: 'Play with friends' }),
-      el('p', { className: 'sg-note', textContent: 'Up to 4 players (2v2) on the same Wi-Fi. One phone hosts, the others see the game and join; no IP addresses.' }),
-      el('button', { type: 'button', className: 'sg-btn sg-big', textContent: 'Wi-Fi game', onclick: () => openLanMenu({ data, strings }) })),
     el('details', { className: 'sg-how', open: !store.get('sg-played') },
       el('summary', { textContent: 'How to play' }),
       el('ul', {},
@@ -200,6 +216,10 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   const armoryBtn = el('button', { type: 'button', className: 'sg-armory-btn', 'aria-label': 'Armory' },
     el('img', { src: bldIcon(103), alt: '' }), el('span', { className: 'sg-armory-dot', hidden: true }));
   const banner = el('div', { className: 'sg-banner', hidden: true });
+  if (!assets.sprites) {   // never silently: say so if the in-game graphics didn't load
+    banner.hidden = false; banner.textContent = 'In-game graphics didn\'t load: showing icons';
+    setTimeout(() => { banner.hidden = true; }, 6000);
+  }
   const blastBtn = el('button', { type: 'button', className: 'sg-blast-btn', 'aria-label': 'Explosion (once per game)' },
     el('span', { className: 'sg-blast-ic', textContent: '💥' }), el('small', { className: 'sg-blast-n', textContent: String(BLAST.per) }));
   const dropBtn = el('button', { type: 'button', className: 'sg-drop', textContent: 'Drop here' });

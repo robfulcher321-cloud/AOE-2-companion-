@@ -49,18 +49,27 @@ class SpritePack {
   }
 }
 
-let current;
+let loading = null;
 
-/** The pack bundled with the app. Packs imported by older versions are cleared. */
-export async function loadPack() {
-  if (current !== undefined) return current;
-  current = null;
-  try {
-    if (typeof caches !== 'undefined') caches.delete(CACHE).catch(() => {});
-    const res = await fetch(BUNDLED);
-    if (res.ok) current = new SpritePack(await res.arrayBuffer());
-  } catch (err) {
-    console.warn('Sprite pack unavailable:', err);
+/**
+ * The pack bundled with the app. Everyone asking while it loads waits for the
+ * same load (an earlier version handed later callers "no pack", so a game
+ * started while the Test tab was still loading it fell back to icons).
+ * A failed load is retried next time. Packs imported by older versions are cleared.
+ */
+export function loadPack() {
+  if (!loading) {
+    loading = (async () => {
+      try {
+        if (typeof caches !== 'undefined') caches.delete(CACHE).catch(() => {});
+        const res = await fetch(BUNDLED);
+        if (res.ok) return new SpritePack(await res.arrayBuffer());
+      } catch (err) {
+        console.warn('Sprite pack unavailable:', err);
+      }
+      return null;
+    })();
+    loading.then((pack) => { if (!pack) loading = null; });
   }
-  return current;
+  return loading;
 }

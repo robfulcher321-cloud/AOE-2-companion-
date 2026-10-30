@@ -1,9 +1,10 @@
-// AOSiege Wi-Fi games: name, host or join, a lobby with four slots (two a team),
-// then the game. Up to 4 players (2v2); empty slots can be filled with the computer.
+// AOSiege custom games: a lobby with four places (two a team). The creator
+// fills each place with the computer (its own difficulty, civ and colour),
+// leaves it open for someone on the same Wi-Fi to join, or closes it.
 //
-// Host's phone: advertises the game on the Wi-Fi and runs it once started.
-// Joining phones: list the games found on the network (no IP to type), join one,
-// pick colour and civ, tick Ready.
+// Creating a game works anywhere; in the Android app it's also advertised on
+// the Wi-Fi so others see it in their Join list (no IP to type). With nobody
+// joined, the game runs on this phone alone.
 
 import { loadTree, civIconUrl, nameText } from '../data.js';
 import { Picker } from '../picker.js';
@@ -16,9 +17,14 @@ const VERSION = 1;   // bump when the network messages change, so mismatched app
 const SLOT_TEAM = [0, 0, 1, 1];
 const SLOT_NAMES = ['Blue 1', 'Blue 2', 'Red 1', 'Red 2'];
 const DICE = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect x="4" y="4" width="32" height="32" rx="7" fill="#8a7a5c"/><g fill="#fff"><circle cx="13" cy="13" r="3.2"/><circle cx="27" cy="13" r="3.2"/><circle cx="20" cy="20" r="3.2"/><circle cx="13" cy="27" r="3.2"/><circle cx="27" cy="27" r="3.2"/></g></svg>')}`;
+const filled = (s) => s.kind === 'human' || s.kind === 'ai';
 
 const el = (tag, props = {}, ...children) => {
-  const n = Object.assign(document.createElement(tag), props);
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k.startsWith('aria-') || k.startsWith('data-')) n.setAttribute(k, v);
+    else n[k] = v;
+  }
   for (const c of children.flat(Infinity)) if (c != null && c !== false) n.append(c);
   return n;
 };
@@ -27,13 +33,14 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
 
-/** Opens the Wi-Fi game screens. ctx: { data, strings } */
-export function openLanMenu({ data, strings }) {
+/** action: 'create' or 'join'. name: this player's name. */
+export function openLobby({ data, strings, action, name }) {
   const lan = getLan();
   const civs = civOptions(data, strings);
+  const civChoices = [{ value: 'random', label: 'Random', icon: DICE }, ...civs];
   const civName = (c) => (c === 'random' ? 'Random' : nameText(strings[data.civs[c]?.name_string_id] || c));
   const box = el('section', { className: 'sg-lobby' });
-  const screen = el('div', { className: 'sg-lobby-wrap', role: 'dialog', 'aria-label': 'Wi-Fi game' }, box);
+  const screen = el('div', { className: 'sg-lobby-wrap', role: 'dialog', 'aria-label': 'Custom game' }, box);
   document.body.append(screen);
   document.body.classList.add('sg-open');
   const cleanups = [];
@@ -43,126 +50,176 @@ export function openLanMenu({ data, strings }) {
     document.body.classList.remove('sg-open');
   };
   const show = (...kids) => box.replaceChildren(...kids.flat().filter(Boolean));
-  const head = (title, back) => el('div', { className: 'sg-lobby-head' },
-    el('button', { type: 'button', className: 'sg-x', textContent: '‹', 'aria-label': 'Back', onclick: back }),
+  const head = (title) => el('div', { className: 'sg-lobby-head' },
+    el('button', { type: 'button', className: 'sg-x', textContent: '‹', 'aria-label': 'Back', onclick: close }),
     el('h2', { textContent: title }));
+  const civPicker = (value, onChange) => {
+    const p = new Picker({ label: 'Civilisation', onChange });
+    p.setOptions(civChoices, value);
+    return p.button;
+  };
+  const swatches = (slots, i, onPick) => {
+    const taken = new Set(slots.filter((s, j) => j !== i && filled(s)).map((s) => s.colour));
+    return el('div', { className: 'sg-swatches' }, COLOURS.map((c) => el('button', {
+      type: 'button', className: `sg-swatch${slots[i].colour === c.hex ? ' on' : ''}`, style: `background:${c.hex}`, title: c.name,
+      disabled: taken.has(c.hex), 'aria-label': c.name, onclick: () => onPick(c.hex),
+    })));
+  };
 
-  if (!lan) {
-    show(head('Wi-Fi game', close),
-      el('p', { className: 'sg-note', textContent: 'Wi-Fi games work in the Android app: everyone on the same Wi-Fi opens AOSiege, one hosts, the others join.' }));
-    return;
-  }
+  // ---------- Creating ----------
+  async function create() {
+    const gameName = `${name}'s game`;
+    show(head(gameName), el('p', { className: 'status', textContent: 'Setting up…' }));
+    let online = false;
+    let netNote = null;
+    if (lan) {
+      try { await lan.host(gameName); online = true; } catch (err) { netNote = `Others can't join right now (${err.message}). You can still play against the computer.`; }
+    } else netNote = 'Friends can join when you create the game in the Android app, on the same Wi-Fi.';
 
-  // ---------- Name, then host or join ----------
-  function menu() {
-    const nameIn = el('input', { type: 'text', className: 'sg-name', maxLength: 16, value: store.get('sg-name') || '', placeholder: 'Your name', autocomplete: 'nickname' });
-    const go = (fn) => () => {
-      const name = nameIn.value.trim();
-      if (!name) { nameIn.focus(); nameIn.classList.add('need'); return; }
-      store.set('sg-name', name);
-      fn(name);
-    };
-    show(head('Wi-Fi game', close),
-      el('label', { className: 'field' }, el('span', { textContent: 'Your name' }), nameIn),
-      el('div', { className: 'sg-lobby-acts' },
-        el('button', { type: 'button', className: 'fight', textContent: 'Host a game', onclick: go(host) }),
-        el('button', { type: 'button', className: 'sg-btn sg-big', textContent: 'Join a game', onclick: go(join) })),
-      el('p', { className: 'sg-note', textContent: 'Everyone needs to be on the same Wi-Fi. Up to 4 players, 2 a team; empty places can be played by the computer.' }));
-  }
-
-  // ---------- Hosting ----------
-  async function host(myName) {
-    const gameName = `${myName}'s game`;
-    show(head(gameName, () => { lan.stopHost(); menu(); }), el('p', { className: 'status', textContent: 'Opening the game…' }));
-    try { await lan.host(gameName); } catch (err) { show(head('Wi-Fi game', menu), el('p', { className: 'status error', textContent: err.message })); return; }
-    const slots = SLOT_NAMES.map(() => ({ kind: 'open' }));
-    slots[0] = { kind: 'human', name: myName, colour: COLOURS[0].hex, civ: store.get('sg-civ') || 'random', peer: 'host', ready: true };
-    slots[2] = { kind: 'ai', name: 'Computer', colour: COLOURS[1].hex, civ: 'random', level: 'normal' };
-    const freeColour = () => COLOURS.find((c) => !slots.some((s) => s.kind !== 'open' && s.colour === c.hex))?.hex || COLOURS[0].hex;
-    const sendLobby = () => lan.broadcast(JSON.stringify({ t: 'lobby', name: gameName, slots: slots.map(({ peer, ...s }) => s) }));
+    const slots = SLOT_NAMES.map(() => ({ kind: online ? 'open' : 'closed' }));
+    slots[0] = { kind: 'human', name, colour: COLOURS[0].hex, civ: store.get('sg-civ') || 'random', peer: 'host', ready: true };
+    slots[2] = { kind: 'ai', colour: COLOURS[1].hex, civ: 'random', level: store.get('sg-level') || 'normal' };
+    let selected = 0;
+    const freeColour = () => COLOURS.find((c) => !slots.some((s) => filled(s) && s.colour === c.hex))?.hex || COLOURS[0].hex;
+    const me = () => slots.findIndex((s) => s.peer === 'host');
+    const sendLobby = () => { if (online) lan.broadcast(JSON.stringify({ t: 'lobby', name: gameName, slots: slots.map(({ peer, ...s }) => s) })); };
     const refresh = () => { sendLobby(); render(); };
+    let stopListening = () => {};
 
-    const offMsg = lan.on('message', (m) => {
-      let msg; try { msg = JSON.parse(m.data); } catch { return; }
-      const mine = slots.findIndex((s) => s.peer === m.peer);
-      if (msg.t === 'hello') {
-        if (msg.v !== VERSION) { lan.sendTo(m.peer, JSON.stringify({ t: 'refused', why: 'Different app versions: update the app on both phones.' })); return; }
-        // Fill the team with fewer people first
-        const order = [1, 3, 2, 0].sort((a, b) => slots.filter((s, i) => SLOT_TEAM[i] === SLOT_TEAM[a] && s.kind !== 'open').length - slots.filter((s, i) => SLOT_TEAM[i] === SLOT_TEAM[b] && s.kind !== 'open').length);
-        const free = order.find((i) => slots[i].kind === 'open') ?? order.find((i) => slots[i].kind === 'ai');
-        if (free === undefined) { lan.sendTo(m.peer, JSON.stringify({ t: 'refused', why: 'That game is full.' })); return; }
-        slots[free] = { kind: 'human', name: String(msg.name || 'Player').slice(0, 16), colour: freeColour(), civ: 'random', peer: m.peer, ready: false };
-        lan.sendTo(m.peer, JSON.stringify({ t: 'welcome', slot: free }));
-        refresh();
-      } else if (mine >= 0 && msg.t === 'set') {
-        const s = slots[mine];
-        if (msg.colour && !slots.some((o, i) => i !== mine && o.kind !== 'open' && o.colour === msg.colour)) s.colour = msg.colour;
-        if (msg.civ && (msg.civ === 'random' || data.civs[msg.civ])) s.civ = msg.civ;
-        if (msg.slot !== undefined && slots[msg.slot]?.kind === 'open') { slots[msg.slot] = s; slots[mine] = { kind: 'open' }; lan.sendTo(m.peer, JSON.stringify({ t: 'welcome', slot: msg.slot })); }
-        refresh();
-      } else if (mine >= 0 && msg.t === 'ready') {
-        slots[mine].ready = Boolean(msg.on);
-        refresh();
+    if (online) {
+      const offMsg = lan.on('message', (m) => {
+        let msg; try { msg = JSON.parse(m.data); } catch { return; }
+        const mine = slots.findIndex((s) => s.peer === m.peer);
+        if (msg.t === 'hello') {
+          if (msg.v !== VERSION) { lan.sendTo(m.peer, JSON.stringify({ t: 'refused', why: 'Different app versions: update the app on both phones.' })); return; }
+          // An open place, on the team with fewer players first
+          const count = (t) => slots.filter((s, i) => SLOT_TEAM[i] === t && filled(s)).length;
+          const free = [1, 3, 2, 0].sort((a, b) => count(SLOT_TEAM[a]) - count(SLOT_TEAM[b])).find((i) => slots[i].kind === 'open');
+          if (free === undefined) { lan.sendTo(m.peer, JSON.stringify({ t: 'refused', why: 'That game has no open places.' })); return; }
+          slots[free] = { kind: 'human', name: String(msg.name || 'Player').slice(0, 16), colour: freeColour(), civ: 'random', peer: m.peer, ready: false };
+          lan.sendTo(m.peer, JSON.stringify({ t: 'welcome', slot: free }));
+          refresh();
+        } else if (mine >= 0 && msg.t === 'set') {
+          const s = slots[mine];
+          if (msg.colour && !slots.some((o, i) => i !== mine && filled(o) && o.colour === msg.colour)) s.colour = msg.colour;
+          if (msg.civ && (msg.civ === 'random' || data.civs[msg.civ])) s.civ = msg.civ;
+          if (msg.slot !== undefined && slots[msg.slot]?.kind === 'open') {
+            slots[msg.slot] = s; slots[mine] = { kind: 'open' };
+            if (selected === mine) selected = msg.slot;
+            lan.sendTo(m.peer, JSON.stringify({ t: 'welcome', slot: msg.slot }));
+          }
+          refresh();
+        } else if (mine >= 0 && msg.t === 'ready') {
+          slots[mine].ready = Boolean(msg.on);
+          refresh();
+        }
+      });
+      const offPeer = lan.on('peer', (e) => {
+        if (e.state !== 'leave') return;
+        const i = slots.findIndex((s) => s.peer === e.peer);
+        if (i >= 0) { slots[i] = { kind: 'open' }; refresh(); }
+      });
+      stopListening = () => { offMsg(); offPeer(); };
+      cleanups.push(() => { stopListening(); lan.stopHost(); });
+    }
+
+    // What the creator can change about the selected place
+    function editor(i) {
+      const s = slots[i];
+      const where = SLOT_NAMES[i];
+      const set = (patch) => { Object.assign(slots[i], patch); refresh(); };
+      if (s.peer === 'host') {
+        return el('div', { className: 'sg-mine' },
+          el('h3', { textContent: `You · ${where}` }),
+          el('div', { className: 'field' }, el('span', { textContent: 'Your civilisation' }), civPicker(s.civ, (c) => { store.set('sg-civ', c); set({ civ: c }); })),
+          el('div', { className: 'field' }, el('span', { textContent: 'Your colour' }), swatches(slots, i, (hex) => set({ colour: hex }))));
       }
-    });
-    const offPeer = lan.on('peer', (e) => {
-      if (e.state !== 'leave') return;
-      const i = slots.findIndex((s) => s.peer === e.peer);
-      if (i >= 0) { slots[i] = { kind: 'open' }; refresh(); }
-    });
-    const stopListening = () => { offMsg(); offPeer(); };
-    cleanups.push(() => { stopListening(); lan.stopHost(); });
-
-    const civPick = new Picker({ label: 'Civilisation', onChange: (c) => { slots.find((s) => s.peer === 'host').civ = c; store.set('sg-civ', c); refresh(); } });
-    civPick.setOptions([{ value: 'random', label: 'Random', icon: DICE }, ...civs], slots[0].civ);
+      if (s.kind === 'ai') {
+        return el('div', { className: 'sg-mine' },
+          el('h3', { textContent: `Computer · ${where}` }),
+          el('div', { className: 'field' }, el('span', { textContent: 'Difficulty' }),
+            el('div', { className: 'sg-levels' }, Object.entries(LEVELS).map(([k, v]) => el('button', {
+              type: 'button', textContent: v.label, 'aria-pressed': String(s.level === k), onclick: () => set({ level: k }),
+            })))),
+          el('div', { className: 'field' }, el('span', { textContent: 'Civilisation' }), civPicker(s.civ, (c) => set({ civ: c }))),
+          el('div', { className: 'field' }, el('span', { textContent: 'Colour' }), swatches(slots, i, (hex) => set({ colour: hex }))),
+          el('div', { className: 'sg-slot-acts' },
+            online ? el('button', { type: 'button', className: 'sg-btn', textContent: 'Open for a friend', onclick: () => { slots[i] = { kind: 'open' }; refresh(); } }) : null,
+            el('button', { type: 'button', className: 'sg-btn', textContent: 'Remove', onclick: () => { slots[i] = { kind: 'closed' }; refresh(); } })));
+      }
+      if (s.kind === 'human') {
+        return el('div', { className: 'sg-mine' },
+          el('h3', { textContent: `${s.name} · ${where}` }),
+          el('p', { className: 'sg-note', textContent: `${s.name} joined from their phone and picks their own civ and colour.` }),
+          el('div', { className: 'sg-slot-acts' }, el('button', { type: 'button', className: 'sg-btn', textContent: `Remove ${s.name}`, onclick: () => {
+            lan.sendTo(s.peer, JSON.stringify({ t: 'refused', why: 'The host removed you from the game.' }));
+            lan.kick(s.peer);
+            slots[i] = { kind: 'open' }; refresh();
+          } })));
+      }
+      // Open or closed
+      return el('div', { className: 'sg-mine' },
+        el('h3', { textContent: `${where}: ${s.kind === 'open' ? 'open' : 'empty'}` }),
+        el('p', { className: 'sg-note', textContent: s.kind === 'open' ? 'Anyone on this Wi-Fi who joins your game takes an open place.' : 'Nobody plays here.' }),
+        el('div', { className: 'sg-slot-acts' },
+          el('button', { type: 'button', className: 'fight', textContent: 'Add the computer', onclick: () => {
+            slots[i] = { kind: 'ai', colour: freeColour(), civ: 'random', level: store.get('sg-level') || 'normal' }; refresh();
+          } }),
+          online ? el('button', { type: 'button', className: 'sg-btn', textContent: s.kind === 'open' ? 'Close (no joining)' : 'Open for a friend', onclick: () => { slots[i] = { kind: s.kind === 'open' ? 'closed' : 'open' }; refresh(); } }) : null,
+          el('button', { type: 'button', className: 'sg-btn', textContent: 'Move me here', onclick: () => {
+            const from = me(); slots[i] = slots[from]; slots[from] = { kind: online ? 'open' : 'closed' }; selected = i; refresh();
+          } })));
+    }
 
     function render() {
-      const me = slots.findIndex((s) => s.peer === 'host');
+      if (!slots[selected]) selected = me();
       const humansReady = slots.every((s) => s.kind !== 'human' || s.ready);
-      const teamsOk = [0, 1].every((t) => slots.some((s, i) => SLOT_TEAM[i] === t && s.kind !== 'open'));
-      const start = el('button', { type: 'button', className: 'fight', textContent: 'Start', disabled: !humansReady || !teamsOk, onclick: () => begin() });
-      show(head(gameName, () => { cleanups.pop()?.(); menu(); }),
-        el('p', { className: 'sg-note', textContent: 'Others on this Wi-Fi can see your game now. Tap an empty place to add the computer.' }),
-        slotGrid(slots, me, {
-          onSlot: (i) => {
-            const s = slots[i];
-            if (s.kind === 'open') slots[i] = { kind: 'ai', name: 'Computer', colour: freeColour(), civ: 'random', level: 'normal' };
-            else if (s.kind === 'ai') {
-              const next = { easy: 'normal', normal: 'hard', hard: null }[s.level];
-              slots[i] = next ? { ...s, level: next } : { kind: 'open' };
-            } else return;
-            refresh();
-          },
-          moveTo: (i) => { if (slots[i].kind === 'open') { slots[i] = slots[me]; slots[me] = { kind: 'open' }; refresh(); } },
-          colour: (hex) => { if (!slots.some((o, i) => i !== me && o.kind !== 'open' && o.colour === hex)) { slots[me].colour = hex; refresh(); } },
-          civPick,
-        }),
-        !teamsOk ? el('p', { className: 'sg-note', textContent: 'Each team needs at least one player or computer.' }) : null,
-        !humansReady ? el('p', { className: 'sg-note', textContent: 'Waiting for everyone to tick Ready…' }) : null,
-        el('div', { className: 'sg-lobby-acts' }, start));
+      const teamsOk = [0, 1].every((t) => slots.some((s, i) => SLOT_TEAM[i] === t && filled(s)));
+      const waiting = slots.some((s) => s.kind === 'open');
+      show(head(gameName),
+        el('p', { className: 'sg-note', textContent: online ? 'Tap a place to set it up: the computer, open for someone on this Wi-Fi to join, or empty.' : 'Tap a place to add the computer or change it.' }),
+        netNote ? el('p', { className: 'sg-note', textContent: netNote }) : null,
+        slotGrid(slots, { me: me(), selected, online, onTap: (i) => { selected = i; render(); } }),
+        editor(selected),
+        !teamsOk ? el('p', { className: 'sg-note sg-warn', textContent: 'Each team needs at least one player or computer.' }) : null,
+        !humansReady ? el('p', { className: 'sg-note', textContent: 'Waiting for everyone who joined to tick Ready…' }) : null,
+        teamsOk && humansReady && waiting ? el('p', { className: 'sg-note', textContent: 'Open places nobody has joined are left empty when you start.' }) : null,
+        el('div', { className: 'sg-lobby-acts' }, el('button', { type: 'button', className: 'fight', textContent: 'Start', disabled: !humansReady || !teamsOk, onclick: () => begin() })));
     }
 
     async function begin() {
-      lan.stopAdvertising();
       const keys = Object.keys(data.civs);
-      const list = slots.map((s, i) => ({ s, i })).filter(({ s }) => s.kind !== 'open');
+      const list = slots.map((s, i) => ({ s, i })).filter(({ s }) => filled(s));
       const players = list.map(({ s, i }) => {
         const civ = s.civ === 'random' ? keys[Math.floor(Math.random() * keys.length)] : s.civ;
-        return { name: s.kind === 'ai' ? `Computer (${LEVELS[s.level].label})` : s.name, civ, civName: civName(civ), colour: s.colour, team: SLOT_TEAM[i], kind: s.kind, level: s.level, peer: s.peer };
+        const pname = s.kind === 'ai' ? `${civName(civ)} (${LEVELS[s.level].label})` : s.name;
+        return { name: pname, civ, civName: civName(civ), colour: s.colour, team: SLOT_TEAM[i], kind: s.kind, level: s.level, peer: s.peer };
       });
       const seed = Math.floor(Math.random() * 1e9);
       const shared = players.map(({ peer, ...p }) => p);
-      players.forEach((p, me) => { if (p.kind === 'human' && p.peer !== 'host') lan.sendTo(p.peer, JSON.stringify({ t: 'start', players: shared, me, seed })); });
+      const guests = players.some((p) => p.kind === 'human' && p.peer !== 'host');
       stopListening();
       cleanups.length = 0;
+      const myIndex = players.findIndex((p) => p.peer === 'host');
+      if (!guests) {
+        if (online) lan.stopHost();
+        await launch(shared, myIndex, 'solo', seed, null);
+        return;
+      }
+      lan.stopAdvertising();
+      players.forEach((p, i) => { if (p.kind === 'human' && p.peer !== 'host') lan.sendTo(p.peer, JSON.stringify({ t: 'start', players: shared, me: i, seed })); });
       const peers = new Map(players.map((p, i) => [i, p.peer]).filter(([, peer]) => peer && peer !== 'host'));
-      await launch(shared, players.findIndex((p) => p.peer === 'host'), 'host', seed, { lan, peers, onLeave: () => lan.stopHost() });
+      await launch(shared, myIndex, 'host', seed, { lan, peers, onLeave: () => lan.stopHost() });
     }
     render();
   }
 
   // ---------- Joining ----------
-  function join(myName) {
+  function join() {
+    if (!lan) {
+      show(head('Join a game'), el('p', { className: 'sg-note', textContent: 'Joining works in the Android app: everyone on the same Wi-Fi opens AOSiege, one creates a game, the others join it.' }));
+      return;
+    }
     const games = new Map();
     const list = el('div', { className: 'sg-games' });
     const draw = () => list.replaceChildren(...(games.size ? [...games.values()].map((g) => el('button', {
@@ -173,85 +230,68 @@ export function openLanMenu({ data, strings }) {
     const stop = () => { offFound(); offLost(); lan.stopDiscover(); };
     cleanups.push(stop);
     lan.discover().catch((err) => list.replaceChildren(el('p', { className: 'status error', textContent: err.message })));
-    show(head('Join a game', () => { cleanups.pop()?.(); menu(); }), list,
-      el('p', { className: 'sg-note', textContent: 'Games hosted on this Wi-Fi show up here. If nothing appears, check you\'re on the same network as the host.' }));
+    show(head('Join a game'), list,
+      el('p', { className: 'sg-note', textContent: 'Games created on this Wi-Fi show up here. If nothing appears, check you\'re on the same network as the host.' }));
     draw();
 
     async function connect(game) {
       stop(); cleanups.pop();
-      show(head(game.name, () => { lan.leave(); menu(); }), el('p', { className: 'status', textContent: 'Joining…' }));
-      try { await lan.join(game); } catch (err) { show(head('Join a game', menu), el('p', { className: 'status error', textContent: err.message })); return; }
+      show(head(game.name), el('p', { className: 'status', textContent: 'Joining…' }));
+      try { await lan.join(game); } catch (err) { show(head('Join a game'), el('p', { className: 'status error', textContent: err.message })); return; }
       let slots = null;
       let mySlot = null;
-      const civPick = new Picker({ label: 'Civilisation', onChange: (c) => { store.set('sg-civ', c); lan.send(JSON.stringify({ t: 'set', civ: c })); } });
-      civPick.setOptions([{ value: 'random', label: 'Random', icon: DICE }, ...civs], 'random');
+      let civ = data.civs[store.get('sg-civ')] ? store.get('sg-civ') : 'random';
       const offMsg = lan.on('message', async (m) => {
         let msg; try { msg = JSON.parse(m.data); } catch { return; }
         if (msg.t === 'welcome') { mySlot = msg.slot; render(); }
         else if (msg.t === 'lobby') { slots = msg.slots; render(); }
-        else if (msg.t === 'refused') { offMsg(); offClosed(); lan.leave(); show(head('Join a game', menu), el('p', { className: 'status error', textContent: msg.why })); }
+        else if (msg.t === 'refused') { offMsg(); offClosed(); lan.leave(); show(head('Join a game'), el('p', { className: 'status error', textContent: msg.why })); }
         else if (msg.t === 'start') {
           offMsg(); offClosed(); cleanups.length = 0;
           await launch(msg.players, msg.me, 'client', msg.seed, { lan, onLeave: () => lan.leave() });
         }
       });
-      const offClosed = lan.on('closed', () => { offMsg(); offClosed(); show(head('Join a game', menu), el('p', { className: 'status error', textContent: 'The host closed the game.' })); });
+      const offClosed = lan.on('closed', () => { offMsg(); offClosed(); show(head('Join a game'), el('p', { className: 'status error', textContent: 'The host closed the game.' })); });
       cleanups.push(() => { offMsg(); offClosed(); lan.leave(); });
-      lan.send(JSON.stringify({ t: 'hello', v: VERSION, name: myName }));
-      const saved = store.get('sg-civ');
-      if (saved && data.civs[saved]) { civPick.setOptions([{ value: 'random', label: 'Random', icon: DICE }, ...civs], saved); lan.send(JSON.stringify({ t: 'set', civ: saved })); }
+      lan.send(JSON.stringify({ t: 'hello', v: VERSION, name }));
+      if (civ !== 'random') lan.send(JSON.stringify({ t: 'set', civ }));
 
       function render() {
         if (!slots || mySlot === null) return;
-        const me = mySlot;
-        const ready = slots[me]?.ready;
-        show(head(game.name, () => { cleanups.pop()?.(); menu(); }),
-          slotGrid(slots, me, {
-            moveTo: (i) => lan.send(JSON.stringify({ t: 'set', slot: i })),
-            colour: (hex) => lan.send(JSON.stringify({ t: 'set', colour: hex })),
-            civPick,
-          }),
+        const ready = slots[mySlot]?.ready;
+        show(head(game.name),
+          slotGrid(slots, { me: mySlot, selected: mySlot, online: true, onTap: (i) => { if (slots[i].kind === 'open') lan.send(JSON.stringify({ t: 'set', slot: i })); } }),
+          el('div', { className: 'sg-mine' },
+            el('div', { className: 'field' }, el('span', { textContent: 'Your civilisation' }), civPicker(civ, (c) => { civ = c; store.set('sg-civ', c); lan.send(JSON.stringify({ t: 'set', civ: c })); })),
+            el('div', { className: 'field' }, el('span', { textContent: 'Your colour' }), swatches(slots, mySlot, (hex) => lan.send(JSON.stringify({ t: 'set', colour: hex })))),
+            el('p', { className: 'sg-note', textContent: 'Tap an open place to move there.' })),
           el('div', { className: 'sg-lobby-acts' },
             el('button', { type: 'button', className: ready ? 'sg-btn sg-big' : 'fight', textContent: ready ? 'Not ready' : 'Ready',
               onclick: () => lan.send(JSON.stringify({ t: 'ready', on: !ready })) })),
-          el('p', { className: 'sg-note', textContent: ready ? 'Waiting for the host to start…' : 'Pick your colour and civ, then tick Ready.' }));
+          el('p', { className: 'sg-note', textContent: ready ? 'Waiting for the host to start…' : 'Pick your civ and colour, then tick Ready.' }));
       }
     }
   }
 
   // ---------- The four places ----------
-  function slotGrid(slots, me, { onSlot, moveTo, colour, civPick }) {
-    const taken = new Set(slots.filter((s, i) => i !== me && s.kind !== 'open').map((s) => s.colour));
+  function slotGrid(slots, { me, selected, online, onTap }) {
     const card = (s, i) => {
-      const mine = i === me;
-      if (s.kind === 'open') {
-        return el('button', { type: 'button', className: 'sg-slot open', onclick: () => (onSlot ? onSlot(i) : moveTo(i)) },
-          el('small', { textContent: SLOT_NAMES[i] }), el('b', { textContent: 'Open' }),
-          el('span', { className: 'sg-slot-hint', textContent: onSlot ? 'Tap to add the computer' : 'Tap to move here' }),
-          onSlot ? el('span', { className: 'sg-slot-move', textContent: 'or move here', onclick: (e) => { e.stopPropagation(); moveTo(i); } }) : null);
+      const cls = `sg-slot${i === me ? ' me' : ''}${i === selected ? ' sel' : ''}${filled(s) ? '' : ` ${s.kind}`}`;
+      const kids = [el('small', { textContent: SLOT_NAMES[i] })];
+      if (s.kind === 'open') kids.push(el('b', { textContent: 'Open' }), el('span', { className: 'sg-slot-hint', textContent: 'Waiting for someone to join' }));
+      else if (s.kind === 'closed') kids.push(el('b', { textContent: 'Empty' }), el('span', { className: 'sg-slot-hint', textContent: online ? 'Tap to add the computer or open it' : 'Tap to add the computer' }));
+      else {
+        kids.push(
+          el('b', { textContent: s.kind === 'ai' ? 'Computer' : `${s.name}${i === me ? ' (you)' : ''}` }),
+          el('span', { className: 'sg-slot-civ' }, s.civ !== 'random' && data.civs[s.civ] ? el('img', { src: civIconUrl(s.civ), alt: '' }) : null, civName(s.civ)),
+          s.kind === 'ai' ? el('span', { className: 'sg-slot-hint', textContent: LEVELS[s.level]?.label || '' })
+            : el('span', { className: `sg-ready${s.ready ? ' on' : ''}`, textContent: s.ready ? 'Ready' : 'Not ready' }));
       }
-      const civ = s.civ;
-      return el(s.kind === 'ai' && onSlot ? 'button' : 'div', { type: 'button', className: `sg-slot${mine ? ' me' : ''}`, style: `--pc:${s.colour}`, onclick: s.kind === 'ai' && onSlot ? () => onSlot(i) : null },
-        el('small', { textContent: SLOT_NAMES[i] }),
-        el('b', { textContent: `${s.name}${mine ? ' (you)' : ''}` }),
-        el('span', { className: 'sg-slot-civ' }, civ !== 'random' && data.civs[civ] ? el('img', { src: civIconUrl(civ), alt: '' }) : null, civName(civ)),
-        s.kind === 'ai' ? el('span', { className: 'sg-slot-hint', textContent: `${LEVELS[s.level].label}${onSlot ? ' · tap to change' : ''}` })
-          : el('span', { className: `sg-ready${s.ready ? ' on' : ''}`, textContent: s.ready ? 'Ready' : 'Not ready' }));
+      return el('button', { type: 'button', className: cls, style: filled(s) ? `--pc:${s.colour}` : '', onclick: () => onTap(i) }, kids);
     };
-    const mineSlot = slots[me];
-    return [
-      el('div', { className: 'sg-slots' },
-        el('div', { className: 'sg-team blue' }, el('h4', { textContent: 'Blue team' }), card(slots[0], 0), card(slots[1], 1)),
-        el('div', { className: 'sg-team red' }, el('h4', { textContent: 'Red team' }), card(slots[2], 2), card(slots[3], 3))),
-      mineSlot && mineSlot.kind === 'human' ? el('div', { className: 'sg-mine' },
-        el('div', { className: 'field' }, el('span', { textContent: 'Your colour' }),
-          el('div', { className: 'sg-swatches' }, COLOURS.map((c) => el('button', {
-            type: 'button', className: `sg-swatch${mineSlot.colour === c.hex ? ' on' : ''}`, style: `background:${c.hex}`, title: c.name,
-            disabled: taken.has(c.hex), 'aria-label': c.name, onclick: () => colour(c.hex),
-          })))),
-        el('div', { className: 'field' }, el('span', { textContent: 'Your civilisation' }), civPick.button),
-        el('p', { className: 'sg-note', textContent: 'Your colour shows on your name, buildings and the minimap; soldiers wear their team\'s blue or red.' })) : null,
-    ];
+    return el('div', { className: 'sg-slots' },
+      el('div', { className: 'sg-team blue' }, el('h4', { textContent: 'Blue team' }), card(slots[0], 0), card(slots[1], 1)),
+      el('div', { className: 'sg-team red' }, el('h4', { textContent: 'Red team' }), card(slots[2], 2), card(slots[3], 3)));
   }
 
   // ---------- Into the game ----------
@@ -264,9 +304,9 @@ export function openLanMenu({ data, strings }) {
       openGame({ data, kits, assets, players, me, mode, seed, net });
     } catch (err) {
       console.error(err);
-      show(head('Wi-Fi game', menu), el('p', { className: 'status error', textContent: `Couldn't start: ${err.message}` }));
+      show(head('Custom game'), el('p', { className: 'status error', textContent: `Couldn't start: ${err.message}` }));
     }
   }
 
-  menu();
+  if (action === 'join') join(); else create();
 }
