@@ -1,7 +1,7 @@
 // Draws an AOSiege game: the lane on the game's grass, buildings as their
 // icons on stone platforms (with the unit they train on a badge above), units
 // with their in-game animations, and a minimap. Also turns touches into
-// actions: drag to look around, tap a plot or building, press and hold a building.
+// actions: drag to look around, tap your base to build, tap a building, drag a new building into place.
 
 import { LANE, CASTLE_X, RIVER, BLAST, TERRITORY } from './world.js';
 import { TEAM_RGB } from '../duel/spritepack.js';
@@ -11,7 +11,7 @@ const DEPTH = 0.5;
 const SIDE = ['#4a8de3', '#d5473d'];
 const SIDE_DARK = ['#1f3f73', '#6e1f19'];
 const MAX_DPR = 2;
-const SHORE = { res: 40, margin: 1.4 };   // river image: px per tile, and how far the beach reaches past the water   // sharper than this costs a lot of drawing on 3x phone screens for little visible gain
+const SHORE = { res: 40, margin: 3, beach: 0.9 };   // river image: px per tile, and how far the beach reaches past the water   // sharper than this costs a lot of drawing on 3x phone screens for little visible gain
 
 /** Player colours. The first two are the sprite pack's own blue and red; others are repainted. */
 export const COLOURS = [
@@ -23,14 +23,15 @@ const rgbOf = (hex) => {
   const m = Math.max(...c, 1);
   return c.map((v) => Math.round((v * 236) / m));
 };
-const BUILDING_KIND = { 276: 'wonder', 12: 'barracks', 87: 'archery', 101: 'stable', 82: 'castle', 84: 'market', 103: 'blacksmith', 49: 'workshop', 104: 'monastery' };
+const BUILDING_KIND = { 276: 'wonder', 12: 'barracks', 87: 'archery', 101: 'stable', 82: 'castle', 84: 'market', 103: 'blacksmith', 49: 'workshop', 104: 'monastery', 79: 'tower1', 234: 'tower2', 235: 'tower3', 236: 'bombard' };
 
 export class SiegeView {
-  /** handlers: { tapPlot(i), tapBuilding(b), holdBuilding(b) } */
+  /** handlers: { tapGround(x, y), tapBuilding(b), holdBuilding(b), tapEmpty(), aimAt(x, y), placed() } */
   constructor(canvas, mini, handlers = {}) {
     this.handlers = handlers;
     this.selected = null;     // building id highlighted while its menu is open
-    this.selectedPlot = null;
+    this.buildAt = null;      // where you tapped to build: [x, y]
+    this.placing = null;      // a new building being put in place: { key, building, r, x, y, ok }
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.mini = mini;
@@ -101,6 +102,11 @@ export class SiegeView {
       this.canvas.setPointerCapture(e.pointerId);
       const r = this.canvas.getBoundingClientRect();
       p = { x0: e.clientX, y0: e.clientY, sx: e.clientX - r.left, sy: e.clientY - r.top, camX: this.cam.x, moved: false, used: false };
+      if (this.placing) {
+        // Placing a building: drag moves it (from wherever you put your finger); a tap puts it there
+        p.place = { x: this.placing.x, y: this.placing.y };
+        return;
+      }
       if (this.aiming) {
         // Aiming the explosion: the circle follows your finger
         p.aim = true;
@@ -116,6 +122,16 @@ export class SiegeView {
     });
     this.canvas.addEventListener('pointermove', (e) => {
       if (!p) return;
+      if (p.place && this.placing) {
+        if (!p.moved && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) > SLOP) p.moved = true;
+        if (!p.moved) return;
+        const r = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - r.left;
+        const ppt = TILE * this.cam.zoom;
+        if (sx < 36 || sx > this.vw - 36) { this.cam.x += (sx < 36 ? -1 : 1) * 0.2; this.clampCam(); p.place.x += (sx < 36 ? -1 : 1) * 0.2; }
+        this.movePlacing(p.place.x + (e.clientX - p.x0) / ppt, p.place.y + (e.clientY - p.y0) / (ppt * DEPTH));
+        return;
+      }
       if (p.aim) {
         const r = this.canvas.getBoundingClientRect();
         const sx = e.clientX - r.left, sy = e.clientY - r.top;
@@ -136,10 +152,15 @@ export class SiegeView {
       if (!p) return;
       clearTimeout(p.timer);
       if (p.aim) { p = null; return; }
+      if (p.place) {
+        if (!cancelled && !p.moved && this.placing) this.movePlacing(...this.toWorld(p.sx, p.sy));
+        p = null;
+        return;
+      }
       if (!cancelled && !p.moved && !p.used) {
         const hit = this.hitTest(p.sx, p.sy);
         if (hit?.b) this.handlers.tapBuilding?.(hit.b);
-        else if (hit?.plot !== undefined) this.handlers.tapPlot?.(hit.plot);
+        else if (hit?.ground) this.handlers.tapGround?.(...hit.ground);
         else this.handlers.tapEmpty?.();
       }
       p = null;
@@ -174,14 +195,20 @@ export class SiegeView {
       }
     }
     if (best) return { b: best.b };
-    for (let i = 0; i < this.w.plotCount(this.me); i++) {
-      if (this.w.sides[this.me].plots[i]) continue;
-      const [x, y] = this.w.plotPos(this.me, i);
-      const [lx, ty] = this.toScreen(x - 1.5, y - 1.5);
-      const [rx, by] = this.toScreen(x + 1.5, y + 1.5);
-      if (px >= lx && px <= rx && py >= ty - 10 && py <= by + 4) return { plot: i };
-    }
+    const [x, y] = this.toWorld(px, py);
+    if (this.w.inZone(this.me, x, y)) return { ground: [x, y] };
     return null;
+  }
+
+  /** Move the building being placed (kept inside your area), and check the spot. */
+  movePlacing(x, y) {
+    const pl = this.placing;
+    if (!pl) return;
+    const z = this.w.zone(this.me);
+    pl.x = Math.max(z.x0 + pl.r, Math.min(z.x1 - pl.r, x));
+    pl.y = Math.max(z.y0 + pl.r, Math.min(z.y1 - pl.r, y));
+    pl.ok = this.w.canPlace(this.me, pl.r, pl.x, pl.y);
+    this.handlers.placed?.(pl);
   }
 
   /** Screen box covering a building's platform, icon and badge. */
@@ -284,26 +311,12 @@ export class SiegeView {
     this.drawRiver(t);
     this.drawScorch(t);
 
-    // Empty plots on your side
-    const used = new Set(this.w.sides[this.me].plots.map((id, i) => (id ? i : -1)));
-    for (let i = 0; i < this.w.plotCount(this.me); i++) {
-      if (used.has(i)) continue;
-      const [x, y] = this.w.plotPos(this.me, i);
-      const sel = this.selectedPlot === i;
-      this.diamond(x, y, 1.4, sel ? 'rgb(255 217 122 / .25)' : 'rgb(255 248 220 / .06)', sel ? '#ffd97a' : 'rgb(255 248 220 / .22)');
-      if (!this.w.t || this.w.sides[this.me].plots.every((p) => !p)) {
-        // Before the first building: a "+" on each plot says what to tap
-        const [px, py] = this.toScreen(x, y);
-        this.ctx.fillStyle = 'rgb(255 248 220 / .35)';
-        this.ctx.font = `700 ${Math.round(18 + 10 * this.cam.zoom)}px sans-serif`;
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('+', px, py + 8);
-      }
-    }
+    this.drawZone();
 
     // Everything that stands, back to front
     const items = [];
     for (const b of this.w.structures) items.push({ y: b.y, b });
+    if (this.placing) items.push({ y: this.placing.y, ghost: this.placing });
     for (const tr of this.treeList()) items.push({ y: tr.y, tree: tr });
     for (const u of this.w.units) {
       const x = u.px + (u.x - u.px) * alpha;
@@ -313,6 +326,7 @@ export class SiegeView {
     items.sort((a, b) => a.y - b.y);
     for (const it of items) {
       if (it.b) this.drawStructure(it.b, t, ppt);
+      else if (it.ghost) this.drawGhost(it.ghost);
       else if (it.tree) this.drawTree(it.tree, zoom);
       else this.drawUnit(it.u, it.x, it.uy, t, zoom);
     }
@@ -320,6 +334,67 @@ export class SiegeView {
     this.drawBlasts(t);
     this.drawFloaters(t, zoom);
     this.drawMini();
+  }
+
+  /**
+   * Your build area: a faint dashed outline (brighter while building), with
+   * "Tap here to build" until your first building, and a marker where you tapped.
+   */
+  drawZone() {
+    const { ctx } = this;
+    const z = this.w.zone(this.me);
+    const [x0, y0] = this.toScreen(z.x0, z.y0);
+    const [x1, y1] = this.toScreen(z.x1, z.y1);
+    if (x1 < 0 || x0 > this.vw) return;
+    const active = Boolean(this.placing || this.buildAt);
+    ctx.save();
+    ctx.setLineDash([8, 8]);
+    ctx.lineWidth = active ? 2 : 1.5;
+    ctx.strokeStyle = active ? 'rgb(255 217 122 / .7)' : 'rgb(255 248 220 / .2)';
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    if (active) { ctx.fillStyle = 'rgb(255 217 122 / .05)'; ctx.fillRect(x0, y0, x1 - x0, y1 - y0); }
+    ctx.restore();
+    if (!this.w.buildings(this.me).length && !active) {
+      const [cx, cy] = this.toScreen((z.x0 + z.x1) / 2 + (this.myTeam === 0 ? 5 : -5), (z.y0 + z.y1) / 2 + (z.y1 - z.y0 > 12 ? 5 : 0));
+      ctx.fillStyle = 'rgb(255 248 220 / .55)';
+      ctx.font = `700 ${Math.round(12 + 6 * this.cam.zoom)}px "Merriweather", Georgia, serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('Tap here to build', cx, cy);
+    }
+    if (this.buildAt && !this.placing) this.diamond(this.buildAt[0], this.buildAt[1], 0.9, 'rgb(255 217 122 / .25)', '#ffd97a');
+  }
+
+  /** The building you're placing: see-through, on a green (fits) or red (too close) footprint. */
+  drawGhost(pl) {
+    const { ctx } = this;
+    const [gx, gy] = this.toScreen(pl.x, pl.y);
+    const ppt = TILE * this.cam.zoom;
+    ctx.beginPath();
+    ctx.ellipse(gx, gy, (pl.r + 0.25) * ppt, (pl.r + 0.25) * ppt * DEPTH, 0, 0, Math.PI * 2);
+    ctx.fillStyle = pl.ok ? 'rgb(90 220 90 / .28)' : 'rgb(240 60 40 / .38)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = pl.ok ? '#7fe07f' : '#ff5a3c';
+    ctx.stroke();
+    const fake = { building: pl.building, owner: this.me, side: this.myTeam, x: pl.x, y: pl.y, r: pl.r, kind: 'building' };
+    const bs = this.buildingSprite(fake);
+    const { size, iy, lx, rx } = this.boxOf(fake);
+    ctx.globalAlpha = pl.ok ? 0.6 : 0.45;
+    if (bs) {
+      const [fx, fy, fw, fh, ax, ay] = bs.frame;
+      const k = ((rx - lx) * 1.3) / fw;
+      ctx.drawImage(bs.atlas, fx, fy, fw, fh, gx - ax * k, gy - ay * k, fw * k, fh * k);
+      if (!pl.ok) {
+        // red wash over it
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = '#ff3a20';
+        ctx.fillRect(gx - ax * k, gy - ay * k, fw * k, fh * k * 0.9);
+      }
+    } else {
+      const img = this.buildingIcons[pl.building];
+      if (img?.complete && img.naturalWidth) ctx.drawImage(img, gx - size / 2, iy, size, size);
+    }
+    ctx.globalAlpha = 1;
   }
 
   /** A team's colour: its first player's. */
@@ -334,7 +409,7 @@ export class SiegeView {
    */
   drawThirds(top, bottom) {
     const { ctx } = this;
-    const edge = LANE.length * TERRITORY.share;
+    const edge = TERRITORY.edge;
     ctx.save();
     ctx.lineWidth = 2;
     ctx.setLineDash([10, 10]);
@@ -348,7 +423,7 @@ export class SiegeView {
       ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
       ctx.globalAlpha = 0.5;
       ctx.fillStyle = '#fff4d6';
-      ctx.fillText(team === this.myTeam ? 'Your third' : 'Enemy third', x + (team === 0 ? -1 : 1) * 38, Math.max(14, top - 4));
+      ctx.fillText(team === this.myTeam ? 'Your end' : 'Enemy end', x + (team === 0 ? -1 : 1) * 38, Math.max(14, top - 4));
     }
     ctx.restore();
   }
@@ -420,19 +495,26 @@ export class SiegeView {
       p.setTransform(new DOMMatrix().scaleSelf(1, DEPTH).rotateSelf(45).scaleSelf((tiles * R) / bmp.width));
       return p;
     };
-    const layer = (d, bmp, tiles, blur) => {
+    // Toned down to sit with the grass: less saturated, a little darker and greener,
+    // a narrow beach, and every edge feathered (the image is big enough that nothing is cut off square).
+    const layer = (d, bmp, tiles, blur, tone = 'saturate(.7) brightness(.92)') => {
       if (!bmp) return;
       ctx.save();
-      ctx.filter = blur ? `blur(${blur}px)` : 'none';
+      ctx.filter = `${blur ? `blur(${blur}px) ` : ''}${tone}`;
       shape(d);
       ctx.fillStyle = pattern(bmp, tiles);
       ctx.fill();
       ctx.restore();
     };
-    layer(m * 0.85, tex.beach, 5, R * 0.25);
-    layer(0.35, tex.wetbeach || tex.beach, 5, R * 0.15);
-    layer(0, tex.shallow || tex.water, 6, R * 0.12);
-    layer(-0.7, tex.water, 6, R * 0.35);
+    layer(SHORE.beach, tex.beach, 5, R * 0.45, 'saturate(.55) brightness(.8)');
+    layer(0.3, tex.wetbeach || tex.beach, 5, R * 0.2, 'saturate(.6) brightness(.8)');
+    layer(0, tex.shallow || tex.water, 6, R * 0.15);
+    layer(-0.7, tex.water, 6, R * 0.4, 'saturate(.6) brightness(.85)');
+    // a wash of the grass's olive over everything drawn
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.fillStyle = 'rgb(74 96 44 / .2)';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.globalCompositeOperation = 'source-over';
     this.riverImg = c;
     return c;
   }
@@ -571,6 +653,7 @@ export class SiegeView {
     // (Until it's ready, or without the graphics: a stone platform.)
     const bs = this.buildingSprite(b);
     if (dead && bs) { ctx.globalAlpha = 1; this.drawCollapse(b, bs, t, rx - lx); return; }
+    if (!dead && b.kind === 'building' && b.done === false) { this.drawConstruction(b, bs, t, selected); return; }
     let spriteTop = null;
     if (bs) {
       const [fx, fy, fw, fh, ax, ay] = bs.frame;
@@ -591,7 +674,7 @@ export class SiegeView {
     }
     // The picture on the platform: for a training building, the unit it makes now
     // (it changes when you upgrade), with the building's own icon small in the corner.
-    const trains = b.kind === 'building' && b.line !== 'market';
+    const trains = b.kind === 'building' && b.line !== 'market' && !b.def;
     const line = trains ? this.w.line(b.owner, b.line) : null;
     const unitImg = trains ? this.unitIcons[line.tiers[b.tier].unitId] : null;
     if (trains) {
@@ -677,6 +760,64 @@ export class SiegeView {
         ctx.strokeRect(ix - 5, y - 3, sz + 10, h + 6);
       }
     }
+  }
+
+  /**
+   * A building going up: the game's construction graphic when the sprite pack has it,
+   * otherwise the building rising out of the ground inside wooden scaffolding.
+   * A yellow bar shows how far along it is; it's weak until finished.
+   */
+  drawConstruction(b, bs, t, selected) {
+    const { ctx } = this;
+    const k = Math.max(0, Math.min(1, (t - b.buildStart) / Math.max(0.1, b.buildEnd - b.buildStart)));
+    const [gx, gy] = this.toScreen(b.x, b.y);
+    const { lx, rx, size, iy } = this.boxOf(b);
+    if (selected) this.diamond(b.x, b.y, b.r * 1.05, 'rgb(255 217 122 / .18)', '#ffd97a');
+    const found = this.sprites?.foundations?.[BUILDING_KIND[b.building]];
+    let top = iy;
+    if (bs) {
+      const [fx, fy, fw, fh, ax, ay] = bs.frame;
+      const sc = ((rx - lx) * 1.3) / fw;
+      const x0 = gx - ax * sc, y0 = gy - ay * sc, w = fw * sc, h = fh * sc;
+      const shown = 0.12 + 0.88 * k;   // how much of it is up, from the ground
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x0 - 2, y0 + h * (1 - shown), w + 4, h * shown + 2); ctx.clip();
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(bs.atlas, fx, fy, fw, fh, x0, y0, w, h);
+      ctx.restore();
+      top = y0 + h * (1 - shown) - 6;
+      if (found) {
+        // the game's scaffolding round it, a stage further on each third of the build
+        const [qx, qy, qw, qh, qax, qay] = found.frames[Math.min(found.frames.length - 1, Math.floor(k * found.frames.length))];
+        ctx.drawImage(found.atlas, qx, qy, qw, qh, gx - qax * sc, gy - qay * sc, qw * sc, qh * sc);
+        top = Math.min(top, gy - qay * sc);
+      } else {
+        // no scaffolding graphic: poles and planks in front, up to just above the work
+        const yBot = gy + 2;
+        ctx.strokeStyle = 'rgb(122 88 46 / .95)';
+        ctx.lineWidth = Math.max(1.5, 2.2 * this.cam.zoom);
+        const poles = 4;
+        ctx.beginPath();
+        for (let i = 0; i < poles; i++) {
+          const px = x0 + w * (0.14 + (0.72 * i) / (poles - 1));
+          ctx.moveTo(px, yBot); ctx.lineTo(px, top);
+        }
+        for (let py = yBot - 10; py > top; py -= Math.max(9, 14 * this.cam.zoom)) { ctx.moveTo(x0 + w * 0.1, py); ctx.lineTo(x0 + w * 0.9, py); }
+        ctx.stroke();
+      }
+    } else {
+      // no graphics: the stone platform, faded, with the icon
+      ctx.globalAlpha = 0.6;
+      const img = this.buildingIcons[b.building];
+      if (img?.complete && img.naturalWidth) ctx.drawImage(img, gx - size / 2, iy, size, size);
+      ctx.globalAlpha = 1;
+    }
+    const bw = Math.max(40, (rx - lx) * 0.8);
+    this.bar(gx - bw / 2, top - 12, bw, 5, b.hp / b.maxHp);
+    ctx.fillStyle = 'rgb(0 0 0 / .7)';
+    ctx.fillRect(gx - bw / 2 - 1, top - 5, bw + 2, 6);
+    ctx.fillStyle = '#ffd24a';
+    ctx.fillRect(gx - bw / 2, top - 4, bw * k, 4);
   }
 
   /**
@@ -913,8 +1054,8 @@ export class SiegeView {
     c.fillRect(0, 0, mw, mh);
     c.fillStyle = '#3d7590';
     c.fillRect(sx(RIVER.x0), sy(-RIVER.half), sx(RIVER.x1) - sx(RIVER.x0), sy(RIVER.half) - sy(-RIVER.half));
-    // Where each team's third ends
-    const edge = LANE.length * TERRITORY.share;
+    // Where each team's end of the map stops
+    const edge = TERRITORY.edge;
     c.globalAlpha = 0.75;
     for (const team of [0, 1]) {
       c.fillStyle = this.teamColour(team);

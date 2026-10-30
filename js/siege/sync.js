@@ -10,13 +10,14 @@ const r2 = (v) => Math.round(v * 100) / 100;
 
 /** Commands a joined player can send, and how the host runs them for that player. */
 export const COMMANDS = {
-  build: (w, p, a) => w.buy(p, 'build', a.key, a.plot),
-  market: (w, p, a) => w.buy(p, 'market', null, a.plot),
+  build: (w, p, a) => w.buy(p, 'build', a.key, a.at && [Number(a.at[0]), Number(a.at[1])]),
+  market: (w, p, a) => w.buy(p, 'build', 'market', a.at && [Number(a.at[0]), Number(a.at[1])]),
   upgrade: (w, p, a) => w.buy(p, 'upgrade', a.id),
   research: (w, p, a) => w.buy(p, 'research', a.id),
   sell: (w, p, a) => w.sell(p, a.id),
   hold: (w, p, a) => w.toggleHold(p, a.id),
   go: (w, p) => w.go(p),
+  stop: (w, p) => w.stop(p),
   blast: (w, p, a) => w.blast(p, a.x, a.y),
   age: (w, p) => w.buy(p, 'age'),
   chat: (w, p, a) => w.chat(p, a.text),
@@ -33,13 +34,13 @@ export function snapshot(w, since) {
     alive: w.alive,
     territory: w.territory,
     players: w.sides.map((s) => ({
-      gold: Math.floor(s.gold), markets: s.markets, plots: s.plots, researched: [...s.researched],
+      gold: Math.floor(s.gold), markets: s.markets, stopAll: s.stopAll, researched: [...s.researched],
       research: s.research, blasts: s.blasts, stats: s.stats, out: s.out || 0, age: s.age, aging: s.aging,
     })),
     structures: w.structures.map((b) => [
-      b.id, b.kind === 'castle' ? 0 : 1, b.side, b.owner ?? -1, b.building, b.line ?? '', b.plot ?? -1,
+      b.id, b.kind === 'castle' ? 0 : 1, b.side, b.owner ?? -1, b.building, b.line ?? '', b.kind === 'castle' || b.done ? -1 : r2(b.buildEnd - b.buildStart),
       r2(b.x), r2(b.y), b.r, Math.max(0, Math.round(b.hp)), b.maxHp, b.tier ?? 0, b.hold ? 1 : 0, b.waiting ? 1 : 0,
-      r2(b.timer ?? 0), b.every ?? 0, b.upgradedAt ?? -1, b.diedAt ?? -1, b.invested ?? 0,
+      r2(b.timer ?? 0), b.every ?? 0, b.upgradedAt ?? -1, b.diedAt ?? -1, b.invested ?? 0, r2(b.buildStart ?? 0),
     ]),
     units: w.units.map((u) => [
       u.id, u.side, u.owner, u.line, u.tier, r2(u.x), r2(u.y), Math.max(0, Math.round(u.hp * 10) / 10),
@@ -62,7 +63,7 @@ export function applySnapshot(w, snap) {
   w.territory = snap.territory;
   snap.players.forEach((p, i) => {
     const s = w.sides[i];
-    Object.assign(s, { gold: p.gold, markets: p.markets, plots: p.plots, research: p.research, blasts: p.blasts, stats: p.stats, out: p.out, aging: p.aging });
+    Object.assign(s, { gold: p.gold, markets: p.markets, stopAll: p.stopAll, research: p.research, blasts: p.blasts, stats: p.stats, out: p.out, aging: p.aging });
     if (p.researched.length !== s.researched.size || p.age !== s.age) {
       s.researched = new Set(p.researched);
       s.age = p.age;
@@ -71,14 +72,20 @@ export function applySnapshot(w, snap) {
   });
   // Buildings and castles, keeping the same objects so the screen's selection sticks
   const byId = new Map(w.structures.map((b) => [b.id, b]));
-  w.structures = snap.structures.map(([id, kind, side, owner, building, line, plot, x, y, r, hp, maxHp, tier, hold, waiting, timer, every, upgradedAt, diedAt, invested]) => {
+  w.structures = snap.structures.map(([id, kind, side, owner, building, line, buildTime, x, y, r, hp, maxHp, tier, hold, waiting, timer, every, upgradedAt, diedAt, invested, builtAt]) => {
     const b = byId.get(id) || { id, f: w.buildingStats(building) };
     Object.assign(b, {
       kind: kind === 0 ? 'castle' : 'building', side, building, x, y, r, hp, maxHp,
       tier, hold: Boolean(hold), waiting: Boolean(waiting), timer, every, invested,
       upgradedAt: upgradedAt < 0 ? undefined : upgradedAt, diedAt: diedAt < 0 ? undefined : diedAt,
     });
-    if (kind === 1) { b.owner = owner; b.line = line; b.plot = plot; }
+    if (kind === 1) {
+      b.owner = owner; b.line = line;
+      b.def = line.startsWith('def:');
+      // Under construction: buildTime >= 0 (it started at builtAt)
+      b.done = buildTime < 0;
+      if (!b.done) { b.buildStart = builtAt; b.buildEnd = builtAt + buildTime; }
+    }
     return b;
   });
   w.castles = [0, 1].map((t) => w.structures.find((b) => b.kind === 'castle' && b.side === t));

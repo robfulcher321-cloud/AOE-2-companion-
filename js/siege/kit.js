@@ -11,9 +11,25 @@
 import { buildFighter, otherTechsFor, isDuelEligible, buildingsOnly, trackFor, affectsUnit, TRACKS, OTHER_TECHS } from '../duel/combat.js';
 import { CIV_EFFECTS, UNIT_CLASS, PLAYER_TECHS } from '../duel/effects.js';
 
-export const TRAIN_AT = [12, 87, 101, 49, 82];    // Barracks, Archery Range, Stable, Siege Workshop, Castle
-export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 49: 'Siege Workshop', 82: 'Castle', 84: 'Market' };
-export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 275, income: 5, max: 3, age: 2 };
+export const TRAIN_AT = [12, 87, 101, 49, 82];    // read from: Barracks, Archery Range, Stable, Siege Workshop, Castle
+// Castle units (unique units, the Trebuchet) train at the building of their kind instead:
+// the Castle is a defence here.
+const TRAINS_IN = [12, 87, 101, 49];
+export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 49: 'Siege Workshop', 82: 'Castle', 84: 'Market', 79: 'Watch Tower', 234: 'Guard Tower', 235: 'Keep', 236: 'Bombard Tower' };
+export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 300, income: 5, max: 3, age: 2, r: 1.1, build: 8 };
+// Size (tiles, as a circle) and build time (real seconds) of each kind of building.
+export const FOOTPRINT = { train: { r: 1.2, build: 10 } };
+// Defences: towers (upgraded in place, like a unit line), the Bombard Tower and the Castle.
+// They shoot the nearest enemy soldier in range; they don't train anything.
+export const DEFENCES = [
+  { key: 'def:tower', label: 'Watch Tower', tiers: [{ building: 79, age: 2 }, { building: 234, age: 3, upgrade: 150 }, { building: 235, age: 4, upgrade: 225 }], cost: 175, r: 0.65, build: 8, arrows: 1, shot: 'p_arrow_x1' },
+  { key: 'def:bombard', label: 'Bombard Tower', tiers: [{ building: 236, age: 4 }], needs: 47, cost: 425, r: 0.75, build: 10, arrows: 1, shot: 'p_ball_x1' },
+  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 800, r: 1.7, build: 12, arrows: 2, shot: 'p_arrow_x1' },
+];
+// Everything a little dearer than before; siege dearer still, and slower to come out.
+const PRICE_UP = 1.15;
+const SIEGE_PRICE = 1.3;
+const SIEGE_TIME = 1.4;
 export const NOT_UNITS = new Set([440]);         // Petard: not a lane fighter
 // The tech tree lists the Trebuchet packed; it fights unpacked.
 const FIGHTS_AS = { 331: 42 };
@@ -33,13 +49,21 @@ const TRAIN_SCALE = 1;
 export const AGES = [
   null,
   { name: 'Dark Age', tech: 104 },
-  { name: 'Feudal Age', tech: 101, cost: 150, time: 15 },
-  { name: 'Castle Age', tech: 102, cost: 350, time: 22 },
-  { name: 'Imperial Age', tech: 103, cost: 650, time: 30 },
+  { name: 'Feudal Age', tech: 101, cost: 175, time: 15 },
+  { name: 'Castle Age', tech: 102, cost: 400, time: 22 },
+  { name: 'Imperial Age', tech: 103, cost: 750, time: 30 },
 ];
 // Trebuchets: half their real range in this lane, and they pack/unpack (quicker than the game's).
 export const TREB = { id: 42, packed: 331, rangeShare: 0.5, packTime: 2 };
 const ARMOUR = { ELEPHANT: 5, CAVALRY: 8, CAMEL: 30 };
+/** Where a Castle unit trains instead: siege at the Workshop, archers (on foot or mounted) at the Archery Range, riders at the Stable, the rest at the Barracks. */
+function classBuilding(u) {
+  const c = new Set((u?.Armours || []).map((a) => a.Class));
+  if (SIEGE_CLASSES.some((k) => c.has(k))) return 49;
+  if (c.has(15) || c.has(36)) return 87;
+  if (c.has(ARMOUR.CAVALRY) || c.has(ARMOUR.CAMEL) || c.has(ARMOUR.ELEPHANT)) return 101;
+  return 12;
+}
 /** Which price band a line's first unit falls in. */
 export function priceBand(rootId, unit) {
   if (rootId === 93) return 'spear';
@@ -141,6 +165,8 @@ export function buildKit({ data, strings = {}, tree, civ }) {
       if (building === 82) castleLines += 1;
       chain.forEach((n) => seen.add(n.node_id));
       const band = priceBand(root.node_id, U[FIGHTS_AS[root.node_id] ?? root.node_id]);
+      const rootUnit = U[FIGHTS_AS[root.node_id] ?? root.node_id];
+      const siege = isSiege(rootUnit);
       const tiers = chain.map((n, i) => {
         const up = i ? data.data.unit_upgrades?.[n.node_id] : null;
         return {
@@ -152,14 +178,18 @@ export function buildKit({ data, strings = {}, tree, civ }) {
           help: helpText(strings[(U[FIGHTS_AS[n.node_id] ?? n.node_id]?.LanguageNameId ?? -1e9) + 21000]),
         };
       });
+      // Castle units go to the building of their kind; the Trebuchet to the Siege Workshop, from the Castle Age.
+      const at = building === 82 ? classBuilding(rootUnit) : building;
+      if (rootUnit?.ID === TREB.id) tiers.forEach((t) => { t.age = Math.min(t.age, 3); });
       lines.push({
-        key: `${building}-${root.node_id}`,
-        building,
-        unique: building === 82,
+        key: `${at}-${root.node_id}`,
+        building: at,
+        unique: building === 82 && !siege,
+        siege,
         label: tiers[0].name,
         band,
-        age: root.age_id || 1,
-        markup: (building === 82 && !isSiege(U[FIGHTS_AS[root.node_id] ?? root.node_id]) ? UNIQUE_MARKUP : 1) * (MARKUP[FIGHTS_AS[root.node_id] ?? root.node_id] || 1),
+        age: rootUnit?.ID === TREB.id ? 3 : root.age_id || 1,
+        markup: PRICE_UP * (building === 82 && !siege ? UNIQUE_MARKUP : 1) * (siege ? SIEGE_PRICE : 1) * (MARKUP[FIGHTS_AS[root.node_id] ?? root.node_id] || 1),
         needs: NEEDS[root.node_id] ?? null,
         tiers,
       });
@@ -171,7 +201,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
   const meOf = (u) => ({ id: u.ID, cls: UNIT_CLASS[u.ID] });
   const techCost = (id) => {
     const t = data.data.Tech[id];
-    return { cost: round5(25 + TECH_SHARE * total(t?.Cost)), time: Math.max(6, Math.round((t?.ResearchTime || 40) * TECH_TIME)) };
+    return { cost: round5((25 + TECH_SHARE * total(t?.Cost)) * PRICE_UP), time: Math.max(6, Math.round((t?.ResearchTime || 40) * TECH_TIME)) };
   };
   const techRec = (id, group, label, extra = {}) => {
     const n = techNode.get(id);
@@ -215,16 +245,34 @@ export function buildKit({ data, strings = {}, tree, civ }) {
     line.cost = linePrice(line, line.age);
     for (const t of line.tiers) {
       const st = civStats(t.unitId, 4);
-      t.every = Math.max(6, Math.min(70, Math.round(st.trainTime * TRAIN_SCALE * 10) / 10));
+      t.every = Math.max(6, Math.min(90, Math.round(st.trainTime * TRAIN_SCALE * (line.siege ? SIEGE_TIME : 1) * 10) / 10));
       // Upgrades: the real upgrade's resources, scaled down; dearer the more gold the unit costs.
-      t.upgrade = t.realUpgrade ? round5(upgradePrice(t.realUpgrade) * (1 + ((st.cost.Gold || 0) + (st.cost.Stone || 0)) / 200)) : 0;
+      t.upgrade = t.realUpgrade ? round5(upgradePrice(t.realUpgrade) * (1 + ((st.cost.Gold || 0) + (st.cost.Stone || 0)) / 200) * PRICE_UP * (line.siege ? SIEGE_PRICE : 1)) : 0;
     }
+  }
+
+  // Defences this civ has: tower steps it can reach, the Bombard Tower, the Castle.
+  const bstatus = new Map((tree.buildings || []).map((b) => [b.node_id ?? b.building_id, b.node_status]));
+  const hasB = (id) => bstatus.has(id) && bstatus.get(id) !== 'NotAvailable';
+  const defences = [];
+  for (const d of DEFENCES) {
+    const tiers = [];
+    for (const t of d.tiers) { if (!hasB(t.building)) break; tiers.push(t); }
+    if (!tiers.length || (d.needs && !techOk.has(d.needs))) continue;
+    defences.push({
+      ...d,
+      defence: true,
+      building: tiers[0].building,
+      age: tiers[0].age,
+      tiers: tiers.map((t) => ({ ...t, name: clean(strings[data.data.Building[t.building]?.LanguageNameId] || BUILDING_NAMES[t.building]), picture: buildingPicture.get(t.building), upgrade: t.upgrade || 0 })),
+    });
   }
 
   return {
     civ,
     lines,
     techs,
+    defences,
     buildingPicture: (id) => buildingPicture.get(id),
     /** Icon of an age's tech (Feudal, Castle, Imperial). */
     agePicture: (age) => techNode.get(AGES[age]?.tech)?.picture_index,
@@ -235,7 +283,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
       const n = nodes.find((x) => x.node_id === id);
       return n ? clean(strings[n.name_string_id] || n.name) : clean(strings[U[id]?.LanguageNameId] || strings[U[id]?.LanguageNameId + 9000] || `Unit ${id}`);
     } }),
-    line: (key) => lines.find((l) => l.key === key),
+    line: (key) => lines.find((l) => l.key === key) || defences.find((d) => d.key === key),
     /** Fighter stats for a line at a tier with the researched techs (a Set of tech ids). */
     linePrice,
     fighter(lineKey, tier, researched = new Set(), key = [...researched].sort().join(','), age = 4) {

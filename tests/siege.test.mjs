@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildKit } from '../js/siege/kit.js';
-import { World, Computer, DT, PLOTS } from '../js/siege/world.js';
+import { World, Computer, DT, GAME_SPEED } from '../js/siege/world.js';
 import { snapshot, applySnapshot, COMMANDS } from '../js/siege/sync.js';
 
 const dir = process.argv[2];
@@ -61,8 +61,13 @@ for (const [i, [a, b]] of games.entries()) {
   }
   const ms = performance.now() - t0;
   for (const u of w.units) assert.ok(Number.isFinite(u.x) && Number.isFinite(u.y), 'positions are numbers');
-  const built = w.sides.map((s) => s.plots.filter(Boolean).length);
-  console.log(`${keyA} v ${keyB}: ${w.winner === null ? 'no winner' : `${w.winner ? keyB : keyA} won`} after ${(w.t / 60).toFixed(1)} game min; trained ${w.sides.map((s) => s.stats.trained)}, most units on field ${maxUnits}, plots used ${built}/${PLOTS}; ${Math.round(ms)} ms (${(ms / (w.t / DT) * 1000).toFixed(0)} µs per step)`);
+  const built = w.sides.map((s, i) => w.buildings(i).length);
+  // Placed buildings never overlap and stay in their owner's area
+  for (const [i, b] of w.structures.filter((x) => x.kind === 'building' && x.hp > 0).entries()) {
+    assert.ok(w.inZone(b.owner, b.x, b.y), 'built inside its area');
+    for (const c of w.structures.filter((x) => x.kind === 'building' && x.hp > 0).slice(i + 1)) assert.ok(Math.hypot(b.x - c.x, b.y - c.y) >= b.r + c.r + 0.49, 'a gap between buildings');
+  }
+  console.log(`${keyA} v ${keyB}: ${w.winner === null ? 'no winner' : `${w.winner ? keyB : keyA} won`} after ${(w.t / 60).toFixed(1)} game min; trained ${w.sides.map((s) => s.stats.trained)}, most units on field ${maxUnits}, buildings standing ${built}; ${Math.round(ms)} ms (${(ms / (w.t / DT) * 1000).toFixed(0)} µs per step)`);
   assert.notEqual(w.winner, null, 'someone wins within an hour of game time');
   assert.ok(w.t > 180, 'a game lasts more than three minutes');
 }
@@ -77,7 +82,8 @@ for (const [i, [a, b]] of games.entries()) {
   const v = new World([k, k], data, { seed: 3 });
   v.sides[0].gold = 5000;
   const knights = k.lines.find((l) => l.tiers[0].unitId === 38).key;
-  assert.ok(!v.buy(0, 'build', knights, 4), 'knights need the Castle Age');
+  const A = [20, -5], B = [20, 5];
+  assert.ok(!v.buy(0, 'build', knights, A), 'knights need the Castle Age');
   // Ages: pay, wait, and the next age's units open up
   assert.ok(v.buy(0, 'age'));
   assert.equal(v.price(0, 'age'), null, 'one age at a time');
@@ -85,22 +91,43 @@ for (const [i, [a, b]] of games.entries()) {
   assert.equal(v.sides[0].age, 2);
   assert.ok(v.events.some((e) => e.type === 'aged' && e.owner === 0 && e.age === 2), 'everyone hears about it');
   v.sides[0].age = 4;
-  assert.ok(v.buy(0, 'build', knights, 4));
-  assert.ok(v.buy(0, 'build', knights, 5));
+  assert.ok(!v.canBuy(0, 'build', knights, [60, 0]), 'not in the enemy\'s base');
+  assert.ok(!v.canBuy(0, 'build', knights, [13.5, 0]), 'not on the Wonder');
+  assert.ok(v.buy(0, 'build', knights, A));
+  assert.ok(!v.canBuy(0, 'build', knights, [21, -4]), 'not on top of another building');
+  assert.ok(v.buy(0, 'build', knights, B));
   const [b1, b2] = v.buildings(0);
-  assert.equal(b1.plot, 4);
+  assert.deepEqual([b1.x, b1.y], A);
+  // Under construction: weak, no units, can't upgrade; then it finishes
+  assert.ok(!b1.done && b1.hp < b1.maxHp * 0.2);
+  assert.equal(v.price(0, 'upgrade', b1.id), null, 'no upgrades while it goes up');
+  while (!b1.done) v.step();
+  assert.ok(Math.abs(v.t - b1.buildStart - 10 * GAME_SPEED) < 0.1, 'about 10 seconds to build');
+  assert.ok(b1.hp >= b1.maxHp * 0.98);
   assert.ok(v.buy(0, 'upgrade', b1.id));
   assert.equal(b1.tier, 1);
   assert.equal(b2.tier, 0, 'upgrades are per building');
-  assert.ok(!v.canBuy(0, 'build', knights, 4), 'a used plot can\'t be built on');
-  assert.ok(v.toggleHold(0, b1.id) && v.toggleHold(0, b2.id));
+  assert.ok(v.toggleHold(0, b1.id));
+  assert.ok(v.stop(0), 'the red hand holds everything');
   for (let i = 0; i < 40 * 30; i++) v.step();
   assert.equal(v.units.filter((u) => u.side === 0).length, 0, 'held buildings wait');
   assert.ok(b1.waiting && b2.waiting);
   assert.equal(v.go(0), 2);
   assert.deepEqual(v.units.filter((u) => u.side === 0).map((u) => u.f.name).sort(), ['Cavalier', 'Knight'], 'GO lets them out together');
+  assert.ok(!v.sides[0].stopAll, 'GO lifts the red hand');
   assert.ok(v.buy(0, 'market'));
+  assert.equal(v.income(0), 10, 'a Market pays once it\'s built');
+  for (let i = 0; i < 9 * GAME_SPEED * 30; i++) v.step();
   assert.equal(v.income(0), 15);
+  // Defences: a Watch Tower shoots, and goes up to a Guard Tower in place
+  const tower = k.defences.find((d) => d.key === 'def:tower');
+  assert.ok(v.buy(0, 'build', tower.key, [24, 8]));
+  const tw = v.buildings(0).find((b) => b.def);
+  while (!tw.done) v.step();
+  assert.ok(v.buy(0, 'upgrade', tw.id));
+  assert.equal(tw.building, 234);
+  assert.ok(!k.lines.some((l) => l.building === 82), 'nothing trains at the Castle');
+  assert.ok(k.lines.find((l) => l.tiers[0].unitId === 42 || l.tiers[0].unitId === 331).building === 49, 'Trebuchets at the Siege Workshop');
   const gold = v.sides[0].gold;
   const back = v.sellValue(b1.id);
   assert.ok(v.sell(0, b1.id));
@@ -119,12 +146,11 @@ for (const [i, [a, b]] of games.entries()) {
 {
   const kits = [await kitFor('Franks'), await kitFor('Britons'), await kitFor('Goths'), await kitFor('Mongols')];
   const w = new World(kits, data, { seed: 5, teams: [0, 0, 1, 1] });
-  assert.equal(w.plotCount(0), 12);
   assert.equal(w.income(0), 5, 'teammates split the base income');
   assert.ok(kits[0].lines.find((l) => l.band === 'spear').cost < kits[0].lines.find((l) => l.label === 'Militia').cost, 'spears cheaper than militia');
   assert.ok(kits[0].lines.find((l) => l.label === 'Knight').cost < (await kitFor('Khmer')).lines.find((l) => l.band === 'elephant').cost, 'elephants dearest');
-  assert.ok(w.plotPos(0, 0)[1] < 0 && w.plotPos(1, 0)[1] > 0, 'top player above the castle, bottom player below');
-  assert.ok(w.plotPos(2, 0)[0] > 43, 'red team builds on the right');
+  assert.ok(w.zone(0).y1 <= 0 && w.zone(1).y0 >= 0, 'top player above the Wonder, bottom player below');
+  assert.ok(w.zone(2).x0 > 43, 'red team builds on the right');
   const ais = kits.map((_, i) => new Computer(w, i, { level: 'normal' }));
   let territorySeen = false;
   while (w.winner === null && w.t < 3600) {
@@ -144,7 +170,7 @@ for (const [i, [a, b]] of games.entries()) {
   const copy = new World(kits, data, { seed: 8, teams: [0, 1, 0, 1] });
   const ais = [1, 2, 3].map((i) => new Computer(host, i, { level: 'normal' }));
   host.sides[0].gold = 500;
-  assert.ok(COMMANDS.build(host, 0, { key: kits[0].lines[0].key, plot: 0 }), 'command from a joined player builds');
+  assert.ok(COMMANDS.build(host, 0, { key: kits[0].lines[0].key, at: [20, -6] }), 'command from a joined player builds');
   let sent = 0;
   for (let i = 0; i < 30 * 200; i++) {
     for (const a of ais) a.think();

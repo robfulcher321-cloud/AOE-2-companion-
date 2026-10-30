@@ -50,7 +50,8 @@ VERSION = 2
 
 # Imperial-look buildings the app draws, by the unit ID that has that look
 BUILDINGS = {'barracks': 20, 'archery': 14, 'stable': 153, 'castle': 82, 'market': 137,
-             'blacksmith': 19, 'workshop': 150, 'monastery': 104, 'wonder': 276}
+             'blacksmith': 19, 'workshop': 150, 'monastery': 104, 'wonder': 276,
+             'tower1': 79, 'tower2': 234, 'tower3': 235, 'bombard': 236}
 # Extra animations: the Trebuchet's assembly stages (its build graphic) play as packing/unpacking.
 EXTRA_ANIMS = {42: {'pack': (137, 0.2)}}
 # Game data civ names that differ from aoe2techtree's civ keys
@@ -385,6 +386,28 @@ def main():
             img, m, ax, ay = comp
             atlas, _, rects = atlas_pair([img], [m], width=img.width)
             pack.meta['rubble'][kind] = {'atlas': pack.add(atlas), 'frame': list(rects[0]) + [ax, ay]}
+        # Construction sites: the game's scaffolding, in its build stages (the same for every civ)
+        pack.meta['foundations'] = {}
+        for kind, uid in BUILDINGS.items():
+            u = dat.civs[1].units[uid]
+            gid = u.building.construction_graphic_id if u.building else -1
+            g, sld = sld_for(gid)
+            if not sld or kind == 'wonder':
+                continue
+            images, masks, frames = [], [], []
+            for f in range(len(sld.frames)):
+                comp = compose(sld.frame(f))
+                if comp is None:
+                    continue
+                img, m, ax, ay = comp
+                frames.append((ax, ay))
+                images.append(img)
+                masks.append(m)
+            if not images:
+                continue
+            atlas, _, rects = atlas_pair(images, masks)
+            pack.meta['foundations'][kind] = {'atlas': pack.add(atlas), 'frames': [list(r) + [ax, ay] for r, (ax, ay) in zip(rects, frames)]}
+            print(f'Foundation {kind}: {g.file_name}, {len(images)} stages')
         finish(pack, 'buildings.aoe2pack')
 
     # ---------- Terrain: water, shore, trees ----------

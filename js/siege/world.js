@@ -13,7 +13,7 @@
 // Times are game seconds (Normal speed runs 1.7 game seconds per real second).
 
 import { damagePerHit, CLASS } from '../duel/combat.js';
-import { MARKET, AGES, structureStats } from './kit.js';
+import { MARKET, AGES, FOOTPRINT, structureStats } from './kit.js';
 
 export const DT = 1 / 30;
 export const LANE = { length: 86, half: 10 };
@@ -22,20 +22,17 @@ export const LANE = { length: 86, half: 10 };
 export const RIVER = { x0: 31, x1: 55, half: 2.6 };
 const LANE_Y = (RIVER.half + LANE.half) / 2;   // centre line of each lane
 export const CASTLE_X = [13, 73];
-// Building plots for blue (red mirrors them), in the order the computer fills them.
-// One player a team: three columns in front of the castle, one each side of it,
-// two columns behind it. Two a team: each gets two rows, top player above the
-// castle (top lane), bottom player below it (bottom lane).
-const ROWS = [0, -6, 6];
-const PLOT_LAYOUT = [
-  ...[18.5, 22, 25.5].flatMap((x) => ROWS.map((y) => [x, y])),
-  [13, -7], [13, 7],
-  ...[8, 4.5].flatMap((x) => ROWS.map((y) => [x, y])),
-];
-const HALF_LAYOUT = (rows) => [18.5, 22, 25.5, 29, 8, 4.5].flatMap((x) => rows.map((y) => [x, y]));
-const TEAM_LAYOUTS = { 1: [PLOT_LAYOUT], 2: [HALF_LAYOUT([-3.6, -7.6]), HALF_LAYOUT([3.6, 7.6])] };
-export const PLOTS = PLOT_LAYOUT.length;   // building plots for a player alone on their team
-export const TERRITORY = { share: 1 / 3, bonus: 5 };   // +5 gold a tick while you hold the enemy's third
+// Where each player may build: anywhere in their part of the base (in front of the Wonder
+// and behind it), leaving a small gap between buildings. Blue's x range; red mirrors it.
+// Alone on a team you get the whole width; two a team split it, top and bottom.
+export const BUILD = { x0: 1.5, x1: 26.5, gap: 0.5 };
+// Your own end of the map, a little beyond where you can build: the explosion only lands
+// here, and soldiers of yours in the enemy's end earn +5 gold a tick.
+export const TERRITORY = { edge: 30.5, bonus: 5 };
+// Game seconds per real second at Normal speed (build times are given in real seconds).
+export const GAME_SPEED = 1.7;
+const BUILD_HP = 0.15;          // a new building starts at this share of its HP...
+const BUILD_WEAK = 1.5;         // ...and takes this much more damage until it's finished
 const BIN = 2;                 // tiles: units are bucketed along the lane for "who's near" lookups
 const MELEE_SLACK = 0.35;      // tiles: a melee unit this close counts as touching (no running on the spot in a crowd)
 const BUILDING_SLACK = 0.45;   // tiles: buildings are big; a unit at their foot can hit them
@@ -46,7 +43,6 @@ const CAP = 70;                // most units a side can have on the field
 const INCOME_EVERY = 4;        // seconds between income ticks
 export const START_GOLD = 250;
 export const BASE_INCOME = 10;
-const CASTLE_ARROWS = 3;
 export const BLAST = { radius: 4, share: 0.6, flat: 25, per: 1 };   // the explosion: once per player
 export const OVERTIME = 25 * 60;   // after this, buildings take more damage every minute, so games end
 const SELL_BACK = 0.5;
@@ -63,12 +59,6 @@ export function mulberry32(seed) {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-/** Plot centre for a lone player on team 0 or 1 (kept for older callers). */
-export function plotPos(team, i) {
-  const [x, y] = PLOT_LAYOUT[i];
-  return team === 0 ? [x, y] : [LANE.length - x, y];
 }
 
 // Math.hypot is slow in hot loops; this is the same for two values.
@@ -112,14 +102,13 @@ export class World {
       researched: new Set(),   // Armory techs done
       researchKey: '|1',
       research: null,          // { id, endsAt, time } being researched
-      markets: 0,
-      plots: null,
+      markets: 0,              // finished Markets
+      stopAll: false,          // the red hand: every building holds its next unit until GO
       stats: { trained: 0, kills: 0, lost: 0, earned: 0, spent: 0 },
       blasts: BLAST.per,       // explosions left
       age: 1,                  // 1 Dark, 2 Feudal, 3 Castle, 4 Imperial
       aging: null,             // { to, endsAt, time } while advancing
     }));
-    for (const s of this.sides) s.plots = Array(this.layout(s).length).fill(null);
     // Each team's Wonder is the one from a random player's civ on that team.
     for (const t of [0, 1]) {
       const ps = this.teams[t].players;
@@ -130,19 +119,60 @@ export class World {
     this.buildingStats = (id) => structureStats(data, id);
   }
 
-  layout(s) {
-    const n = this.teams[s.team].players.length;
-    return (TEAM_LAYOUTS[n] || TEAM_LAYOUTS[2])[Math.min(s.rank, 1)];
-  }
-
-  /** Where player p's plot i is. */
-  plotPos(p, i) {
+  /** Player p's build area: { x0, x1, y0, y1 } in tiles. */
+  zone(p) {
     const s = this.sides[p];
-    const [x, y] = this.layout(s)[i];
-    return s.team === 0 ? [x, y] : [LANE.length - x, y];
+    const x0 = s.team === 0 ? BUILD.x0 : LANE.length - BUILD.x1;
+    const x1 = s.team === 0 ? BUILD.x1 : LANE.length - BUILD.x0;
+    const edge = LANE.half - 0.2;
+    if (this.teams[s.team].players.length < 2) return { x0, x1, y0: -edge, y1: edge };
+    return s.rank === 0 ? { x0, x1, y0: -edge, y1: -0.2 } : { x0, x1, y0: 0.2, y1: edge };
   }
 
-  plotCount(p) { return this.sides[p].plots.length; }
+  inZone(p, x, y) { const z = this.zone(p); return x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1; }
+
+  /** Size and build time of what `key` builds: a unit line, 'market', or a defence. */
+  footprint(p, key) {
+    if (key === 'market') return { r: MARKET.r, build: MARKET.build };
+    const line = this.line(p, key);
+    if (line?.defence) return { r: line.r, build: line.build };
+    return FOOTPRINT.train;
+  }
+
+  /**
+   * Can player p put a building of size r at (x, y)? Inside their area, and clear of
+   * every other building (anyone's, the Wonder too) by a small gap. Soldiers walk
+   * through buildings, so nothing can ever be walled off.
+   */
+  canPlace(p, r, x, y, ignore = null) {
+    const z = this.zone(p);
+    if (x - r < z.x0 || x + r > z.x1 || y - r < z.y0 || y + r > z.y1) return false;
+    for (const b of this.structures) {
+      if (b.hp <= 0 || b === ignore) continue;
+      if (hyp(b.x - x, b.y - y) < b.r + r + BUILD.gap) return false;
+    }
+    return true;
+  }
+
+  /**
+   * A free spot for the computer: the first that fits, starting from where it would
+   * like it (towers and castles to the front, training buildings round the Wonder).
+   */
+  spotFor(p, r, front = false) {
+    const z = this.zone(p);
+    const s = this.sides[p];
+    const dir = s.team === 0 ? 1 : -1;
+    const fx = s.team === 0 ? z.x1 - r : z.x0 + r;
+    const ax = front ? fx : CASTLE_X[s.team] + dir * 4;
+    const ay = (z.y0 + z.y1) / 2;
+    const spots = [];
+    for (let x = z.x0 + r; x <= z.x1 - r + 1e-6; x += 0.5) {
+      for (let y = z.y0 + r; y <= z.y1 - r + 1e-6; y += 0.5) spots.push([x, y, hyp(x - ax, (y - ay) * 0.8)]);
+    }
+    spots.sort((a, b) => a[2] - b[2]);
+    for (const [x, y] of spots) if (this.canPlace(p, r, x, y)) return [x, y];
+    return null;
+  }
 
   castle(team, st) {
     const c = {
@@ -171,9 +201,10 @@ export class World {
   // ---------- Spending ----------
 
   line(side, key) { return this.kits[side].line(key); }
-  freePlot(side) { return this.sides[side].plots.indexOf(null); }
   building(id) { return this.structures.find((b) => b.id === id && b.kind === 'building' && b.hp > 0) || null; }
   buildings(side) { return this.structures.filter((b) => b.owner === side && b.kind === 'building' && b.hp > 0); }
+  /** Buildings that train soldiers (finished or not). */
+  trainers(side) { return this.buildings(side).filter((b) => b.line !== 'market' && !b.def); }
   count(side, key) { return this.buildings(side).filter((b) => b.line === key).length; }
   tech(side, id) { return this.kits[side].techs.find((t) => t.id === id) || null; }
 
@@ -188,22 +219,24 @@ export class World {
 
   /**
    * What a purchase costs, or null if it can't be bought now.
-   * kind: build (key = line, plot = plot index) | market (plot) | upgrade (key = building id) | research (key = tech id)
+   * kind: build (key = unit line, defence or 'market'; at = [x, y], checked if given)
+   *     | market (same as build 'market') | upgrade (key = building id) | research (key = tech id) | age
    */
-  price(side, kind, key, plot = null) {
+  price(side, kind, key, at = null) {
     const s = this.sides[side];
     if (this.winner !== null) return null;
-    const plotFree = plot === null ? this.freePlot(side) >= 0 : s.plots[plot] === null;
+    if (kind === 'market') { kind = 'build'; key = 'market'; }
     switch (kind) {
       case 'build': {
+        if (at && !this.canPlace(side, this.footprint(side, key).r, at[0], at[1])) return null;
+        if (key === 'market') return this.count(side, 'market') < MARKET.max && s.age >= MARKET.age ? MARKET.cost : null;
         const line = this.line(side, key);
-        return line && plotFree && this.unlocked(side, line) && line.age <= s.age ? this.kits[side].linePrice(line, s.age) : null;
+        if (!line || !this.unlocked(side, line) || line.age > s.age) return null;
+        return line.defence ? line.cost : this.kits[side].linePrice(line, s.age);
       }
-      case 'market':
-        return s.markets < MARKET.max && plotFree && s.age >= MARKET.age ? MARKET.cost : null;
       case 'upgrade': {
         const b = this.building(key);
-        if (!b || b.owner !== side || b.line === 'market') return null;
+        if (!b || b.owner !== side || b.line === 'market' || !b.done) return null;
         const line = this.line(side, b.line);
         const next = line.tiers[b.tier + 1];
         return next && next.age <= s.age ? next.upgrade : null;
@@ -218,31 +251,40 @@ export class World {
     }
   }
 
-  canBuy(side, kind, key, plot = null) {
-    const p = this.price(side, kind, key, plot);
+  canBuy(side, kind, key, at = null) {
+    const p = this.price(side, kind, key, at);
     return p !== null && this.sides[side].gold >= p;
   }
 
-  buy(side, kind, key, plot = null) {
-    if (!this.canBuy(side, kind, key, plot)) return false;
+  /** at: where to build ([x, y]); without it (the computer), the first free spot. */
+  buy(side, kind, key, at = null) {
+    if (kind === 'market') { kind = 'build'; key = 'market'; }
+    if (kind === 'build' && !at) {
+      const fp = this.footprint(side, key);
+      at = this.spotFor(side, fp.r, Boolean(this.line(side, key)?.defence));
+      if (!at) return false;
+    }
+    if (!this.canBuy(side, kind, key, at)) return false;
     const s = this.sides[side];
-    const p = this.price(side, kind, key, plot);
+    const p = this.price(side, kind, key, at);
     s.gold -= p;
     s.stats.spent += p;
-    if (kind === 'build' || kind === 'market') {
-      const i = plot ?? this.freePlot(side);
-      const [x, y] = this.plotPos(side, i);
-      const isMarket = kind === 'market';
+    if (kind === 'build') {
+      const [x, y] = at;
+      const isMarket = key === 'market';
       const line = isMarket ? null : this.line(side, key);
-      const st = this.buildingStats(isMarket ? MARKET.building : line.building);
+      const def = Boolean(line?.defence);
+      const fp = this.footprint(side, key);
+      const buildingId = isMarket ? MARKET.building : line.building;
+      const st = def ? this.defenceStats(line, 0) : this.buildingStats(buildingId);
+      const time = fp.build * GAME_SPEED;
       const b = {
-        id: this.nextId++, side: s.team, owner: side, kind: 'building', building: isMarket ? MARKET.building : line.building,
-        line: isMarket ? 'market' : key, plot: i, x, y, r: 1.5, hp: st.hp, maxHp: st.hp, f: st,
+        id: this.nextId++, side: s.team, owner: side, kind: 'building', building: buildingId,
+        line: key, def, x, y, r: fp.r, hp: st.hp * BUILD_HP, maxHp: st.hp, f: st,
         tier: 0, invested: p, hold: false, waiting: false,
-        timer: isMarket ? 0 : Math.min(8, line.tiers[0].every * 0.4), every: isMarket ? 0 : line.tiers[0].every, builtAt: this.t,
+        done: false, buildStart: this.t, buildEnd: this.t + time, ready: 0,
+        timer: 0, every: def || isMarket ? 0 : line.tiers[0].every, builtAt: this.t,
       };
-      s.plots[i] = b.id;
-      if (isMarket) s.markets += 1;
       this.structures.push(b);
     } else if (kind === 'upgrade') {
       // Only this building: its next units are the new type. Units already out stay as they are.
@@ -250,7 +292,15 @@ export class World {
       b.tier += 1;
       b.invested += p;
       b.upgradedAt = this.t;
-      b.every = this.line(side, b.line).tiers[b.tier].every;
+      const line = this.line(side, b.line);
+      if (b.def) {
+        // A tower goes up a step in place: new look, more HP and a harder arrow.
+        const st = this.defenceStats(line, b.tier);
+        b.building = line.tiers[b.tier].building;
+        b.hp += st.hp - b.maxHp;
+        b.maxHp = st.hp;
+        b.f = st;
+      } else b.every = line.tiers[b.tier].every;
     } else if (kind === 'research') {
       const t = this.tech(side, key);
       s.research = { id: t.id, endsAt: this.t + t.time, time: t.time };
@@ -260,6 +310,12 @@ export class World {
     }
     this.events.push({ t: this.t, type: kind, side, key });
     return true;
+  }
+
+  /** A defence's stats at a step: the game's building (HP, arrow, range), with its arrows and shot. */
+  defenceStats(line, tier) {
+    const st = this.buildingStats(line.tiers[tier].building);
+    return { ...st, arrows: line.arrows, projectile: { sprite: line.shot, arc: line.shot === 'p_ball_x1' ? -0.05 : -0.06 } };
   }
 
   /**
@@ -281,7 +337,7 @@ export class World {
 
   /** Where team `team` may drop its explosion: its own third of the map (to defend, not to push). */
   blastZone(team) {
-    const edge = LANE.length * TERRITORY.share;
+    const edge = TERRITORY.edge;
     return team === 0 ? [0, edge] : [LANE.length - edge, LANE.length];
   }
 
@@ -316,15 +372,14 @@ export class World {
     return best;
   }
 
-  /** Knock down your own building for half of what you put into it (frees the plot). */
+  /** Knock down your own building for half of what you put into it. */
   sell(side, id) {
     const b = this.building(id);
     if (!b || b.owner !== side || this.winner !== null) return false;
     const s = this.sides[side];
     const back = Math.round(b.invested * SELL_BACK);
     s.gold += back;
-    s.plots[b.plot] = null;
-    if (b.line === 'market') s.markets -= 1;
+    if (b.line === 'market' && b.done) s.markets -= 1;
     b.hp = 0; b.diedAt = this.t; b.sold = true;
     this.events.push({ t: this.t, type: 'sell', side, key: b.line, gold: back });
     return true;
@@ -335,17 +390,17 @@ export class World {
   /** Tap a building: hold its next unit (it waits when ready), or stop holding. */
   toggleHold(side, id) {
     const b = this.building(id);
-    if (!b || b.owner !== side || b.line === 'market') return false;
+    if (!b || b.owner !== side || b.line === 'market' || b.def) return false;
     b.hold = !b.hold;
     if (!b.hold && b.waiting) this.releaseUnit(b);
     return true;
   }
 
-  /** GO: every held building lets its unit out now if it's ready, and stops holding. */
+  /** GO: every held building lets its unit out now if it's ready, and stops holding (the red hand too). */
   go(side) {
     let n = 0;
-    for (const b of this.buildings(side)) {
-      if (!b.hold) continue;
+    this.sides[side].stopAll = false;
+    for (const b of this.trainers(side)) {
       b.hold = false;
       if (b.waiting) { this.releaseUnit(b); n += 1; }
     }
@@ -353,7 +408,17 @@ export class World {
     return n;
   }
 
-  held(side) { return this.buildings(side).filter((b) => b.hold); }
+  /** The red hand: every building keeps its next unit in until GO. Pressed again, it's GO. */
+  stop(side) {
+    const s = this.sides[side];
+    if (s.stopAll) { this.go(side); return true; }
+    s.stopAll = true;
+    this.events.push({ t: this.t, type: 'stop', side });
+    return true;
+  }
+
+  /** Buildings holding their next unit (by themselves or under the red hand). */
+  held(side) { const all = this.sides[side].stopAll; return this.trainers(side).filter((b) => b.hold || all); }
 
   releaseUnit(b) {
     b.waiting = false;
@@ -479,7 +544,7 @@ export class World {
 
   damage(side, target, amount, by) {
     if (target.hp <= 0) return;
-    if (target.kind) amount *= this.overtime();
+    if (target.kind) amount *= this.overtime() * (target.kind === 'building' && !target.done ? BUILD_WEAK : 1);
     target.hp -= amount;
     if (target.hp > 0) return;
     target.diedAt = this.t;
@@ -491,8 +556,7 @@ export class World {
       this.winner = side;
       this.events.push({ t: this.t, type: 'castle', side });
     } else if (target.kind === 'building') {
-      o.plots[target.plot] = null;
-      if (target.line === 'market') o.markets -= 1;
+      if (target.line === 'market' && target.done) o.markets -= 1;
       const bounty = 50;
       s.gold += bounty; s.stats.earned += bounty;
       this.events.push({ t: this.t, type: 'razed', side, owner: by?.owner, lost: target.owner, key: target.line, x: target.x, y: target.y, bounty });
@@ -505,11 +569,14 @@ export class World {
     }
   }
 
-  launch(u, target, attacks, { accuracy, speed, spread = 0.3 }, isCastle = false) {
+  launch(u, target, attacks, { accuracy, speed, spread = 0.3, scatter = 0 }, isCastle = false) {
     const dist = Math.max(0.1, hyp(target.x - u.x, target.y - u.y));
-    const hit = this.rand() * 100 < accuracy;
+    const hit = !scatter && this.rand() * 100 < accuracy;
     let x1 = target.x, y1 = target.y;
-    if (!hit) {
+    if (scatter) {
+      const a = this.rand() * Math.PI * 2, d = scatter * Math.sqrt(this.rand());
+      x1 += Math.cos(a) * d; y1 += Math.sin(a) * d;
+    } else if (!hit) {
       const d = Math.max(0.5, spread * dist / 2);
       x1 += (this.rand() * 2 - 1) * d;
       y1 += (this.rand() * 2 - 1) * d;
@@ -517,7 +584,7 @@ export class World {
     this.shots.push({
       side: u.side, by: u, target, attacks, hit, castle: isCastle,
       x0: u.x, y0: u.y, x1, y1, t0: this.t, t1: this.t + hyp(x1 - u.x, y1 - u.y) / speed,
-      sprite: u.f?.projectile?.sprite, arc: u.f?.projectile?.arc ?? 0,
+      sprite: u.f?.projectile?.sprite || (isCastle ? 'p_arrow_x1' : undefined), arc: u.f?.projectile?.arc ?? (isCastle ? -0.06 : 0),
     });
   }
 
@@ -580,7 +647,7 @@ export class World {
       this.incomeAt += INCOME_EVERY;
       // Territory: a team with soldiers in the enemy's third of the map earns extra (like Direct Strike).
       for (const team of [0, 1]) {
-        const line = team === 0 ? LANE.length * (1 - TERRITORY.share) : LANE.length * TERRITORY.share;
+        const line = team === 0 ? LANE.length - TERRITORY.edge : TERRITORY.edge;
         this.territory[team] = this.units.some((u) => u.side === team && u.hp > 0 && (team === 0 ? u.x > line : u.x < line));
       }
       this.sides.forEach((s, i) => { const g = this.income(i); s.gold += g; s.stats.earned += g; });
@@ -601,17 +668,29 @@ export class World {
         this.refit(side);
       }
     }
+    // Construction: HP climbs to full while it goes up; then it starts work.
+    for (const b of this.structures) {
+      if (b.kind !== 'building' || b.done || b.hp <= 0) continue;
+      const time = b.buildEnd - b.buildStart;
+      b.hp = Math.min(b.maxHp, b.hp + (b.maxHp * (1 - BUILD_HP) * DT) / time);
+      if (t < b.buildEnd) continue;
+      b.done = true;
+      b.hp = Math.max(b.hp, b.maxHp * 0.98);
+      if (b.line === 'market') this.sides[b.owner].markets += 1;
+      if (b.every) b.timer = Math.min(8, b.every * 0.4);
+      this.events.push({ t, type: 'built', side: b.side, owner: b.owner, key: b.line });
+    }
     // Buildings train their units; held ones wait when ready until GO (or tapped again).
     for (const b of this.structures) {
-      if (b.kind !== 'building' || b.hp <= 0 || b.line === 'market' || b.waiting) continue;
+      if (b.kind !== 'building' || b.hp <= 0 || !b.done || !b.every || b.waiting) continue;
       b.timer -= DT;
       if (b.timer <= 0) {
-        if (b.hold) { b.timer = 0; b.waiting = true; } else this.releaseUnit(b);
+        if (b.hold || this.sides[b.owner].stopAll) { b.timer = 0; b.waiting = true; } else this.releaseUnit(b);
       }
     }
-    // Castles shoot the nearest enemy in range
+    // The Wonder and finished defences shoot the nearest enemy soldier in range
     for (const c of this.structures) {
-      if (c.kind !== 'castle' || c.hp <= 0 || t < c.ready) continue;
+      if (c.hp <= 0 || t < c.ready || !(c.kind === 'castle' || (c.def && c.done))) continue;
       let best = null, bd = Infinity;
       this.near(c.x, c.f.range + c.r + 1, (v) => {
         if (v.side === c.side || v.hp <= 0) return;
@@ -620,7 +699,8 @@ export class World {
       });
       if (!best) continue;
       c.ready = t + c.f.reload;
-      for (let k = 0; k < CASTLE_ARROWS; k++) this.launch(c, best, c.f.attacks, { accuracy: CASTLE_ACCURACY, speed: ARROW_SPEED, spread: 0.4 }, true);
+      const ball = c.f.projectile?.sprite === 'p_ball_x1';
+      for (let k = 0; k < (c.f.arrows || 1); k++) this.launch(c, best, c.f.attacks, { accuracy: CASTLE_ACCURACY, speed: ball ? 4 : ARROW_SPEED, spread: 0.4 }, true);
     }
     // Units
     const live = this.units.filter((u) => u.hp > 0);
@@ -746,7 +826,7 @@ export class World {
     }
     for (const u of live) {
       for (const b of this.sbins[Math.max(0, Math.floor(u.x / BIN))] || []) {
-        if (b.hp <= 0) continue;
+        if (b.hp <= 0 || b.kind !== 'castle') continue;   // soldiers walk through other buildings: nothing can be walled off
         const dx = u.x - b.x, dy = u.y - b.y;
         const d = hyp(dx, dy), need = b.r + u.r;
         if (d < need) { const k = d > 1e-6 ? need / d : 1; u.x = b.x + dx * k; u.y = b.y + (d > 1e-6 ? dy * k : need); }
@@ -790,9 +870,9 @@ export class World {
       if (ahead < 0.55 || od > u.r + v.r + 0.45) return;
       side += ((dx * oy - dy * ox) >= 0 ? -1 : 1) * ahead * (1 - od / (u.r + v.r + 0.45));
     });
-    // Buildings (the castle especially) are walked round, not pushed against.
+    // The Wonder is walked round, not pushed against. (Other buildings are walked through.)
     for (const b of this.sbins[Math.max(0, Math.floor(u.x / BIN))] || []) {
-      if (b.hp <= 0) continue;
+      if (b.hp <= 0 || b.kind !== 'castle') continue;
       const ox = b.x - u.x, oy = b.y - u.y;
       if (Math.abs(oy) > b.r + u.r + 1.2) continue;
       const od = hyp(ox, oy) || 1;
@@ -831,8 +911,10 @@ export class World {
       return;
     }
     for (let k = 0; k < (p.count || 1); k++) {
-      const attacks = k > 0 && p.secondary ? p.secondary.attacks : u.f.attacks;
-      this.launch(u, tg, attacks, { accuracy: tg.kind ? 100 : p.accuracy, speed: p.speed, spread: p.spread || 0.3 });
+      const extra = k > 0 && p.secondary;
+      const attacks = extra ? p.secondary.attacks : u.f.attacks;
+      // A mangonel's extra stones spread round the target (just for show; the main stone does the damage)
+      this.launch(u, tg, attacks, { accuracy: tg.kind ? 100 : p.accuracy, speed: p.speed, spread: p.spread || 0.3, scatter: extra ? 0.6 + 0.08 * p.count : 0 });
     }
   }
 
@@ -844,7 +926,7 @@ export class World {
       m[kindOf(u.line, u.f)] += 1;
     }
     for (const b of this.structures) {
-      if (b.side !== side || b.kind !== 'building' || b.hp <= 0 || b.line === 'market') continue;
+      if (b.side !== side || b.kind !== 'building' || b.hp <= 0 || b.line === 'market' || b.def) continue;
       m[kindOf(b.line, this.kits[b.owner].fighter(b.line, b.tier))] += 2;
     }
     return m;
@@ -932,21 +1014,27 @@ export class Computer {
     const foeTotal = 1 + Object.values(foe).reduce((a, b) => a + b, 0);
     const kit = w.kits[side];
     const builds = w.buildings(side);
-    const military = builds.filter((b) => b.line !== 'market');
+    const military = builds.filter((b) => b.line !== 'market' && !b.def);
     const vs = (kind) => Object.entries(foe).reduce((acc, [k, n]) => acc + (BEATS[kind][k] ?? 1) * n, 0) / foeTotal;
     const options = [];
-    const free = w.freePlot(side) >= 0;
+    const mine = w.blastZone(team);
+    const intruders = w.units.filter((v) => v.side !== team && v.hp > 0 && v.x >= mine[0] && v.x <= mine[1]).length;
+    const free = w.spotFor(side, FOOTPRINT.train.r) !== null;
     for (const line of kit.lines) {
       if (!w.unlocked(side, line)) continue;
       const kind = kindOf(line.key, kit.fighter(line.key, 0));
       const have = w.count(side, line.key);
-      // More buildings means more units: fill plots early, then upgrade.
+      // More buildings means more units: build plenty early, then upgrade.
       const early = free && military.length < 6 ? 0.8 : 0;
       if (w.price(side, 'build', line.key) !== null) {
         options.push({ kind: 'build', key: line.key, score: (BASE[kind] ?? 1) + (line.unique ? 0.2 : 0) + early + 0.7 * vs(kind) - have * 0.25 });
       }
     }
     // Upgrade the lowest-tier building of a useful line.
+    for (const b of builds.filter((x) => x.def)) {
+      const p = w.price(side, 'upgrade', b.id);
+      if (p !== null) options.push({ kind: 'upgrade', key: b.id, score: 0.8 + Math.min(1, intruders * 0.08) - p / 1500 });
+    }
     for (const b of military) {
       const p = w.price(side, 'upgrade', b.id);
       if (p === null) continue;
@@ -965,8 +1053,17 @@ export class Computer {
         options.push({ kind: 'research', key: t.id, score: 0.7 + military.length * 0.08 + (t.group === 'Blacksmith' ? 0.3 : 0) - t.cost / 1200 });
       }
     }
-    if (military.length >= 1 && w.price(side, 'market') !== null && w.t < 600) options.push({ kind: 'market', score: 2.2 - s.markets * 0.5 });
-    // Plots full and gold piling up: replace the building that does least against the enemy.
+    if (military.length >= 1 && w.price(side, 'market') !== null && w.t < 600) options.push({ kind: 'market', score: 2.2 - w.count(side, 'market') * 0.5 });
+    // Defences: when enemies are getting into its end of the map (and not before it has an army)
+    if (military.length >= 3) {
+      for (const d of kit.defences) {
+        if (w.price(side, 'build', d.key) === null) continue;
+        const have = w.count(side, d.key);
+        const base = d.key === 'def:castle' ? 0.6 : 0.4;
+        options.push({ kind: 'build', key: d.key, score: base + Math.min(1.5, intruders * 0.1) - have * (d.key === 'def:castle' ? 1.5 : 0.5) - d.cost / 2000 });
+      }
+    }
+    // Area full and gold piling up: replace the building that does least against the enemy.
     if (!free && s.gold > 600 && this.level !== 'easy' && military.length) {
       const rate = (key, tier) => vs(kindOf(key, kit.fighter(key, tier)));
       const worst = [...military].sort((a, b) => rate(a.line, a.tier) - rate(b.line, b.tier))[0];

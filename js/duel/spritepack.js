@@ -127,6 +127,15 @@ class Sprites {
     return r ? this.once(`r${kind}`, async () => ({ ...r, atlas: await this.rubbleFile.bitmap(r.atlas) })) : Promise.resolve(null);
   }
 
+  /**
+   * A building's construction graphic (the game's scaffolding), by kind: { atlas, frames: [[x, y, w, h, ax, ay]...] }
+   * with frames in build order, or null when the pack doesn't have it.
+   */
+  foundation(kind) {
+    const r = this.rubbleFile?.meta.foundations?.[kind];
+    return r ? this.once(`f${kind}`, async () => ({ ...r, atlas: await this.rubbleFile.bitmap(r.atlas) })) : Promise.resolve(null);
+  }
+
   /** Projectile by graphic name: { mode, fdur, frames: { right, left }, atlas } or null */
   projectile(name) {
     const p = name && this.projFile?.meta.projectiles?.[name];
