@@ -11,6 +11,7 @@ const DEPTH = 0.5;
 const SIDE = ['#4a8de3', '#d5473d'];
 const SIDE_DARK = ['#1f3f73', '#6e1f19'];
 const MAX_DPR = 2;
+const UNIT_SCALE = 1.2;   // soldiers (and their arrows) drawn a little bigger than the game's scale, for a phone screen
 const SHORE = { res: 40, margin: 3, beach: 0.9 };   // river image: px per tile, and how far the beach reaches past the water   // sharper than this costs a lot of drawing on 3x phone screens for little visible gain
 
 /** Player colours. The first two are the sprite pack's own blue and red; others are repainted. */
@@ -207,8 +208,20 @@ export class SiegeView {
     const z = this.w.zone(this.me);
     pl.x = Math.max(z.x0 + pl.r, Math.min(z.x1 - pl.r, x));
     pl.y = Math.max(z.y0 + pl.r, Math.min(z.y1 - pl.r, y));
-    pl.ok = this.w.canPlace(this.me, pl.r, pl.x, pl.y);
+    // Too near the top edge, the building (or its health bar) would be cut off the screen
+    pl.high = this.topOf({ building: pl.building, owner: this.me, side: this.myTeam, x: pl.x, y: pl.y, r: pl.r, kind: 'building' }) < 4;
+    pl.ok = !pl.high && this.w.canPlace(this.me, pl.r, pl.x, pl.y);
     this.handlers.placed?.(pl);
+  }
+
+  /** Screen y of the top of a building's health bar (where it's drawn over the building). */
+  topOf(b) {
+    const bs = this.buildingSprite(b);
+    const { lx, rx, iy } = this.boxOf(b);
+    if (!bs) return iy - 16;
+    const [, , fw, , , ay] = bs.frame;
+    const [, gy] = this.toScreen(b.x, b.y);
+    return gy - ay * (((rx - lx) * 1.3) / fw) - 16;
   }
 
   /** Screen box covering a building's platform, icon and badge. */
@@ -328,9 +341,9 @@ export class SiegeView {
       if (it.b) this.drawStructure(it.b, t, ppt);
       else if (it.ghost) this.drawGhost(it.ghost);
       else if (it.tree) this.drawTree(it.tree, zoom);
-      else this.drawUnit(it.u, it.x, it.uy, t, zoom);
+      else this.drawUnit(it.u, it.x, it.uy, t, zoom * UNIT_SCALE);
     }
-    this.drawShots(t, zoom, ppt);
+    this.drawShots(t, zoom * UNIT_SCALE, ppt);
     this.drawBlasts(t);
     this.drawFloaters(t, zoom);
     this.drawMini();
@@ -378,6 +391,7 @@ export class SiegeView {
     ctx.stroke();
     const fake = { building: pl.building, owner: this.me, side: this.myTeam, x: pl.x, y: pl.y, r: pl.r, kind: 'building' };
     const bs = this.buildingSprite(fake);
+    if (bs && !pl.measured) { pl.measured = true; this.movePlacing(pl.x, pl.y); }   // its graphic just arrived: check the height again
     const { size, iy, lx, rx } = this.boxOf(fake);
     ctx.globalAlpha = pl.ok ? 0.6 : 0.45;
     if (bs) {

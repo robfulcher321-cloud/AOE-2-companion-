@@ -16,15 +16,15 @@ export const TRAIN_AT = [12, 87, 101, 49, 82];    // read from: Barracks, Archer
 // the Castle is a defence here.
 const TRAINS_IN = [12, 87, 101, 49];
 export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 49: 'Siege Workshop', 82: 'Castle', 84: 'Market', 79: 'Watch Tower', 234: 'Guard Tower', 235: 'Keep', 236: 'Bombard Tower' };
-export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 300, income: 5, max: 3, age: 2, r: 1.1, build: 8 };
+export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 300, income: 5, max: 3, age: 2, r: 1.3, build: 8 };
 // Size (tiles, as a circle) and build time (real seconds) of each kind of building.
-export const FOOTPRINT = { train: { r: 1.2, build: 10 } };
+export const FOOTPRINT = { train: { r: 1.4, build: 10 } };
 // Defences: towers (upgraded in place, like a unit line), the Bombard Tower and the Castle.
 // They shoot the nearest enemy soldier in range; they don't train anything.
 export const DEFENCES = [
-  { key: 'def:tower', label: 'Watch Tower', tiers: [{ building: 79, age: 2 }, { building: 234, age: 3, upgrade: 150 }, { building: 235, age: 4, upgrade: 225 }], cost: 175, r: 0.65, build: 8, arrows: 1, shot: 'p_arrow_x1' },
-  { key: 'def:bombard', label: 'Bombard Tower', tiers: [{ building: 236, age: 4 }], needs: 47, cost: 425, r: 0.75, build: 10, arrows: 1, shot: 'p_ball_x1' },
-  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 800, r: 1.7, build: 12, arrows: 2, shot: 'p_arrow_x1' },
+  { key: 'def:tower', label: 'Watch Tower', tiers: [{ building: 79, age: 2 }, { building: 234, age: 3, upgrade: 150 }, { building: 235, age: 4, upgrade: 225 }], cost: 175, r: 0.75, build: 8, arrows: 1, shot: 'p_arrow_x1' },
+  { key: 'def:bombard', label: 'Bombard Tower', tiers: [{ building: 236, age: 4 }], needs: 47, cost: 425, r: 0.85, build: 10, arrows: 1, shot: 'p_ball_x1' },
+  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 800, r: 1.95, build: 12, arrows: 2, shot: 'p_arrow_x1' },
 ];
 // Everything a little dearer than before; siege dearer still, and slower to come out.
 const PRICE_UP = 1.15;

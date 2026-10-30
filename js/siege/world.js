@@ -22,9 +22,8 @@ export const LANE = { length: 86, half: 10 };
 export const RIVER = { x0: 31, x1: 55, half: 2.6 };
 const LANE_Y = (RIVER.half + LANE.half) / 2;   // centre line of each lane
 export const CASTLE_X = [13, 73];
-// Where each player may build: anywhere in their part of the base (in front of the Wonder
-// and behind it), leaving a small gap between buildings. Blue's x range; red mirrors it.
-// Alone on a team you get the whole width; two a team split it, top and bottom.
+// Where each player may build: anywhere in their team's base (in front of the Wonder and
+// behind it; teammates share it), leaving a small gap between buildings. Blue's x range; red mirrors it.
 export const BUILD = { x0: 1.5, x1: 26.5, gap: 0.5 };
 // Your own end of the map, a little beyond where you can build: the explosion only lands
 // here, and soldiers of yours in the enemy's end earn +5 gold a tick.
@@ -126,8 +125,7 @@ export class World {
     const x0 = s.team === 0 ? BUILD.x0 : LANE.length - BUILD.x1;
     const x1 = s.team === 0 ? BUILD.x1 : LANE.length - BUILD.x0;
     const edge = LANE.half - 0.2;
-    if (this.teams[s.team].players.length < 2) return { x0, x1, y0: -edge, y1: edge };
-    return s.rank === 0 ? { x0, x1, y0: -edge, y1: -0.2 } : { x0, x1, y0: 0.2, y1: edge };
+    return { x0, x1, y0: -edge, y1: edge };
   }
 
   inZone(p, x, y) { const z = this.zone(p); return x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1; }
@@ -165,10 +163,12 @@ export class World {
     const dir = s.team === 0 ? 1 : -1;
     const fx = s.team === 0 ? z.x1 - r : z.x0 + r;
     const ax = front ? fx : CASTLE_X[s.team] + dir * 4;
-    const ay = (z.y0 + z.y1) / 2;
+    // Teammates share the base: the first starts above the Wonder, the second below
+    const ay = this.teams[s.team].players.length > 1 ? (s.rank === 0 ? -4 : 4) : 0;
     const spots = [];
+    // (well clear of the top edge, where a tall building's health bar would go off the screen)
     for (let x = z.x0 + r; x <= z.x1 - r + 1e-6; x += 0.5) {
-      for (let y = z.y0 + r; y <= z.y1 - r + 1e-6; y += 0.5) spots.push([x, y, hyp(x - ax, (y - ay) * 0.8)]);
+      for (let y = z.y0 + r + 3.2; y <= z.y1 - r + 1e-6; y += 0.5) spots.push([x, y, hyp(x - ax, (y - ay) * 0.8)]);
     }
     spots.sort((a, b) => a[2] - b[2]);
     for (const [x, y] of spots) if (this.canPlace(p, r, x, y)) return [x, y];
@@ -178,7 +178,7 @@ export class World {
   castle(team, st) {
     const c = {
       // The team's Wonder: drawn as a Wonder (276), defended like a Castle (its arrows and armour).
-      id: this.nextId++, side: team, kind: 'castle', building: 276, x: CASTLE_X[team], y: 0, r: 2.2,
+      id: this.nextId++, side: team, kind: 'castle', building: 276, x: CASTLE_X[team], y: 0, r: 2.5,
       hp: st.hp, maxHp: st.hp, f: st, ready: 2,
     };
     this.structures.push(c);

@@ -322,7 +322,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     tapGround: (x, y) => setMode({ kind: 'build', at: [x, y] }),
     tapBuilding: (b) => setMode({ kind: 'building', id: b.id }),
     holdBuilding: (b) => setMode({ kind: 'building', id: b.id }),
-    placed: (pl) => { placeBtn.disabled = !pl.ok; placeBar.querySelector('.sg-aim-text').textContent = pl.ok ? 'Drag to move' : 'Too close to a building'; },
+    placed: (pl) => { placeBtn.disabled = !pl.ok; placeBar.querySelector('.sg-aim-text').textContent = pl.ok ? 'Drag to move' : pl.high ? 'Too high: it would be cut off' : 'Too close to a building'; },
     tapEmpty: () => setMode({ kind: 'hint' }),
     aimAt: (x, y) => {
       // Kept inside your third of the map (it's for defending) and on the field

@@ -149,7 +149,7 @@ for (const [i, [a, b]] of games.entries()) {
   assert.equal(w.income(0), 5, 'teammates split the base income');
   assert.ok(kits[0].lines.find((l) => l.band === 'spear').cost < kits[0].lines.find((l) => l.label === 'Militia').cost, 'spears cheaper than militia');
   assert.ok(kits[0].lines.find((l) => l.label === 'Knight').cost < (await kitFor('Khmer')).lines.find((l) => l.band === 'elephant').cost, 'elephants dearest');
-  assert.ok(w.zone(0).y1 <= 0 && w.zone(1).y0 >= 0, 'top player above the Wonder, bottom player below');
+  assert.deepEqual(w.zone(0), w.zone(1), 'teammates share their base');
   assert.ok(w.zone(2).x0 > 43, 'red team builds on the right');
   const ais = kits.map((_, i) => new Computer(w, i, { level: 'normal' }));
   let territorySeen = false;
