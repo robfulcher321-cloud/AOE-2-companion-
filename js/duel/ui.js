@@ -73,11 +73,11 @@ class SidePanel {
     await this.setCiv(this.defaults.civ, this.defaults.unit);
   }
 
-  /** 1–5 units on this side */
+  /** 1–10 units on this side */
   countRow() {
     this.count = 1;
     const group = el('div', { className: 'count', role: 'radiogroup', 'aria-label': `${this.label} unit count` });
-    this.countButtons = [1, 2, 3, 4, 5].map((n) => {
+    this.countButtons = Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
       const btn = el('button', { type: 'button', textContent: String(n) });
       btn.setAttribute('role', 'radio');
       btn.setAttribute('aria-checked', String(n === 1));
@@ -343,7 +343,7 @@ export async function initDuel() {
     await new Promise((r) => setTimeout(r, 30)); // let the button repaint first
     const counts = [fa.count, fb.count];
     // Fewer samples for big battles keeps it quick on a phone.
-    const runs = counts[0] + counts[1] > 4 ? 100 : 200;
+    const runs = counts[0] + counts[1] > 10 ? 40 : counts[0] + counts[1] > 4 ? 100 : 200;
     const many = simulateMany(fa.stats, fb.stats, { counts, runs });
     const { result } = many;
     fightBtn.disabled = false;

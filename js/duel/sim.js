@@ -95,8 +95,15 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
   };
   for (let side = 0; side < 2; side++) {
     const n = Math.max(1, Math.min(MAX_PER_SIDE, counts[side] | 0));
+    // Ranks of up to 5 (more than 25 units: wider ranks), the back ranks further from the enemy.
+    const perRank = n <= 5 ? n : Math.max(5, Math.ceil(Math.sqrt(n)));
+    const front = side === 0 ? 0 : a.radius + b.radius + gap;
+    const back = side === 0 ? -1 : 1;
     for (let k = 0; k < n; k++) {
-      spawn(fighters[side], side, side === 0 ? 0 : a.radius + b.radius + gap, (k - (n - 1) / 2) * spacing, 0);
+      const rank = Math.floor(k / perRank);
+      const inRank = Math.min(perRank, n - rank * perRank);
+      const slot = k - rank * perRank;
+      spawn(fighters[side], side, front + back * rank * spacing, (slot - (inRank - 1) / 2) * spacing, 0);
     }
   }
   const startCounts = [0, 1].map((s) => units.filter((u) => u.side === s).length);

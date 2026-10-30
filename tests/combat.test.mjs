@@ -120,6 +120,19 @@ const big = simulateMany(eckn, buildFighter(U[1233], 'Elite Kipchak', allTechs),
 const ms = performance.now() - t0;
 console.log(`5 Elite Chu Ko Nu vs 5 Elite Kipchak: ${big.rates.map((r) => Math.round(r * 100) + '%').join(' / ')} (${Math.round(ms)} ms for 200 runs)`);
 assert.ok(ms < 8000, 'sampling stays fast enough for a phone');
+// Ten a side: two ranks of five, and sampling still quick
+const ten = simulate(champ, palF, { counts: [10, 10] });
+assert.equal(ten.sides[0].count, 10);
+assert.equal(ten.sides[1].count, 10);
+const xs = new Set(ten.frames[0].u.slice(0, 10).map((u) => u[0].toFixed(2)));
+assert.equal(xs.size, 2, 'ten units stand in two ranks');
+for (const [name, fa, fb] of [['Champions v Paladins', champ, palF], ['Elite Chu Ko Nu v Elite Kipchak', eckn, buildFighter(U[1233], 'Elite Kipchak', allTechs)]]) {
+  const t1 = performance.now();
+  const r = simulateMany(fa, fb, { counts: [10, 10], runs: 60 });
+  const ms1 = performance.now() - t1;
+  console.log(`10 v 10 ${name}: ${r.rates.map((x) => Math.round(x * 100) + '%').join(' / ')} (${Math.round(ms1)} ms for 60 runs)`);
+  assert.ok(ms1 < 8000, '10 v 10 sampling stays fast enough for a phone');
+}
 console.log('Multi-unit checks passed.');
 
 // Special abilities, read from the game data

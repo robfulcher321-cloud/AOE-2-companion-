@@ -309,7 +309,7 @@ select:disabled { opacity: .55; }
 
 /* Unit count: 1–5 */
 .count { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-.count button { min-height: 44px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--stone-2); color: var(--bone); font: inherit; font-weight: 700; cursor: pointer; }
+.count button { min-height: 40px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--stone-2); color: var(--bone); font: inherit; font-weight: 700; cursor: pointer; }
 .count button[aria-checked=true] { background: rgb(255 248 226 / .85); outline: 2px solid var(--gold); outline-offset: -1px; }
 .fight:disabled { opacity: .7; cursor: progress; }
 .special-note { margin: 6px 0 0; font-size: .92rem; color: var(--bone); }
