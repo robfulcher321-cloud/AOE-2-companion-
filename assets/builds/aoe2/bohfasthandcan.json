@@ -1,0 +1,178 @@
+{
+  "name": "BOH Fast Hand Can.",
+  "civilization": "Bohemians",
+  "author": "buildorderguide",
+  "source": "https://buildorderguide.com/#/build/vm4MUf5yp1ERGDt5dke2",
+  "description": "Fast castle directly into two range hand cannoneers.  Best on Arena.",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "2 @other/House_aoe2DE.webp@ + 6 on @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "4 on @resource/Aoe2de_wood.webp@ | Push 3 @animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "2:55"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "1 on @animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "3:20"
+    },
+    {
+      "villager_count": 15,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 11,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "2 @other/House_aoe2DE.webp@ + @mill/Mill_aoe2de.webp@ + 4 on @resource/BerryBushDE.webp@"
+      ],
+      "time": "5:00"
+    },
+    {
+      "villager_count": 19,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 15,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "1 Lures @animal/Boar_aoe2DE.webp@ + 3 More on @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "6:40"
+    },
+    {
+      "villager_count": 22,
+      "age": 1,
+      "resources": {
+        "wood": 7,
+        "food": 15,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "3 on @resource/Aoe2de_wood.webp@"
+      ],
+      "time": "7:55"
+    },
+    {
+      "villager_count": 24,
+      "age": 1,
+      "resources": {
+        "wood": 7,
+        "food": 15,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "2 on @resource/Aoe2de_gold.webp@ | Research 25 Pop @age/FeudalAgeIconDE_alpha.webp@"
+      ],
+      "time": "8:45"
+    },
+    {
+      "villager_count": 24,
+      "age": 2,
+      "resources": {
+        "wood": 7,
+        "food": 15,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE_alpha.webp@ | Build @barracks/Barracks_aoe2DE.webp@ & @other/House_aoe2DE.webp@ | Seed 3 @mill/FarmDE.webp@"
+      ],
+      "time": "10:55"
+    },
+    {
+      "villager_count": 25,
+      "age": 2,
+      "resources": {
+        "wood": 8,
+        "food": 15,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE_alpha.webp@ | Build @archery_range/Archery_range_aoe2DE.webp@ + @blacksmith/Blacksmith_aoe2de.webp@ | 1 on @resource/Aoe2de_wood.webp@"
+      ],
+      "time": "11:20"
+    },
+    {
+      "villager_count": 26,
+      "age": 2,
+      "resources": {
+        "wood": 8,
+        "food": 15,
+        "gold": 3,
+        "stone": 0
+      },
+      "notes": [
+        "1 on @resource/Aoe2de_gold.webp@ | Research @age/CastleAgeIconDE_alpha.webp@"
+      ],
+      "time": "11:45"
+    },
+    {
+      "villager_count": 26,
+      "age": 3,
+      "resources": {
+        "wood": 8,
+        "food": 15,
+        "gold": 3,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE_alpha.webp@ | @resource/MaleVillDE.webp@ from @animal/Sheep_aoe2DE.webp@ to straggler/@mill/FarmDE.webp@"
+      ],
+      "time": "14:25"
+    },
+    {
+      "villager_count": 29,
+      "age": 3,
+      "resources": {
+        "wood": 7,
+        "food": 15,
+        "gold": 7,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/CastleAgeIconDE_alpha.webp@ | 1 @resource/Aoe2de_wood.webp@ \u2192 1 @resource/Aoe2de_gold.webp@ | 3 on @resource/Aoe2de_gold.webp@ | Continue @mill/FarmDE.webp@ & @resource/Aoe2de_wood.webp@",
+        "Build @archery_range/Archery_range_aoe2DE.webp@ + @other/House_aoe2DE.webp@ + @university/University_AoE2_DE.webp@ (research @university/ChemistryDE.webp@) | Train @archery_range/Hand_cannoneer_aoe2DE.webp@"
+      ],
+      "time": "15:40"
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#23170d">
+  <meta name="color-scheme" content="dark">
+  <title>AoE2 Companion</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <!-- iPhone: "Add to Home Screen" opens it full screen like an app -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AoE2">
+  <link rel="preload" href="fonts/merriweather-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main id="app">
+    <section id="view-tree" class="view" aria-labelledby="tree-title">
+      <header class="view-head">
+        <h1 id="tree-title">Tech tree</h1>
+        <div class="field" id="tree-civ"><span>Civilisation</span></div>
+      </header>
+      <details class="civ-blurb"><summary>Civilisation bonuses</summary><p id="civ-blurb"></p></details>
+      <div id="tree-body" class="tree-body">
+        <p class="status">Loading game data…</p>
+      </div>
+    </section>
+
+    <section id="view-duel" class="view" aria-labelledby="duel-title" hidden>
+      <header class="view-head">
+        <h1 id="duel-title">Test</h1>
+        <p class="subtle">Pick up to ten units a side, melee or ranged, and their upgrades, then watch them fight.</p>
+      </header>
+      <div class="duel-setup">
+        <fieldset class="side side-blue" id="side-a"></fieldset>
+        <fieldset class="side side-red" id="side-b"></fieldset>
+      </div>
+      <button id="fight" class="fight" type="button">Fight</button>
+      <p class="pack-note" id="pack-text" hidden></p>
+      <div id="arena-wrap" class="arena-wrap" hidden>
+        <canvas id="arena" aria-label="Duel playback"></canvas>
+        <div class="arena-controls">
+          <button id="replay" type="button">Replay</button>
+          <div class="speed" role="radiogroup" aria-label="Playback speed">
+            <button type="button" data-speed="1" aria-pressed="true">1×</button>
+            <button type="button" data-speed="2" aria-pressed="false">2×</button>
+            <button type="button" data-speed="4" aria-pressed="false">4×</button>
+          </div>
+        </div>
+        <div id="result" class="result" aria-live="polite"></div>
+      </div>
+    </section>
+    <section id="view-guides" class="view" aria-labelledby="guides-title" hidden>
+      <header class="view-head">
+        <h1 id="guides-title">Guides</h1>
+        <p class="subtle">Build orders to practise, step by step and in real time.</p>
+      </header>
+      <div id="guides-body"><p class="status">Loading build orders…</p></div>
+    </section>
+    <section id="view-siege" class="view" aria-labelledby="siege-title" hidden>
+      <header class="view-head">
+        <h1 id="siege-title">Wonder Wars</h1>
+        <p class="subtle">A simple Castle Fight with AoE2 units: build, upgrade, and let your army march on the enemy castle.</p>
+      </header>
+      <div id="siege-body"><p class="status">Loading…</p></div>
+    </section>
+  </main>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <article class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <button class="sheet-close" type="button" data-close aria-label="Close">×</button>
+      <div id="sheet-content"></div>
+    </article>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <nav class="tabs" aria-label="Sections">
+    <button type="button" data-view="tree" aria-current="page">Tech tree</button>
+    <button type="button" data-view="duel">Test</button>
+    <button type="button" data-view="guides">Guides</button>
+    <button type="button" data-view="siege">Wonder Wars</button>
+  </nav>
+  <footer class="data-note" id="data-note"></footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

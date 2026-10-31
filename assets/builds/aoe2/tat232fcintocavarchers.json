@@ -1,0 +1,178 @@
+{
+  "name": "TAT 23+2 FC into Cav Archers",
+  "civilization": "Tatars",
+  "author": "Morley Games",
+  "source": "https://youtu.be/eetAALNocSA",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 2 @other/House_aoe2DE.webp@ | First 6 @resource/MaleVillDE.webp@ to @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 4 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ (build @lumber_camp/Lumber_camp_aoe2de.webp@)"
+      ],
+      "time": "2:55"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Lure 1st @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "3:20"
+    },
+    {
+      "villager_count": 12,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 8,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ builds 2 @other/House_aoe2DE.webp@ + 1 @mill/Mill_aoe2de.webp@ on @resource/BerryBushDE.webp@ | Start pushing @animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "3:45"
+    },
+    {
+      "villager_count": 14,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 10,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/MaleVillDE.webp@ to @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "4:35"
+    },
+    {
+      "villager_count": 18,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 4 @resource/MaleVillDE.webp@ to @resource/BerryBushDE.webp@ | Lure 2nd @animal/Boar_aoe2DE.webp@ with existing @resource/MaleVillDE.webp@"
+      ],
+      "time": "6:15"
+    },
+    {
+      "villager_count": 20,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 14,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/MaleVillDE.webp@ to @resource/Aoe2de_gold.webp@"
+      ],
+      "time": "7:05"
+    },
+    {
+      "villager_count": 22,
+      "age": 1,
+      "resources": {
+        "wood": 6,
+        "food": 14,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ | Research @town_center/LoomDE.webp@ | 23 pop @age/FeudalAgeIconDE.webp@"
+      ],
+      "time": "8:20"
+    },
+    {
+      "villager_count": 22,
+      "age": 2,
+      "resources": {
+        "wood": 6,
+        "food": 14,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE.webp@ | Build @barracks/Barracks_aoe2DE.webp@"
+      ],
+      "time": "10:30"
+    },
+    {
+      "villager_count": 24,
+      "age": 2,
+      "resources": {
+        "wood": 6,
+        "food": 14,
+        "gold": 4,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/MaleVillDE.webp@ to @resource/Aoe2de_gold.webp@ | Build 1 @archery_range/Archery_range_aoe2DE.webp@ + @blacksmith/Blacksmith_aoe2de.webp@ | 25 pop @age/CastleAgeIconDE.webp@"
+      ],
+      "time": "11:20"
+    },
+    {
+      "villager_count": 24,
+      "age": 3,
+      "resources": {
+        "wood": 11,
+        "food": 6,
+        "gold": 7,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE.webp@ | Build 2 @other/House_aoe2DE.webp@ + 2nd @archery_range/Archery_range_aoe2DE.webp@ | Research @lumber_camp/DoubleBitAxe_aoe2DE.webp@",
+        "7 @animal/Sheep_aoe2DE.webp@@resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ (4) & @resource/Aoe2de_gold.webp@ (3) | 1 @resource/BerryBushDE.webp@@resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@"
+      ],
+      "time": "14:00"
+    },
+    {
+      "villager_count": 27,
+      "age": 3,
+      "resources": {
+        "wood": 11,
+        "food": 6,
+        "gold": 10,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/CastleAgeIconDE.webp@ | Next 3 @resource/MaleVillDE.webp@ to @resource/Aoe2de_gold.webp@ | Bulid @stable/Stable_aoe2DE.webp@ + 3rd @archery_range/Archery_range_aoe2DE.webp@ | Train @archery_range/Cavalryarcher_aoe2DE.webp@",
+        "Research @blacksmith/FletchingDE.webp@ + @blacksmith/BodkinArrowDE.webp@ + @stable/BloodlinesDE.webp@ + @stable/HusbandryDE.webp@ | Next @resource/MaleVillDE.webp@ to @mill/FarmDE.webp@/@resource/Aoe2de_wood.webp@"
+      ],
+      "time": "15:15"
+    }
+  ]
+}

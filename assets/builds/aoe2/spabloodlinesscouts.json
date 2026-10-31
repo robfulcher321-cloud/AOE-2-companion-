@@ -1,0 +1,165 @@
+{
+  "name": "SPA Bloodlines Scouts",
+  "civilization": "Spanish",
+  "author": "GL.DauT",
+  "source": "https://www.youtube.com/watch?v=bA-AnCMr6Fo",
+  "description": "Use the new +20 gold/technology bonus to afford bloodlines without mining gold.\nStart collecting stone for towers and/or future castle.",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "2 @other/House_aoe2DE.webp@ + 6 on @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 9,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "3 on @resource/Aoe2de_wood.webp@"
+      ],
+      "time": "2:30"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "1 Lures @animal/Boar_aoe2DE.webp@ | Push 3 @animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "2:55"
+    },
+    {
+      "villager_count": 12,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 9,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "@other/House_aoe2DE.webp@ + 2 on @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "3:45"
+    },
+    {
+      "villager_count": 14,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 11,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "@mill/Mill_aoe2de.webp@ + 2 on @resource/BerryBushDE.webp@"
+      ],
+      "time": "4:35"
+    },
+    {
+      "villager_count": 16,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "1 Lures @animal/Boar_aoe2DE.webp@ + 1 More on @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "5:25"
+    },
+    {
+      "villager_count": 18,
+      "age": 1,
+      "resources": {
+        "wood": 5,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "2 on @resource/Aoe2de_wood.webp@ | Research @town_center/LoomDE.webp@ | 19 Pop @age/FeudalAgeIconDE_alpha.webp@"
+      ],
+      "time": "6:40"
+    },
+    {
+      "villager_count": 18,
+      "age": 2,
+      "resources": {
+        "wood": 7,
+        "food": 11,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE_alpha.webp@ | 4 @animal/Sheep_aoe2DE.webp@ \u2192 @resource/Aoe2de_wood.webp@ (2) & @resource/BerryBushDE.webp@ (2) | @barracks/Barracks_aoe2DE.webp@ + @other/House_aoe2DE.webp@"
+      ],
+      "time": "8:50"
+    },
+    {
+      "villager_count": 19,
+      "age": 2,
+      "resources": {
+        "wood": 9,
+        "food": 10,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE_alpha.webp@ | Build @stable/Stable_aoe2DE.webp@ | Research @lumber_camp/DoubleBitAxe_aoe2DE.webp@ | 1 @animal/Sheep_aoe2DE.webp@ \u2192 1 @resource/Aoe2de_wood.webp@",
+        "1 on @resource/Aoe2de_wood.webp@ | Start Training @stable/Scoutcavalry_aoe2DE.webp@ (@barracks/Spearman_aoe2DE.webp@ if needed)"
+      ],
+      "time": "9:15"
+    },
+    {
+      "villager_count": 21,
+      "age": 2,
+      "resources": {
+        "wood": 9,
+        "food": 10,
+        "gold": 0,
+        "stone": 2
+      },
+      "notes": [
+        "2 on @resource/Aoe2de_stone.webp@ | Research @mill/HorseCollarDE.webp@"
+      ],
+      "time": "10:05"
+    },
+    {
+      "villager_count": 23,
+      "age": 2,
+      "resources": {
+        "wood": 9,
+        "food": 12,
+        "gold": 0,
+        "stone": 2
+      },
+      "notes": [
+        "2 on @mill/FarmDE.webp@ | next @resource/MaleVillDE.webp@ on @mill/FarmDE.webp@ & @resource/Aoe2de_gold.webp@",
+        "Research @stable/BloodlinesDE.webp@ | Add @defensive_structures/Tower_aoe2de.webp@ if needed"
+      ],
+      "time": "10:55"
+    }
+  ]
+}

@@ -1,0 +1,207 @@
+{
+  "name": "JUR Steppe Lancer Rush",
+  "civilization": "Jurchens",
+  "author": "Morley Games",
+  "source": "https://youtu.be/dns_mJPnvns",
+  "build_order": [
+    {
+      "age": 1,
+      "time": "1:15",
+      "villager_count": 6,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 2 @other/House_aoe2DE.webp@ | Send the first 6 @resource/villager.webp@ to @animal/Sheep_aoe2DE.webp@"
+      ]
+    },
+    {
+      "age": 1,
+      "time": "1:40",
+      "villager_count": 7,
+      "resources": {
+        "wood": 0,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/villager.webp@ lures 1st @animal/Boar_aoe2DE.webp@"
+      ]
+    },
+    {
+      "age": 1,
+      "time": "3:20",
+      "villager_count": 11,
+      "resources": {
+        "wood": 4,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 4 @resource/villager.webp@ go to @resource/Aoe2de_wood.webp@ (build @lumber_camp/Lumber_camp_aoe2de.webp@) | Build 2 @other/House_aoe2DE.webp@",
+        "Start pushing @animal/Deer_aoe2DE.webp@ with @stable/Scoutcavalry_aoe2DE.webp@"
+      ]
+    },
+    {
+      "age": 1,
+      "time": "4:10",
+      "villager_count": 13,
+      "resources": {
+        "wood": 4,
+        "food": 9,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/villager.webp@ to @animal/Boar_aoe2DE.webp@ | Lure 2nd @animal/Boar_aoe2DE.webp@"
+      ]
+    },
+    {
+      "age": 1,
+      "time": "5:00",
+      "villager_count": 15,
+      "resources": {
+        "wood": 4,
+        "food": 11,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/villager.webp@ go to @resource/BerryBushDE.webp@ (build @mill/Mill_aoe2de.webp@)"
+      ]
+    },
+    {
+      "age": 1,
+      "time": "5:25",
+      "villager_count": 16,
+      "resources": {
+        "wood": 4,
+        "food": 12,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Add 1 @resource/villager.webp@ on @animal/Boar_aoe2DE.webp@"
+      ]
+    },
+    {
+      "age": 1,
+      "time": "6:15",
+      "villager_count": 18,
+      "resources": {
+        "wood": 4,
+        "food": 12,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/villager.webp@ go to @resource/Aoe2de_gold.webp@ (build @mining_camp/Mining_camp_aoe2de.webp@)"
+      ]
+    },
+    {
+      "age": 1,
+      "time": "7:55",
+      "villager_count": 21,
+      "resources": {
+        "wood": 7,
+        "food": 12,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "Next 3 @resource/villager.webp@ go to @resource/Aoe2de_wood.webp@ | Research @town_center/LoomDE.webp@ | 22 pop @age/FeudalAgeIconDE.webp@"
+      ]
+    },
+    {
+      "age": 2,
+      "time": "10:05",
+      "villager_count": 21,
+      "resources": {
+        "wood": 7,
+        "food": 12,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE.webp@ | Build @barracks/Barracks_aoe2DE.webp@"
+      ]
+    },
+    {
+      "age": 2,
+      "time": "10:55",
+      "villager_count": 23,
+      "resources": {
+        "wood": 7,
+        "food": 12,
+        "gold": 4,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE.webp@ | Next 2 @resource/villager.webp@ to @resource/Aoe2de_gold.webp@",
+        "Build @stable/Stable_aoe2DE.webp@ & @blacksmith/Blacksmith_aoe2de.webp@ | 24 pop @age/CastleAgeIconDE.webp@"
+      ]
+    },
+    {
+      "age": 3,
+      "time": "13:35",
+      "villager_count": 23,
+      "resources": {
+        "wood": 7,
+        "food": 12,
+        "gold": 4,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE.webp@ | Research @stable/BloodlinesDE.webp@",
+        "Move 10 @animal/Sheep_aoe2DE.webp@@resource/villager.webp@ to @resource/BerryBushDE.webp@ (4) & @mill/FarmDE.webp@ (6)"
+      ]
+    },
+    {
+      "age": 3,
+      "time": "14:50",
+      "villager_count": 26,
+      "resources": {
+        "wood": 7,
+        "food": 15,
+        "gold": 4,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/CastleAgeIconDE.webp@ | Next 3 @resource/villager.webp@ to @mill/FarmDE.webp@ | Make @stable/Steppelancericon.webp@"
+      ]
+    },
+    {
+      "age": 3,
+      "time": "15:15",
+      "villager_count": 27,
+      "resources": {
+        "wood": 7,
+        "food": 15,
+        "gold": 5,
+        "stone": 0
+      },
+      "notes": [
+        "Add 1 @resource/villager.webp@ to @resource/Aoe2de_gold.webp@"
+      ]
+    },
+    {
+      "age": 3,
+      "time": "16:30",
+      "villager_count": 30,
+      "resources": {
+        "wood": 7,
+        "food": 18,
+        "gold": 5,
+        "stone": 0
+      },
+      "notes": [
+        "Add 3 @resource/villager.webp@ to @mill/FarmDE.webp@"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "name": "GEO Super Fast Scouts",
+  "civilization": "Georgians",
+  "author": "ShadowCrystallux",
+  "source": "https://youtu.be/8o7-Z2WyUxE",
+  "build_order": [
+    {
+      "villager_count": 5,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 5,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 3 @other/House_aoe2DE.webp@ | First 5 @resource/MaleVillDE.webp@ to @animal/Sheep_aoe2DE.webp@ | Scout with @stable/Scoutcavalry_aoe2DE.webp@ & @other/MuleCart.webp@"
+      ],
+      "time": "0:50"
+    },
+    {
+      "villager_count": 9,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 9,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Lure first @animal/Boar_aoe2DE.webp@ | Next @resource/MaleVillDE.webp@ to @resource/Aoe2de_food.webp@",
+        "Start pushing 2 @animal/Deer_aoe2DE.webp@ (or +) | Lure 2nd @animal/Boar_aoe2DE.webp@ when needed"
+      ],
+      "time": "2:30"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 10,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build @mill/Mill_aoe2de.webp@ on @resource/BerryBushDE.webp@"
+      ],
+      "time": "2:55"
+    },
+    {
+      "villager_count": 14,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Add 4 @resource/MaleVillDE.webp@ to @resource/Aoe2de_food.webp@ under @town_center/Towncenter_aoe2DE.webp@"
+      ],
+      "time": "4:35"
+    },
+    {
+      "villager_count": 15,
+      "age": 1,
+      "resources": {
+        "wood": 1,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ goes to @resource/Aoe2de_wood.webp@ (with @other/MuleCart.webp@)",
+        "Research @town_center/LoomDE.webp@  | Research 16 pop @age/FeudalAgeIconDE.webp@"
+      ],
+      "time": "5:25"
+    },
+    {
+      "villager_count": 15,
+      "age": 2,
+      "resources": {
+        "wood": 10,
+        "food": 5,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE.webp@ | 9 @resource/MaleVillDE.webp@ from @town_center/Towncenter_aoe2DE.webp@ to @resource/Aoe2de_wood.webp@ (3 on straggler)",
+        "3 @resource/MaleVillDE.webp@ from @town_center/Towncenter_aoe2DE.webp@ to @resource/BerryBushDE.webp@ | Build @barracks/Barracks_aoe2DE.webp@"
+      ],
+      "time": "7:35"
+    },
+    {
+      "villager_count": 19,
+      "age": 2,
+      "resources": {
+        "wood": 7,
+        "food": 12,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE.webp@ | Build @stable/Stable_aoe2DE.webp@ & @other/House_aoe2DE.webp@ | 3 straggler @resource/MaleVillDE.webp@ back to @resource/Aoe2de_food.webp@",
+        "Research @lumber_camp/DoubleBitAxe_aoe2DE.webp@ | Produce many @stable/Scoutcavalry_aoe2DE.webp@ | Next @resource/MaleVillDE.webp@ to @mill/FarmDE.webp@/straggler"
+      ],
+      "time": "9:15"
+    }
+  ]
+}
