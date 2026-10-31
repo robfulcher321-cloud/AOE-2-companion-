@@ -315,6 +315,39 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     dock,
     tipBox);
   document.body.append(screen);
+
+  // Sideways only: swipe up on the bottom strip to open it over the battlefield (everything
+  // laid out in rows, scrolling up and down); swipe down, or tap the handle, to put it back.
+  const wideNow = () => matchMedia('(orientation: landscape) and (max-height: 600px)').matches;
+  const handle = el('button', { type: 'button', className: 'sg-dock-handle', 'aria-label': 'Open the panel over the battlefield' });
+  dock.before(handle);
+  function setDockOpen(on) {
+    on = Boolean(on) && wideNow();
+    screen.classList.toggle('dock-open', on);
+    handle.setAttribute('aria-label', on ? 'Put the panel back' : 'Open the panel over the battlefield');
+    const top = `${Math.round(screen.querySelector('.sg-head').getBoundingClientRect().bottom)}px`;
+    dock.style.top = on ? top : '';
+    screen.style.setProperty('--dock-top', top);
+    dock.scrollTop = 0;
+  }
+  handle.addEventListener('click', () => setDockOpen(!screen.classList.contains('dock-open')));
+  let swipe = null;
+  dock.addEventListener('touchstart', (e) => {
+    const p = e.touches[0];
+    swipe = e.touches.length === 1 ? { x: p.clientX, y: p.clientY, top: dock.scrollTop } : null;
+  }, { passive: true });
+  dock.addEventListener('touchend', (e) => {
+    if (!swipe || !wideNow()) return;
+    const p = e.changedTouches[0];
+    const dx = p.clientX - swipe.x, dy = p.clientY - swipe.y;
+    const open = screen.classList.contains('dock-open');
+    if (Math.abs(dy) > 45 && Math.abs(dy) > Math.abs(dx) * 1.3) {
+      if (!open && dy < 0) setDockOpen(true);
+      else if (open && dy > 0 && swipe.top <= 2) setDockOpen(false);
+    }
+    swipe = null;
+  }, { passive: true });
+  addEventListener('resize', () => { if (!wideNow()) setDockOpen(false); });
   screen.world = world; // handy when debugging in the browser console
   document.body.classList.add('sg-open');
 
@@ -355,7 +388,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     }
     blastBtn.classList.toggle('on', view.aiming);
   }
-  blastBtn.addEventListener('click', () => { if (view.placing) setMode({ kind: 'hint' }); setAim(!view.aiming); });
+  blastBtn.addEventListener('click', () => { if (view.placing) setMode({ kind: 'hint' }); setDockOpen(false); setAim(!view.aiming); });
   placeBtn.addEventListener('click', () => {
     const pl = view.placing;
     if (!pl?.ok) return;
@@ -415,6 +448,8 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     view.selected = m.kind === 'building' ? m.id : null;
     view.buildAt = m.kind === 'build' ? m.at : null;
     // Chose a building: its ghost appears where you tapped, ready to drag
+    // Placing a building needs the battlefield: put the opened panel back
+    if ((m.kind === 'build' && m.key) || m.kind === 'hint') setDockOpen(false);
     if (m.kind === 'build' && m.key) {
       const fp = world.footprint(ME, m.key);
       const line = m.key === 'market' ? null : kit.line(m.key);
