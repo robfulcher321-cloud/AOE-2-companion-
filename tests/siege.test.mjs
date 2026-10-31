@@ -168,7 +168,7 @@ for (const [i, [a, b]] of games.entries()) {
   const civs = ['Franks', 'Britons', 'Goths', 'Mongols', 'Aztecs', 'Japanese'];
   const kits = await Promise.all(civs.map((c) => kitFor(c)));
   const w = new World(kits, data, { seed: 11, teams: [0, 0, 0, 1, 1, 1] });
-  assert.equal(w.income(0), 6.5);
+  assert.equal(w.income(0), 7);
   const ais = kits.map((_, i) => new Computer(w, i, { level: 'normal' }));
   while (w.winner === null && w.t < 3600) { for (const a of ais) a.think(); w.step(); }
   assert.notEqual(w.winner, null, '3v3 game ends');
@@ -179,7 +179,7 @@ for (const [i, [a, b]] of games.entries()) {
 {
   const kits = [await kitFor('Franks'), await kitFor('Britons'), await kitFor('Goths'), await kitFor('Mongols')];
   const w = new World(kits, data, { seed: 5, teams: [0, 0, 1, 1] });
-  assert.equal(w.income(0), 6.5, 'two thirds of the base income each in a team game');
+  assert.equal(w.income(0), 7, 'two thirds of the base income each in a team game (rounded)');
   assert.ok(kits[0].lines.find((l) => l.band === 'spear').cost < kits[0].lines.find((l) => l.label === 'Militia').cost, 'spears cheaper than militia');
   assert.ok(kits[0].lines.find((l) => l.label === 'Knight').cost < (await kitFor('Khmer')).lines.find((l) => l.band === 'elephant').cost, 'elephants dearest');
   assert.deepEqual(w.zone(0), w.zone(1), 'teammates share their base');

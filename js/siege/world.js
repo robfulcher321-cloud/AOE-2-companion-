@@ -34,7 +34,7 @@ export const TERRITORY = { edge: 30.5 };
 export const MINES = {
   spots: [[36.5, -1], [49.5, -1], [36.5, 1], [49.5, 1]],   // x, lane (−1 top, 1 bottom)
   y: 7.9,            // how far out from the middle, beside each lane
-  gold: 3, solo: 5,  // a tick per mine: in team games, and in a 1v1
+  gold: 2, solo: 5,  // a tick per mine: in team games, and in a 1v1
   camp: 1.9,         // camp this far from the mine, on its owner's side
   build: 5, raze: 5, // real seconds
 };
@@ -209,7 +209,7 @@ export class World {
     const team = this.teams[s.team].players.length > 1;
     const camps = this.mines.filter((m) => m.camp?.done && m.camp.owner === side).length;
     const g = (BASE_INCOME * (team ? TEAM_SHARE : 1) + MARKET.income * s.markets + camps * (this.sides.length > 2 ? MINES.gold : MINES.solo)) * s.incomeMult;
-    return Math.round(g * 2) / 2;
+    return Math.round(g);   // whole gold only
   }
 
   /** Mines a player's camps are working. */
