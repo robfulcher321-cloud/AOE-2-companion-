@@ -1076,7 +1076,8 @@ export class SiegeView {
       const k = (t - s.t0) / Math.max(1e-3, s.t1 - s.t0);
       const dist = Math.hypot(s.x1 - s.x0, s.y1 - s.y0);
       const gun = /shot/.test(s.sprite || '');
-      const peak = gun ? 0.03 * dist : Math.min(1.8, 0.1 + dist * 0.08 + Math.max(0, s.arc) * dist);
+      const flat = /bolt|chakram/.test(s.sprite || '');   // Scorpion bolts fly dead level
+      const peak = flat ? 0 : gun ? 0.03 * dist : Math.min(1.8, 0.1 + dist * 0.08 + Math.max(0, s.arc) * dist);
       const startH = s.castle ? 2.2 : 0.55;
       const h = (q) => startH * (1 - q) + 0.3 * q + 4 * peak * q * (1 - q);
       const at = (q) => {

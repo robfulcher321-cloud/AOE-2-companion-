@@ -198,11 +198,18 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
       aimX += (rand() * 2 - 1) * target.r * 0.7;
       aimY += (rand() * 2 - 1) * target.r * 0.7;
     }
+    if (p.pierces) {
+      // Scorpion bolts (and chakrams) fly on through: out to the shooter's full range, or 2 tiles past the target
+      const d = Math.hypot(aimX - u.x, aimY - u.y) || 1;
+      const reach = Math.max(d + 2, (u.f.range || 0) + u.r + 1);
+      aimX = u.x + ((aimX - u.x) / d) * reach;
+      aimY = u.y + ((aimY - u.y) / d) * reach;
+    }
     const shot = {
       by: u.id, side: u.side, target: target.id, accurate, kind, p, attacks,
       t0: releaseAt, x0: u.x, y0: u.y, x1: aimX, y1: aimY,
       landed: releaseAt + Math.hypot(aimX - u.x, aimY - u.y) / p.speed,
-      hit: null, sprite: p.sprite, arc: p.arc,
+      hit: null, sprite: p.sprite, arc: p.arc, flat: Boolean(p.pierces),
     };
     u.shots += 1;
     shots.push(shot);

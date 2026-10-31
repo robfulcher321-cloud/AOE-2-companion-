@@ -225,9 +225,9 @@ export class ArenaPlayer {
       const k = stuck ? 1 : (t - s.t0) / flight;
       const dist = Math.hypot(s.x1 - s.x0, s.y1 - s.y0);
       const gun = /shot/.test(s.sprite || '');
-      const startH = 0.55, endH = s.hit !== null ? 0.4 : 0;
-      // Bullets fly almost flat; arrows and thrown weapons arc.
-      const peak = gun ? 0.03 * dist : Math.min(1.6, 0.1 + dist * 0.08 + Math.max(0, s.arc) * dist); // tiles
+      // Bullets fly almost flat, and bolts that go through (Scorpions) dead level; arrows and thrown weapons arc.
+      const startH = 0.55, endH = s.flat ? 0.5 : s.hit !== null ? 0.4 : 0;
+      const peak = s.flat ? 0 : gun ? 0.03 * dist : Math.min(1.6, 0.1 + dist * 0.08 + Math.max(0, s.arc) * dist); // tiles
       const height = (q) => startH + (endH - startH) * q + 4 * peak * q * (1 - q);
       const at = (q) => {
         const [x, y] = this.toScreen(s.x0 + (s.x1 - s.x0) * q, s.y0 + (s.y1 - s.y0) * q);

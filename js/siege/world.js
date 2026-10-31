@@ -630,6 +630,9 @@ export class World {
     if (scatter) {
       const a = this.rand() * Math.PI * 2, d = scatter * Math.sqrt(this.rand());
       x1 += Math.cos(a) * d; y1 += Math.sin(a) * d;
+    } else if (u.f?.projectile?.pierces && !isCastle) {
+      // a Scorpion bolt flies on 2 tiles past its target, through anyone in the way
+      x1 += ((x1 - u.x) / dist) * 2; y1 += ((y1 - u.y) / dist) * 2;
     } else if (!hit) {
       const d = Math.max(0.5, spread * dist / 2);
       x1 += (this.rand() * 2 - 1) * d;
@@ -663,8 +666,7 @@ export class World {
     }
     // Scorpion bolts go through: every enemy along the line takes the hit.
     if (p.pierces && !s.castle) {
-      const dx = s.x1 - s.x0, dy = s.y1 - s.y0, len = hyp(dx, dy) || 1;
-      const ex = s.x1 + (dx / len) * 2, ey = s.y1 + (dy / len) * 2;
+      const ex = s.x1, ey = s.y1;   // (launch already carried it on past the target)
       const lx = Math.min(s.x0, ex), hx = Math.max(s.x0, ex);
       this.near((lx + hx) / 2, (hx - lx) / 2 + 1, (v) => {
         if (v.side === s.side || v.hp <= 0) return;
