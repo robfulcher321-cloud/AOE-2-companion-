@@ -44,7 +44,12 @@ export const TEAM_SHARE = 2 / 3;
 export const GAME_SPEED = 1.7;
 const BUILD_HP = 0.15;          // a new building starts at this share of its HP...
 const BUILD_WEAK = 1.5;
-const SIEGE_TURN = 1.2;         // game seconds for siege with a minimum range to turn about         // ...and takes this much more damage until it's finished
+const SIEGE_TURN = 1.2;
+// Holding on when you're losing: the Wonder shoots more arrows the more it's damaged
+// (+1 for each quarter of its HP gone), and when it falls below 50% and again below 25%,
+// everyone on its team gets another explosion.
+const WONDER_ARROWS = 4;
+const RALLY_AT = [0.5, 0.25];         // game seconds for siege with a minimum range to turn about         // ...and takes this much more damage until it's finished
 const BIN = 2;                 // tiles: units are bucketed along the lane for "who's near" lookups
 const MELEE_SLACK = 0.35;      // tiles: a melee unit this close counts as touching (no running on the spot in a crowd)
 const BUILDING_SLACK = 0.45;   // tiles: buildings are big; a unit at their foot can hit them
@@ -284,7 +289,7 @@ export class World {
         if (key === 'market') return this.count(side, 'market') < MARKET.max && s.age >= MARKET.age ? MARKET.cost : null;
         const line = this.line(side, key);
         if (!line || !this.unlocked(side, line) || line.age > s.age) return null;
-        return line.defence ? line.cost : this.kits[side].linePrice(line, s.age);
+        return line.defence ? line.cost : this.kits[side].linePrice(line, s.age, s.researched);
       }
       case 'upgrade': {
         const b = this.building(key);
@@ -335,7 +340,7 @@ export class World {
         line: key, def, x, y, r: fp.r, hp: st.hp * BUILD_HP, maxHp: st.hp, f: st,
         tier: 0, invested: p, hold: false, waiting: false,
         done: false, buildStart: this.t, buildEnd: this.t + time, ready: 0,
-        timer: 0, every: def || isMarket ? 0 : line.tiers[0].every, builtAt: this.t,
+        timer: 0, every: def || isMarket ? 0 : this.kits[side].every(line, 0, s.researched), builtAt: this.t,
       };
       this.structures.push(b);
     } else if (kind === 'upgrade') {
@@ -352,7 +357,7 @@ export class World {
         b.hp += st.hp - b.maxHp;
         b.maxHp = st.hp;
         b.f = st;
-      } else b.every = line.tiers[b.tier].every;
+      } else b.every = this.kits[side].every(line, b.tier, s.researched);
     } else if (kind === 'research') {
       const t = this.tech(side, key);
       s.research = { id: t.id, endsAt: this.t + t.time, time: t.time };
@@ -369,7 +374,7 @@ export class World {
     const st = this.buildingStats(line.tiers[tier].building);
     // (towers hit a bit harder than in the game: `dmg`)
     const attacks = new Map([...st.attacks].map(([c, a]) => [c, a > 0 ? Math.round(a * (line.dmg || 1)) : a]));
-    return { ...st, attacks, arrows: line.arrows, projectile: { sprite: line.shot, arc: line.shot === 'p_ball_x1' ? -0.05 : -0.06 } };
+    return { ...st, hp: Math.round(st.hp * (line.hp || 1)), attacks, arrows: line.arrows, projectile: { sprite: line.shot, arc: line.shot === 'p_ball_x1' ? -0.05 : -0.06 } };
   }
 
   /**
@@ -490,6 +495,8 @@ export class World {
       u.hp += Math.max(0, f.hp - u.f.hp);
       u.f = f;
     }
+    // Unique techs that speed up training reach the buildings too
+    for (const b of this.trainers(side)) b.every = this.kits[side].every(this.line(side, b.line), b.tier, s.researched);
   }
 
   // ---------- Simulation ----------
@@ -600,6 +607,15 @@ export class World {
     if (target.hp <= 0) return;
     if (target.kind) amount *= this.overtime() * (target.kind === 'building' && !target.done ? BUILD_WEAK : 1);
     target.hp -= amount;
+    if (target.kind === 'castle' && target.hp > 0) {
+      // Rallying: an extra explosion each for the team at 50% and 25% of its Wonder's HP
+      target.rallied ??= 0;
+      while (target.rallied < RALLY_AT.length && target.hp < target.maxHp * RALLY_AT[target.rallied]) {
+        target.rallied += 1;
+        for (const p of this.teams[target.side].players) this.sides[p].blasts += 1;
+        this.events.push({ t: this.t, type: 'rally', side: target.side, at: RALLY_AT[target.rallied - 1] });
+      }
+    }
     if (target.hp > 0) return;
     target.diedAt = this.t;
     if (!target.kind) { this.alive[target.side] -= 1; this.sides[target.owner].out -= 1; }
@@ -753,7 +769,8 @@ export class World {
       if (!best) continue;
       c.ready = t + c.f.reload;
       const ball = c.f.projectile?.sprite === 'p_ball_x1';
-      for (let k = 0; k < (c.f.arrows || 1); k++) this.launch(c, best, c.f.attacks, { accuracy: CASTLE_ACCURACY, speed: ball ? 4 : ARROW_SPEED, spread: 0.4 }, true);
+      const arrows = c.kind === 'castle' ? Math.min(WONDER_ARROWS, 1 + Math.floor((1 - c.hp / c.maxHp) * 4)) : c.f.arrows || 1;
+      for (let k = 0; k < arrows; k++) this.launch(c, best, c.f.attacks, { accuracy: CASTLE_ACCURACY, speed: ball ? 4 : ARROW_SPEED, spread: 0.4 }, true);
     }
     // Units
     const live = this.units.filter((u) => u.hp > 0);

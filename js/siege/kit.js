@@ -22,9 +22,9 @@ export const FOOTPRINT = { train: { r: 1.4, build: 10 } };
 // Defences: towers (upgraded in place, like a unit line), the Bombard Tower and the Castle.
 // They shoot the nearest enemy soldier in range; they don't train anything.
 export const DEFENCES = [
-  { key: 'def:tower', label: 'Watch Tower', tiers: [{ building: 79, age: 2 }, { building: 234, age: 3, upgrade: 150 }, { building: 235, age: 4, upgrade: 225 }], cost: 175, r: 0.75, build: 8, arrows: 1, dmg: 1.4, shot: 'p_arrow_x1' },
-  { key: 'def:bombard', label: 'Bombard Tower', tiers: [{ building: 236, age: 4 }], needs: 47, cost: 425, r: 0.85, build: 10, arrows: 1, shot: 'p_ball_x1' },
-  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 800, r: 1.95, build: 12, arrows: 2, shot: 'p_arrow_x1' },
+  { key: 'def:tower', label: 'Watch Tower', tiers: [{ building: 79, age: 2 }, { building: 234, age: 3, upgrade: 150 }, { building: 235, age: 4, upgrade: 225 }], cost: 175, r: 0.75, build: 8, arrows: 1, dmg: 1.8, hp: 1.3, shot: 'p_arrow_x1' },
+  { key: 'def:bombard', label: 'Bombard Tower', tiers: [{ building: 236, age: 4 }], needs: 47, cost: 425, r: 0.85, build: 10, arrows: 1, hp: 1.3, shot: 'p_ball_x1' },
+  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 800, r: 1.95, build: 12, arrows: 3, shot: 'p_arrow_x1' },
 ];
 // Everything a little dearer than before; siege dearer still, and slower to come out.
 const PRICE_UP = 1.15;
@@ -235,14 +235,17 @@ export function buildKit({ data, strings = {}, tree, civ }) {
 
   const buildingPicture = new Map((tree.buildings || []).map((b) => [b.node_id ?? b.building_id, b.picture_index]));
   const cache = new Map();
-  const civStats = (unitId, age) => buildFighter(U[unitId], '', { civ, age, units: U });
+  // (uts: the civ's unique techs researched, for those that change a unit's cost or training, like Kamandaran)
+  const civStats = (unitId, age, uts = []) => buildFighter(U[unitId], '', { civ, age, units: U, uts });
+  const utsOf = (researched) => (researched ? [...researched].filter((id) => utIds.has(id)).sort() : []);
   const priceCache = new Map();
   /** A line's building price at an age (civ cost bonuses depend on the age). */
-  const linePrice = (line, age) => {
-    const k = `${line.key}|${age}`;
+  const linePrice = (line, age, researched = null) => {
+    const uts = utsOf(researched);
+    const k = `${line.key}|${age}|${uts.join(',')}`;
     if (!priceCache.has(k)) {
       const id = line.tiers[0].unitId;
-      const civCost = weight(civStats(id, Math.max(age, line.age)).cost);
+      const civCost = weight(civStats(id, Math.max(age, line.age), uts).cost);
       const set = SET_PRICE[Number(line.key.split('-')[1])];
       // A set price is scaled by the civ's own discount (Goths' cheaper infantry...)
       priceCache.set(k, set ? round5((set * civCost) / Math.max(1, weight(U[id].Cost || {}))) : round5(unitPrice(civCost) * line.markup));
@@ -292,6 +295,13 @@ export function buildKit({ data, strings = {}, tree, civ }) {
       return n ? clean(strings[n.name_string_id] || n.name) : clean(strings[U[id]?.LanguageNameId] || strings[U[id]?.LanguageNameId + 9000] || `Unit ${id}`);
     } }),
     line: (key) => lines.find((l) => l.key === key) || defences.find((d) => d.key === key),
+    /** How often a building of this line sends out a unit at a step, with unique techs that speed training. */
+    every(line, tier, researched = null) {
+      const uts = utsOf(researched);
+      if (!uts.length) return line.tiers[tier].every;
+      const st = civStats(line.tiers[tier].unitId, 4, uts);
+      return Math.max(6, Math.min(90, Math.round(st.trainTime * TRAIN_SCALE * (line.siege ? SIEGE_TIME : 1) * 10) / 10));
+    },
     /** Fighter stats for a line at a tier with the researched techs (a Set of tech ids). */
     linePrice,
     fighter(lineKey, tier, researched = new Set(), key = [...researched].sort().join(','), age = 4) {

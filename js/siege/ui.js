@@ -124,6 +124,7 @@ export async function initSiege(root) {
         el('li', { textContent: 'The red hand holds every building\'s next unit; GO sends them all out at once.' }),
         el('li', { textContent: 'The Armory (anvil, bottom left) has Blacksmith upgrades, Ballistics, Chemistry, Bloodlines and your civ\'s unique techs. One at a time; each one reaches all your units, even those already fighting.' }),
         el('li', { textContent: 'The middle of the map is split by a river into two lanes. Buildings above your Wonder send units down the top lane, those below it the bottom lane, those in line with it take turns. Arrows fly over the river; soldiers cross only near the bases.' }),
+        el('li', { textContent: 'Holding on when you\'re losing: your Wonder fires more arrows the more it\'s damaged (up to four at a time), and when it falls below half its HP, and again below a quarter, everyone on your team gets another explosion.' }),
         el('li', { textContent: `One explosion each (the fire button): tap it, drag the circle, then Drop. It hurts every enemy soldier within ${BLAST.radius} tiles for ${Math.round(BLAST.share * 100)}% of their HP. It can only be dropped on your own end of the map (up to the dashed line, a little past your base): it's for defending against a deathball, not for pushing.` }),
         el('li', { textContent: 'Gold comes in every few seconds; Markets add more, and kills pay a bounty. In team games everyone gets two thirds of the 1v1 base income (your own Markets and mines still pay you in full).' }),
         el('li', { textContent: 'Four gold mines sit beside the lanes, two along each bank of the river. When your soldiers get past one, the first of them past it builds a Mining Camp in your colour on your side of it, which pays you every income tick (+5 gold in a 1v1, +2 in team games). If enemy soldiers get past it, they pull your camp down in about 5 seconds and build their own.' }),
@@ -569,7 +570,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         const needs = locked || (line.needs && !world.unlocked(ME, line) ? `Needs ${kit.techs.find((t) => t.id === line.needs)?.name || 'a tech'} (Armory)` : null);
         const steps = line.tiers.length > 1 ? `→ ${line.tiers.at(-1).name}` : 'no upgrades';
         const t0 = line.tiers[0];
-        const btn = option(line.key, t0.name, `1 per ${Math.round(t0.every / GAME_SPEED)}s · ${steps}`, unitIcon(t0.unitId, t0.picture), kit.linePrice(line, s.age), p === null, needs);
+        const btn = option(line.key, t0.name, `1 per ${Math.round(t0.every / GAME_SPEED)}s · ${steps}`, unitIcon(t0.unitId, t0.picture), kit.linePrice(line, s.age, s.researched), p === null, needs);
         if (locked) btn.classList.add('locked');
         return tip(btn, `${t0.name} (${BUILDING_NAMES[line.building] || 'building'})`, t0.help,
           statLine(kit.fighter(line.key, 0, s.researched, s.researchKey, s.age)),
@@ -968,6 +969,18 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       // "Rob advanced to the Castle Age", for everyone, as in the game
       for (const e of world.events) {
         if (e.type === 'chat' && e.n > chatN) { chatN = e.n; showChat(e); continue; }
+        if (e.type === 'rally') {
+          const k = `rally-${e.side}-${e.at}`;
+          if (seenAges.has(k)) continue;
+          seenAges.add(k);
+          const ours = e.side === myTeam;
+          const n = el('div', { className: 'sg-notice', style: `--pc:${ours ? '#ffb067' : '#c9b48a'}` }, el('span', { textContent: '💥' }),
+            ours ? `Your Wonder is under siege: +1 explosion, and it fires more arrows` : 'The enemy Wonder rallies: more arrows, +1 explosion each');
+          notices.append(n);
+          setTimeout(() => n.remove(), 4500);
+          if (ours) navigator.vibrate?.([60, 40, 60]);
+          continue;
+        }
         if (e.type !== 'aged') continue;
         const k = `${e.owner}-${e.age}`;
         if (seenAges.has(k)) continue;

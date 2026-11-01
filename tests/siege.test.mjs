@@ -236,6 +236,22 @@ for (const [i, [a, b]] of games.entries()) {
   assert.equal(tf.range, 8, 'trebuchet range halved');
   assert.ok(tf.packs > 0 && tf.walkAs === 331);
 }
+// Unique techs that make a line cheaper (Kamandaran) lower its building price; a Wonder in trouble rallies.
+{
+  const k = await kitFor('Persians');
+  const w = new World([k, await kitFor('Franks')], data, { seed: 4 });
+  const archers = k.lines.find((l) => l.tiers[0].unitId === 4);
+  const kam = k.techs.find((t) => t.name === 'Kamandaran');
+  w.sides[0].age = 4;
+  const before = w.price(0, 'build', archers.key);
+  w.sides[0].researched.add(kam.id);
+  assert.ok(w.price(0, 'build', archers.key) < before, `Kamandaran: Archers cheaper (${before} -> ${w.price(0, 'build', archers.key)})`);
+  const c = w.teams[0].castle;
+  w.damage(1, c, c.maxHp * 0.55, null);
+  assert.equal(w.sides[0].blasts, 2, 'below half: another explosion');
+  w.damage(1, c, c.maxHp * 0.25, null);
+  assert.equal(w.sides[0].blasts, 3, 'below a quarter: another');
+}
 // Chat: everyone gets it, even when sent while paused (same game time as the last snapshot).
 {
   const kits = [await kitFor('Britons'), await kitFor('Goths')];
