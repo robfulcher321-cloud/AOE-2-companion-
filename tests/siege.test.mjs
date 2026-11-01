@@ -251,6 +251,26 @@ for (const [i, [a, b]] of games.entries()) {
   assert.equal(w.sides[0].blasts, 2, 'below half: another explosion');
   w.damage(1, c, c.maxHp * 0.25, null);
   assert.equal(w.sides[0].blasts, 3, 'below a quarter: another');
+  // Call to arms: only with enemies in your end; once; training carries on
+  w.sides[0].gold = 5000;
+  w.buy(0, 'build', archers.key, [20, -5]);
+  w.buy(0, 'build', k.lines[0].key, [20, 5]);
+  while (w.buildings(0).some((b) => !b.done)) w.step();
+  assert.equal(w.callBlocked(0), 'Only when enemies are in your end');
+  w.sides[1].gold = 5000;
+  w.buy(1, 'build', w.kits[1].lines[0].key, [66, 0]);
+  const rb = w.buildings(1)[0];
+  while (!rb.done) w.step();
+  w.spawn(1, rb);
+  const intruder = w.units.at(-1);
+  intruder.x = 22; intruder.f = { ...intruder.f, speed: 0 };
+  const timers = w.buildings(0).map((b) => b.timer);
+  const out = w.units.filter((u) => u.side === 0).length;
+  assert.equal(w.callToArms(0), 2, 'every building sends a unit');
+  assert.equal(w.units.filter((u) => u.side === 0).length, out + 2);
+  assert.deepEqual(w.buildings(0).map((b) => b.timer), timers, 'their training carries on where it was');
+  assert.equal(w.callToArms(0), 0, 'once a game');
+  assert.equal(w.callBlocked(0), 'Already used');
 }
 // Chat: everyone gets it, even when sent while paused (same game time as the last snapshot).
 {

@@ -124,9 +124,10 @@ export async function initSiege(root) {
         el('li', { textContent: 'The red hand holds every building\'s next unit; GO sends them all out at once.' }),
         el('li', { textContent: 'The Armory (anvil, bottom left) has Blacksmith upgrades, Ballistics, Chemistry, Bloodlines and your civ\'s unique techs. One at a time; each one reaches all your units, even those already fighting.' }),
         el('li', { textContent: 'The middle of the map is split by a river into two lanes. Buildings above your Wonder send units down the top lane, those below it the bottom lane, those in line with it take turns. Arrows fly over the river; soldiers cross only near the bases.' }),
+        el('li', { textContent: 'Call to arms: tap your Wonder. Once a game, while enemy soldiers are in your end of the map, every one of your finished buildings sends out a unit at once (their own training carries on). Everyone on a team has their own.' }),
         el('li', { textContent: 'Holding on when you\'re losing: your Wonder fires more arrows the more it\'s damaged (up to four at a time), and when it falls below half its HP, and again below a quarter, everyone on your team gets another explosion.' }),
         el('li', { textContent: `One explosion each (the fire button): tap it, drag the circle, then Drop. It hurts every enemy soldier within ${BLAST.radius} tiles for ${Math.round(BLAST.share * 100)}% of their HP. It can only be dropped on your own end of the map (up to the dashed line, a little past your base): it's for defending against a deathball, not for pushing.` }),
-        el('li', { textContent: 'Gold comes in every few seconds; Markets add more, and kills pay a bounty. In team games everyone gets two thirds of the 1v1 base income (your own Markets and mines still pay you in full).' }),
+        el('li', { textContent: 'Gold comes in every few seconds; Markets add more, and kills pay a small bounty (2% of what the unit or building cost; the Wonder\'s own arrows pay nobody). In team games everyone gets two thirds of the 1v1 base income (your own Markets and mines still pay you in full).' }),
         el('li', { textContent: 'Four gold mines sit beside the lanes, two along each bank of the river. When your soldiers get past one, the first of them past it builds a Mining Camp in your colour on your side of it, which pays you every income tick (+5 gold in a 1v1, +2 in team games). If enemy soldiers get past it, they pull your camp down in about 5 seconds and build their own.' }),
         el('li', { textContent: 'Prices follow the game: a building costs what its unit costs (with your civ\'s discounts, like Goths\' cheap infantry), gold counting double, so gold-heavy units and their upgrades cost more. Each unit comes out at its real training time.' }),
         el('li', { textContent: 'Rams and Trebuchets only attack buildings. Trebuchets unpack to fire and pack up to move, so keep them behind your army.' }),
@@ -359,6 +360,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   const view = new SiegeView(canvas, mini, {
     tapGround: (x, y) => setMode({ kind: 'build', at: [x, y] }),
     tapBuilding: (b) => setMode({ kind: 'building', id: b.id }),
+    tapWonder: () => setMode({ kind: 'wonder' }),
     holdBuilding: (b) => setMode({ kind: 'building', id: b.id }),
     placed: (pl) => { placeBtn.disabled = !pl.ok; placeBar.querySelector('.sg-aim-text').textContent = pl.ok ? 'Drag to move' : pl.high ? 'Too high: it would be cut off' : 'Too close to a building'; },
     tapEmpty: () => setMode({ kind: 'hint' }),
@@ -540,6 +542,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         el('li', {}, el('b', { textContent: 'Tap your base' }), ' (the dashed area) to build, then drag it into place.'),
         el('li', {}, el('b', { textContent: 'Tap a building' }), ' to upgrade it, pause it or sell it.'),
         el('li', {}, 'The ', el('b', { textContent: 'red hand' }), ' holds every unit; ', el('b', { textContent: 'GO' }), ' sends them all out.'),
+        el('li', {}, el('b', { textContent: 'Tap your Wonder' }), ' to call to arms once a game, when the enemy is in your end.'),
         el('li', {}, 'The ', el('b', { textContent: 'anvil' }), ' opens the Armory for upgrades that reach your whole army.'),
         el('li', {}, el('b', { textContent: 'Press and hold any button' }), ' to see what it does. Your ', el('b', { textContent: 'flag' }), ' shows your civ\'s strengths.')),
       held ? el('p', { className: 'sg-note', textContent: s.stopAll ? 'Holding every unit (red hand).' : `${held} building${held > 1 ? 's' : ''} on hold.` }) : null,
@@ -758,6 +761,28 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     return out;
   }
 
+  // ---------- Your Wonder: the call to arms ----------
+  function wonderView() {
+    const s = world.sides[ME];
+    const c = world.teams[myTeam].castle;
+    const why = world.callBlocked(ME);
+    const lost = 1 - c.hp / c.maxHp;
+    const arrows = Math.min(4, 1 + Math.floor(lost * 4));
+    const trainers = world.trainers(ME).filter((b) => b.done).length;
+    const btn = tip(el('button', { type: 'button', className: 'sg-call', disabled: Boolean(why),
+      onclick: () => { act('call'); navigator.vibrate?.([50, 30, 50, 30, 80]); setMode({ kind: 'hint' }); } },
+    el('b', { textContent: '📯 Call to arms' }),
+    el('small', { textContent: why || `${trainers} building${trainers === 1 ? '' : 's'} send${trainers === 1 ? 's' : ''} a unit out now` })),
+    'Call to arms', 'Once a game, while enemy soldiers are in your end of the map (up to the dashed line): every one of your finished buildings sends out a unit at once.',
+    'Their own training carries on where it was. Each player on your team has their own.');
+    return [
+      closeRow('Your Wonder'),
+      el('p', { className: 'sg-note', textContent: `${Math.ceil(c.hp)} / ${c.maxHp} HP · ${arrows} arrow${arrows > 1 ? 's' : ''} at a time (one more for each quarter of its HP lost)` }),
+      el('div', { className: 'sg-acts' }, btn),
+      el('p', { className: 'sg-note', textContent: s.calls > 0 ? 'You have 1 call to arms this game.' : 'You\'ve used your call to arms.' }),
+    ];
+  }
+
   // ---------- Chat ----------
   const say = (text) => { const t = String(text || '').trim(); if (t) act('chat', { text: t }); };
   const chatInput = el('input', { type: 'text', className: 'sg-chat-input', maxLength: 80, placeholder: 'Message everyone', enterKeyHint: 'send', autocomplete: 'off' });
@@ -838,7 +863,9 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     // Rebuild the dock only when something it shows has changed.
     const b = pmode.kind === 'building' ? world.building(pmode.id) : null;
     // Chat and civ panels don't depend on the game's state: left alone so typing isn't interrupted.
-    const key = pmode.kind === 'chat' || pmode.kind === 'civ' ? [pmode.kind, pmode.who, s.research?.id, s.aging?.to].join('|')
+    const wc = world.teams[myTeam].castle;
+    const key = pmode.kind === 'wonder' ? ['wonder', world.callBlocked(ME), s.calls, Math.ceil(wc.hp / wc.maxHp * 40), world.trainers(ME).filter((x) => x.done).length].join('|')
+      : pmode.kind === 'chat' || pmode.kind === 'civ' ? [pmode.kind, pmode.who, s.research?.id, s.aging?.to].join('|')
       : [pmode.kind, pmode.at, pmode.key, pmode.id, world.buildings(ME).map((x) => `${x.id}${x.done ? '' : '…'}`).join(), s.markets, s.researched.size, s.research?.id, s.age, s.aging?.to,
         b ? `${b.tier}${b.hold}${b.waiting}${s.stopAll}${b.done ? '' : Math.ceil((b.buildEnd - world.t) / GAME_SPEED)}` : '', held.length, s.stopAll, world.winner].join('|');
     if (!force && key === lastKey) {
@@ -861,7 +888,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       return;
     }
     lastKey = key;
-    const views = { build: () => buildView(pmode.at, pmode.key), building: () => buildingView(pmode.id), armory: armoryView, age: ageView, chat: chatView, civ: () => civView(pmode.who), hint: hintView };
+    const views = { wonder: wonderView, build: () => buildView(pmode.at, pmode.key), building: () => buildingView(pmode.id), armory: armoryView, age: ageView, chat: chatView, civ: () => civView(pmode.who), hint: hintView };
     const content = (views[pmode.kind] || hintView)();
     // Same panel: keep where it was scrolled to; another panel starts at its beginning
     const panel = [pmode.kind, pmode.at, pmode.id, pmode.who].join('|');
@@ -969,6 +996,16 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       // "Rob advanced to the Castle Age", for everyone, as in the game
       for (const e of world.events) {
         if (e.type === 'chat' && e.n > chatN) { chatN = e.n; showChat(e); continue; }
+        if (e.type === 'call') {
+          const k = `call-${e.owner}`;
+          if (seenAges.has(k)) continue;
+          seenAges.add(k);
+          const who = e.owner === ME ? 'You' : players[e.owner].name;
+          const n = el('div', { className: 'sg-notice', style: `--pc:${players[e.owner].colour}` }, el('span', { textContent: '📯' }), `${who} called to arms: ${e.n} unit${e.n === 1 ? '' : 's'} out`);
+          notices.append(n);
+          setTimeout(() => n.remove(), 4500);
+          continue;
+        }
         if (e.type === 'rally') {
           const k = `rally-${e.side}-${e.at}`;
           if (seenAges.has(k)) continue;

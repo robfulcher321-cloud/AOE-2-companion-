@@ -18,6 +18,7 @@ export const COMMANDS = {
   hold: (w, p, a) => w.toggleHold(p, a.id),
   go: (w, p) => w.go(p),
   stop: (w, p) => w.stop(p),
+  call: (w, p) => w.callToArms(p),
   blast: (w, p, a) => w.blast(p, a.x, a.y),
   age: (w, p) => w.buy(p, 'age'),
   chat: (w, p, a) => w.chat(p, a.text),
@@ -35,7 +36,7 @@ export function snapshot(w, since) {
     territory: w.territory,
     players: w.sides.map((s) => ({
       gold: Math.floor(s.gold), markets: s.markets, stopAll: s.stopAll, researched: [...s.researched],
-      research: s.research, blasts: s.blasts, stats: s.stats, out: s.out || 0, age: s.age, aging: s.aging,
+      research: s.research, blasts: s.blasts, calls: s.calls, stats: s.stats, out: s.out || 0, age: s.age, aging: s.aging,
     })),
     structures: w.structures.map((b) => [
       b.id, b.kind === 'castle' ? 0 : 1, b.side, b.owner ?? -1, b.building, b.line ?? '', b.kind === 'castle' || b.done ? -1 : r2(b.buildEnd - b.buildStart),
@@ -64,7 +65,7 @@ export function applySnapshot(w, snap) {
   w.territory = snap.territory;
   snap.players.forEach((p, i) => {
     const s = w.sides[i];
-    Object.assign(s, { gold: p.gold, markets: p.markets, stopAll: p.stopAll, research: p.research, blasts: p.blasts, stats: p.stats, out: p.out, aging: p.aging });
+    Object.assign(s, { gold: p.gold, markets: p.markets, stopAll: p.stopAll, research: p.research, blasts: p.blasts, calls: p.calls ?? 1, stats: p.stats, out: p.out, aging: p.aging });
     if (p.researched.length !== s.researched.size || p.age !== s.age) {
       s.researched = new Set(p.researched);
       s.age = p.age;

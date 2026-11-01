@@ -23,8 +23,8 @@ export const FOOTPRINT = { train: { r: 1.4, build: 10 } };
 // They shoot the nearest enemy soldier in range; they don't train anything.
 export const DEFENCES = [
   { key: 'def:tower', label: 'Watch Tower', tiers: [{ building: 79, age: 2 }, { building: 234, age: 3, upgrade: 150 }, { building: 235, age: 4, upgrade: 225 }], cost: 175, r: 0.75, build: 8, arrows: 1, dmg: 1.8, hp: 1.3, shot: 'p_arrow_x1' },
-  { key: 'def:bombard', label: 'Bombard Tower', tiers: [{ building: 236, age: 4 }], needs: 47, cost: 425, r: 0.85, build: 10, arrows: 1, hp: 1.3, shot: 'p_ball_x1' },
-  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 800, r: 1.95, build: 12, arrows: 3, shot: 'p_arrow_x1' },
+  { key: 'def:bombard', label: 'Bombard Tower', tiers: [{ building: 236, age: 4 }], needs: 47, cost: 600, r: 0.85, build: 10, arrows: 1, hp: 1.3, shot: 'p_ball_x1' },
+  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 350, r: 1.95, build: 12, arrows: 3, shot: 'p_arrow_x1' },
 ];
 // Everything a little dearer than before; siege dearer still, and slower to come out.
 const PRICE_UP = 1.15;

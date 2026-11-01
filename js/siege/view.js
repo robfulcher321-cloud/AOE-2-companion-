@@ -115,6 +115,9 @@ export class SiegeView {
         return;
       }
       const hit = this.hitTest(p.sx, p.sy);
+      if (hit?.wonder && !this.aiming) {
+        p.timer = setTimeout(() => { if (p && !p.moved) { p.used = true; navigator.vibrate?.(20); this.handlers.tapWonder?.(hit.wonder); } }, HOLD_MS);
+      }
       if (hit?.b && !this.aiming) {
         p.timer = setTimeout(() => {
           if (p && !p.moved) { p.used = true; navigator.vibrate?.(20); this.handlers.holdBuilding?.(hit.b); }
@@ -161,6 +164,7 @@ export class SiegeView {
       if (!cancelled && !p.moved && !p.used) {
         const hit = this.hitTest(p.sx, p.sy);
         if (hit?.b) this.handlers.tapBuilding?.(hit.b);
+        else if (hit?.wonder) this.handlers.tapWonder?.(hit.wonder);
         else if (hit?.ground) this.handlers.tapGround?.(...hit.ground);
         else this.handlers.tapEmpty?.();
       }
@@ -196,6 +200,12 @@ export class SiegeView {
       }
     }
     if (best) return { b: best.b };
+    // Your team's Wonder (for the call to arms)
+    const c = this.w.teams[this.myTeam]?.castle;
+    if (c && c.hp > 0) {
+      const box = this.boxOf(c);
+      if (px >= box.x0 && px <= box.x1 && py >= box.y0 - 40 && py <= box.y1) return { wonder: c };
+    }
     const [x, y] = this.toWorld(px, py);
     if (this.w.inZone(this.me, x, y)) return { ground: [x, y] };
     return null;

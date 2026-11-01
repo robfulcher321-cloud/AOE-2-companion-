@@ -49,6 +49,7 @@ const SIEGE_TURN = 1.2;
 // (+1 for each quarter of its HP gone), and when it falls below 50% and again below 25%,
 // everyone on its team gets another explosion.
 const WONDER_ARROWS = 4;
+const BOUNTY = 0.02;            // a kill pays 2% of what the unit (or building) cost
 const RALLY_AT = [0.5, 0.25];         // game seconds for siege with a minimum range to turn about         // ...and takes this much more damage until it's finished
 const BIN = 2;                 // tiles: units are bucketed along the lane for "who's near" lookups
 const MELEE_SLACK = 0.35;      // tiles: a melee unit this close counts as touching (no running on the spot in a crowd)
@@ -124,6 +125,7 @@ export class World {
       stopAll: false,          // the red hand: every building holds its next unit until GO
       stats: { trained: 0, kills: 0, lost: 0, earned: 0, spent: 0 },
       blasts: BLAST.per,       // explosions left
+      calls: 1,                // call to arms left (once a game)
       age: 1,                  // 1 Dark, 2 Feudal, 3 Castle, 4 Imperial
       aging: null,             // { to, endsAt, time } while advancing
     }));
@@ -418,6 +420,42 @@ export class World {
     return hit;
   }
 
+  /** Enemy soldiers in team `team`'s end of the map (where its explosion and call to arms work). */
+  intruders(team) {
+    const [a, b] = this.blastZone(team);
+    return this.units.filter((v) => v.side !== team && v.hp > 0 && v.x >= a && v.x <= b).length;
+  }
+
+  /** Why player p can't call to arms right now (or null if they can). */
+  callBlocked(p) {
+    const s = this.sides[p];
+    if (this.winner !== null) return 'The game is over';
+    if (s.calls <= 0) return 'Already used';
+    if (!this.trainers(p).some((b) => b.done)) return 'No finished buildings';
+    if (!this.intruders(s.team)) return 'Only when enemies are in your end';
+    return null;
+  }
+
+  /**
+   * Call to arms (tap your Wonder): once a game, while enemies are in your end of the map,
+   * every one of your finished buildings sends out a unit at once. Their own training carries
+   * on where it was.
+   */
+  callToArms(p) {
+    if (this.callBlocked(p)) return 0;
+    const s = this.sides[p];
+    s.calls -= 1;
+    let n = 0;
+    for (const b of this.trainers(p)) {
+      if (!b.done) continue;
+      const before = s.stats.trained;
+      this.spawn(p, b);
+      if (s.stats.trained > before) n += 1;
+    }
+    this.events.push({ t: this.t, type: 'call', side: s.team, owner: p, n });
+    return n;
+  }
+
   /** Best spot for an explosion against team `team`'s enemies: [x, y, how many it would hit]. */
   blastSpot(team) {
     let best = null;
@@ -619,23 +657,25 @@ export class World {
     if (target.hp > 0) return;
     target.diedAt = this.t;
     if (!target.kind) { this.alive[target.side] -= 1; this.sides[target.owner].out -= 1; }
-    // Bounties go to the player whose soldier (or explosion) did it; castle arrows pay the team's first player.
-    const s = this.sides[by?.owner ?? this.teams[side].players[0]];
+    // Bounties (2% of what it cost) go to the player whose soldier, tower or explosion did it;
+    // the Wonder's own arrows pay nobody.
+    const payee = by?.owner !== undefined ? this.sides[by.owner] : null;
+    const s = payee || { gold: 0, stats: { earned: 0, kills: 0 } };
     const o = this.sides[target.owner ?? this.teams[target.side].players[0]];
     if (target.kind === 'castle') {
       this.winner = side;
       this.events.push({ t: this.t, type: 'castle', side });
     } else if (target.kind === 'building') {
       if (target.line === 'market' && target.done) o.markets -= 1;
-      const bounty = 50;
+      const bounty = Math.max(1, Math.round((target.invested || 0) * BOUNTY));
       s.gold += bounty; s.stats.earned += bounty;
       this.events.push({ t: this.t, type: 'razed', side, owner: by?.owner, lost: target.owner, key: target.line, x: target.x, y: target.y, bounty });
     } else {
       s.stats.kills += 1;
       o.stats.lost += 1;
-      const bounty = Math.max(2, Math.round(cost(target.f) * 0.1));
+      const bounty = Math.max(1, Math.round(cost(target.f) * BOUNTY));
       s.gold += bounty; s.stats.earned += bounty;
-      if (by) this.events.push({ t: this.t, type: 'kill', side, owner: by.owner, x: target.x, y: target.y, bounty });
+      if (payee) this.events.push({ t: this.t, type: 'kill', side, owner: by.owner, x: target.x, y: target.y, bounty });
     }
   }
 
@@ -1084,6 +1124,11 @@ export class Computer {
     const side = this.side;
     const s = w.sides[side];
     const team = s.team;
+    // Call to arms: when the enemy is pressing on its Wonder
+    if (s.calls > 0 && !w.callBlocked(side)) {
+      const c = w.teams[team].castle;
+      if (w.intruders(team) >= (this.level === 'easy' ? 14 : 8) || c.hp < c.maxHp * 0.6) { w.callToArms(side); return; }
+    }
     // The explosion: on a big enough clump, or when the castle is in danger.
     if (s.blasts > 0) {
       const spot = w.blastSpot(team);
