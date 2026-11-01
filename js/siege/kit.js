@@ -42,7 +42,9 @@ export const NEEDS = { 5: 47, 36: 47 };         // unit -> tech it needs (Hand C
 const weight = (c) => (c.Food || 0) + (c.Wood || 0) + 2 * ((c.Gold || 0) + (c.Stone || 0));
 export const unitPrice = (w) => round5(60 + Math.min(w, 200) + 0.6 * Math.max(0, w - 200));
 const UNIQUE_MARKUP = 1.15;
-const MARKUP = { 42: 1.25, 4: 0.9, 7: 0.9 };   // Trebuchets: a bit dearer still; Archers and Skirmishers a little cheaper
+const MARKUP = { 42: 1.25, 4: 0.9 };   // Trebuchets: a bit dearer still; Archers a little cheaper
+// Set prices for the basic lines (before civ discounts, which still apply on top): Militia, Spearman, Skirmisher
+const SET_PRICE = { 74: 170, 93: 140, 7: 150 };
 // How often a building sends out a unit: the unit's real training time (with civ bonuses), in game seconds.
 const TRAIN_SCALE = 1;
 // Ages: 1 Dark, 2 Feudal, 3 Castle, 4 Imperial. Everyone starts in the Dark Age.
@@ -238,7 +240,13 @@ export function buildKit({ data, strings = {}, tree, civ }) {
   /** A line's building price at an age (civ cost bonuses depend on the age). */
   const linePrice = (line, age) => {
     const k = `${line.key}|${age}`;
-    if (!priceCache.has(k)) priceCache.set(k, round5(unitPrice(weight(civStats(line.tiers[0].unitId, Math.max(age, line.age)).cost)) * line.markup));
+    if (!priceCache.has(k)) {
+      const id = line.tiers[0].unitId;
+      const civCost = weight(civStats(id, Math.max(age, line.age)).cost);
+      const set = SET_PRICE[Number(line.key.split('-')[1])];
+      // A set price is scaled by the civ's own discount (Goths' cheaper infantry...)
+      priceCache.set(k, set ? round5((set * civCost) / Math.max(1, weight(U[id].Cost || {}))) : round5(unitPrice(civCost) * line.markup));
+    }
     return priceCache.get(k);
   };
   for (const line of lines) {
