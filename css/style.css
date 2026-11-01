@@ -771,3 +771,10 @@ body.sg-open { overflow: hidden; }
   .sg-run.dock-open .sg-civ-list, .sg-run.dock-open .sg-civ-tag, .sg-run.dock-open .sg-building-up { width: auto; }
   .sg-run.dock-open .sg-civ-chips { flex-wrap: wrap; }
 }
+
+/* The lobby's join link for iPhones */
+.sg-iphone { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: rgb(255 248 226 / .5); }
+.sg-iphone summary { font-weight: 700; cursor: pointer; }
+.sg-qr { display: block; width: min(220px, 70vw); height: auto; margin: 8px auto; image-rendering: pixelated; border-radius: 6px; }
+.sg-iphone-link { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+.sg-iphone-link code { font-size: .8rem; word-break: break-all; }

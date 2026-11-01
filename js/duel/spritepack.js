@@ -13,7 +13,9 @@
 
 import { tintJob } from '../tint.js';
 
-export const SPRITES = 'https://raw.githubusercontent.com/robfulcher321-cloud/extra-sprites-for-aoe2-companion/main/';
+// (A phone opened from an Android host over Wi-Fi gets them through that phone: ?sprites=…)
+export const SPRITES = new URLSearchParams(globalThis.location?.search || '').get('sprites')
+  || 'https://raw.githubusercontent.com/robfulcher321-cloud/extra-sprites-for-aoe2-companion/main/';
 const CACHE = 'aoe2-sprites-v2';
 const OLD_CACHES = ['aoe2-sprite-pack'];
 const MAGIC = 'AOE2PACK';
@@ -239,7 +241,7 @@ async function fetchBuffer(url, size) {
 }
 
 async function load() {
-  for (const c of OLD_CACHES) caches?.delete(c).catch(() => {});
+  for (const c of OLD_CACHES) globalThis.caches?.delete(c).catch(() => {});
   navigator.storage?.persist?.().catch(() => {});
   let manifest = null;
   try {

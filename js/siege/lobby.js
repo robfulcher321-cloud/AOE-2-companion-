@@ -10,6 +10,7 @@ import { loadTree, civIconUrl, nameText } from '../data.js';
 import { Picker } from '../picker.js';
 import { civOptions } from '../techtree.js';
 import { getLan } from './net.js';
+import qrcode from '../vendor/qrcode.js';
 import { buildKit } from './kit.js';
 import { loadAssets, openGame, COLOURS, LEVELS } from './ui.js';
 
@@ -51,6 +52,32 @@ export function openLobby({ data, strings, action, name }) {
     document.body.classList.remove('sg-open');
   };
   const show = (...kids) => box.replaceChildren(...kids.flat().filter(Boolean));
+  /** The address an iPhone (or any browser) on this Wi-Fi opens to join, served by this phone. */
+  const joinLink = (web) => `${web}?relay=${encodeURIComponent(`${web.replace(/^http/, 'ws')}ws`)}&sprites=${encodeURIComponent(`${web}sprites/`)}`;
+  /** A QR code (as an SVG) for a link. */
+  const qrSvg = (text) => {
+    const q = qrcode(0, 'M');
+    q.addData(text);
+    q.make();
+    const n = q.getModuleCount();
+    let d = '';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (q.isDark(y, x)) d += `M${x + 2} ${y + 2}h1v1h-1z`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n + 4} ${n + 4}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+    return el('img', { className: 'sg-qr', src: `data:image/svg+xml,${encodeURIComponent(svg)}`, alt: 'QR code for the join link' });
+  };
+  let qrShown = false;
+  const iphoneBox = (link) => {
+    const box = el('details', { className: 'sg-iphone', open: qrShown, ontoggle: () => { qrShown = box.open; } },
+      el('summary', { textContent: 'Friends on iPhone (or any phone without the app)' }),
+      el('p', { className: 'sg-note', textContent: 'On the same Wi-Fi, point the camera at this code (or open the link in Safari). The game loads from this phone; then tap Join a game.' }),
+      qrSvg(link),
+      el('div', { className: 'sg-iphone-link' },
+        el('code', { textContent: link.split('?')[0] }),
+        el('button', { type: 'button', className: 'sg-btn', textContent: 'Copy link', onclick: (e) => { navigator.clipboard?.writeText(link).then(() => { e.target.textContent = 'Copied'; }, () => {}); } }),
+        navigator.share ? el('button', { type: 'button', className: 'sg-btn', textContent: 'Share', onclick: () => navigator.share({ title: 'Join my Wonder Wars game', url: link }).catch(() => {}) }) : null));
+    return box;
+  };
+
   const head = (title) => el('div', { className: 'sg-lobby-head' },
     el('button', { type: 'button', className: 'sg-x', textContent: '‹', 'aria-label': 'Back', onclick: close }),
     el('h2', { textContent: title }));
@@ -73,8 +100,9 @@ export function openLobby({ data, strings, action, name }) {
     show(head(gameName), el('p', { className: 'status', textContent: 'Setting up…' }));
     let online = false;
     let netNote = null;
+    let webLink = null;   // for iPhones: open this in Safari to join
     if (lan) {
-      try { await lan.host(gameName); online = true; } catch (err) { netNote = `Others can't join right now (${err.message}). You can still play against the computer.`; }
+      try { const r = await lan.host(gameName); online = true; webLink = r?.web ? joinLink(r.web) : null; } catch (err) { netNote = `Others can't join right now (${err.message}). You can still play against the computer.`; }
     } else netNote = 'Friends can join when you create the game in the Android app, on the same Wi-Fi.';
 
     const slots = SLOT_NAMES.map(() => ({ kind: online ? 'open' : 'closed' }));
@@ -180,6 +208,7 @@ export function openLobby({ data, strings, action, name }) {
       show(head(gameName),
         el('p', { className: 'sg-note', textContent: online ? 'Tap a place to set it up: the computer, open for someone on this Wi-Fi to join, or empty.' : 'Tap a place to add the computer or change it.' }),
         netNote ? el('p', { className: 'sg-note', textContent: netNote }) : null,
+        webLink ? iphoneBox(webLink) : null,
         slotGrid(slots, { me: me(), selected, online, onTap: (i) => { selected = i; render(); } }),
         editor(selected),
         !teamsOk ? el('p', { className: 'sg-note sg-warn', textContent: 'Each team needs at least one player or computer.' }) : null,

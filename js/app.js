@@ -94,7 +94,9 @@ async function startTree() {
 async function boot() {
   await startTree().catch(showError($('tree-body')));
   updateFooter();
-  showView(['duel', 'guides', 'siege'].includes(store.get('view')) ? store.get('view') : 'tree');
+  // Opened from an Android host's link (to join its Wi-Fi game): straight to Wonder Wars
+  const joining = new URLSearchParams(location.search).has('relay');
+  showView(joining ? 'siege' : ['duel', 'guides', 'siege'].includes(store.get('view')) ? store.get('view') : 'tree');
 
   const status = await checkForUpdate();
   updateFooter();
