@@ -745,7 +745,7 @@ export class SiegeView {
     if (bs) {
       const [fx, fy, fw, fh, ax, ay] = bs.frame;
       const [gx, gy] = this.toScreen(b.x, b.y);
-      const k = ((rx - lx) * (b.kind === 'castle' ? 1.55 : 1.3)) / fw;
+      const k = this.spriteScale(b, bs, rx - lx);
       if (selected) this.diamond(b.x, b.y, b.r * 1.05, 'rgb(255 217 122 / .18)', '#ffd97a');
       ctx.drawImage(bs.atlas, fx, fy, fw, fh, gx - ax * k, gy - ay * k, fw * k, fh * k);
       if (dead) ctx.globalAlpha *= 0.5;
@@ -850,6 +850,18 @@ export class SiegeView {
   }
 
   /**
+   * How much to scale a building's graphic. Wonders are tall and some (the Indian and Gothic
+   * ones) very tall: a Wonder is shrunk further if it would push its health bar off the top.
+   */
+  spriteScale(b, bs, boxW) {
+    const [, , fw, , , ay] = bs.frame;
+    const k = (boxW * (b.kind === 'castle' ? 1.35 : 1.3)) / fw;
+    if (b.kind !== 'castle') return k;
+    const [, gy] = this.toScreen(b.x, b.y);
+    return Math.min(k, (gy - 22) / Math.max(1, ay));   // keep 22 px above it for the bar
+  }
+
+  /**
    * A building going up: the game's construction graphic when the sprite pack has it,
    * otherwise the building rising out of the ground inside wooden scaffolding.
    * A yellow bar shows how far along it is; it's weak until finished.
@@ -917,7 +929,7 @@ export class SiegeView {
     const k = Math.min(1, age / 1.4);
     const [gx, gy] = this.toScreen(b.x, b.y);
     const [fx, fy, fw, fh, ax, ay] = bs.frame;
-    const sc = (boxW * (b.kind === 'castle' ? 1.55 : 1.3)) / fw;
+    const sc = this.spriteScale(b, bs, boxW);
     const fade = age > 2.2 ? Math.max(0, 1 - (age - 2.2) / 0.8) : 1;
     // rubble on the ground
     const rub = this.sprites?.rubble?.[BUILDING_KIND[b.building]];

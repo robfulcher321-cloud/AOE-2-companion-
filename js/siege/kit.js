@@ -16,7 +16,7 @@ export const TRAIN_AT = [12, 87, 101, 49, 82];    // read from: Barracks, Archer
 // the Castle is a defence here.
 const TRAINS_IN = [12, 87, 101, 49];
 export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 49: 'Siege Workshop', 82: 'Castle', 84: 'Market', 79: 'Watch Tower', 234: 'Guard Tower', 235: 'Keep', 236: 'Bombard Tower' };
-export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 300, income: 5, max: 3, age: 2, r: 1.3, build: 8 };
+export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 250, income: 5, max: 3, age: 2, r: 1.3, build: 8 };
 // Size (tiles, as a circle) and build time (real seconds) of each kind of building.
 export const FOOTPRINT = { train: { r: 1.4, build: 10 } };
 // Defences: towers (upgraded in place, like a unit line), the Bombard Tower and the Castle.
@@ -42,7 +42,7 @@ export const NEEDS = { 5: 47, 36: 47 };         // unit -> tech it needs (Hand C
 const weight = (c) => (c.Food || 0) + (c.Wood || 0) + 2 * ((c.Gold || 0) + (c.Stone || 0));
 export const unitPrice = (w) => round5(60 + Math.min(w, 200) + 0.6 * Math.max(0, w - 200));
 const UNIQUE_MARKUP = 1.15;
-const MARKUP = { 42: 1.25 };   // Trebuchets: a bit dearer still
+const MARKUP = { 42: 1.25, 4: 0.9, 7: 0.9 };   // Trebuchets: a bit dearer still; Archers and Skirmishers a little cheaper
 // How often a building sends out a unit: the unit's real training time (with civ bonuses), in game seconds.
 const TRAIN_SCALE = 1;
 // Ages: 1 Dark, 2 Feudal, 3 Castle, 4 Imperial. Everyone starts in the Dark Age.
@@ -50,8 +50,8 @@ export const AGES = [
   null,
   { name: 'Dark Age', tech: 104 },
   { name: 'Feudal Age', tech: 101, cost: 175, time: 15 },
-  { name: 'Castle Age', tech: 102, cost: 400, time: 22 },
-  { name: 'Imperial Age', tech: 103, cost: 750, time: 30 },
+  { name: 'Castle Age', tech: 102, cost: 250, time: 22 },
+  { name: 'Imperial Age', tech: 103, cost: 350, time: 30 },
 ];
 // Trebuchets: half their real range in this lane, and they pack/unpack (quicker than the game's).
 export const TREB = { id: 42, packed: 331, rangeShare: 0.5, packTime: 2 };
