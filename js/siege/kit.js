@@ -8,7 +8,7 @@
 // down: a building trains about the same value of army per second whatever it
 // makes, so cheap units come in numbers and expensive ones in quality.
 
-import { buildFighter, otherTechsFor, isDuelEligible, buildingsOnly, trackFor, affectsUnit, TRACKS, OTHER_TECHS } from '../duel/combat.js';
+import { buildFighter, otherTechsFor, isDuelEligible, buildingsOnly, trackFor, affectsUnit, isInfantry, TRACKS, OTHER_TECHS } from '../duel/combat.js';
 import { CIV_EFFECTS, UNIT_CLASS, PLAYER_TECHS } from '../duel/effects.js';
 
 export const TRAIN_AT = [12, 87, 101, 49, 82];    // read from: Barracks, Archery Range, Stable, Siege Workshop, Castle
@@ -26,7 +26,7 @@ export const FOOTPRINT = { train: { r: 1.4, build: 10 } };
 export const DEFENCES = [
   { key: 'def:tower', label: 'Watch Tower', tiers: [{ building: 79, age: 2 }, { building: 234, age: 3, upgrade: 120 }, { building: 235, age: 4, upgrade: 180 }], cost: 120, r: 0.75, build: 8, arrows: 1, dmg: 2.2, hp: 1.6, shot: 'p_arrow_x1' },
   { key: 'def:bombard', label: 'Bombard Tower', tiers: [{ building: 236, age: 4 }], needs: 47, cost: 600, r: 0.85, build: 10, arrows: 1, hp: 1.6, shot: 'p_ball_x1' },
-  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 300, r: 1.95, build: 12, arrows: 3, shot: 'p_arrow_x1' },
+  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 350, r: 1.95, build: 12, arrows: 3, hp: 0.5, shot: 'p_arrow_x1' },
 ];
 // Everything a little dearer than before; siege dearer still, and slower to come out.
 const PRICE_UP = 1.15;
@@ -61,8 +61,10 @@ export const AGES = [
   { name: 'Castle Age', tech: 102, cost: 200, time: 22 },
   { name: 'Imperial Age', tech: 103, cost: 300, time: 30 },
 ];
-// Trebuchets: half their real range in this lane, and they pack/unpack (quicker than the game's).
-export const TREB = { id: 42, packed: 331, rangeShare: 0.5, packTime: 2 };
+// Trebuchets: 65% of their real range in this lane, and they pack/unpack (quicker than the game's).
+// Arson: +2 attack for infantry against buildings (armour class 11, which every building has)
+export const ARSON = { id: 602, vs: 11, bonus: 2 };
+export const TREB = { id: 42, packed: 331, rangeShare: 0.65, packTime: 2 };
 const ARMOUR = { ELEPHANT: 5, CAVALRY: 8, CAMEL: 30 };
 /** Where a Castle unit trains instead: siege at the Workshop, archers (on foot or mounted) at the Archery Range, riders at the Stable, the rest at the Barracks. */
 function classBuilding(u) {
@@ -236,6 +238,8 @@ export function buildKit({ data, strings = {}, tree, civ }) {
     if (!allUnits.some((u) => otherTechsFor(u).some((o) => o.id === t.id))) continue;
     techs.push(techRec(t.id, 'Unit upgrades', t.name));
   }
+  // Arson (Barracks): infantry +2 attack against buildings
+  if (techOk.has(ARSON.id) && allUnits.some((u) => isInfantry(u))) techs.push(techRec(ARSON.id, 'Unit upgrades', 'Arson'));
   // The civ's unique techs that change its units
   const uts = (CIV_EFFECTS[civ]?.uts || []).filter((u) => techOk.has(u.id) && allUnits.some((x) => affectsUnit(u, meOf(x))));
   for (const u of uts) techs.push(techRec(u.id, 'Unique techs', u.name || `Tech ${u.id}`));
@@ -335,6 +339,11 @@ export function buildKit({ data, strings = {}, tree, civ }) {
           uts: [...researched].filter((id) => utIds.has(id)),
           units: U,
         });
+        // Arson: infantry hit every kind of building (the Wonder too) a little harder
+        if (researched.has(ARSON.id) && isInfantry(unit)) {
+          f.attacks = new Map(f.attacks);
+          f.attacks.set(ARSON.vs, (f.attacks.get(ARSON.vs) || 0) + ARSON.bonus);
+        }
         // Rams and trebuchets only go for buildings; a trebuchet walks packed (at its packed speed).
         f.buildingsOnly = buildingsOnly(unit);
         const packed = Object.entries(FIGHTS_AS).find(([, v]) => v === t.unitId)?.[0];

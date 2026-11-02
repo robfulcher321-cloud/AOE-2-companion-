@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildKit } from '../js/siege/kit.js';
-import { World, Computer, DT, GAME_SPEED } from '../js/siege/world.js';
+import { World, Computer, DT, GAME_SPEED, BUILD } from '../js/siege/world.js';
 import { snapshot, applySnapshot, COMMANDS } from '../js/siege/sync.js';
 
 const dir = process.argv[2];
@@ -65,7 +65,7 @@ for (const [i, [a, b]] of games.entries()) {
   // Placed buildings never overlap and stay in their owner's area
   for (const [i, b] of w.structures.filter((x) => x.kind === 'building' && x.hp > 0).entries()) {
     assert.ok(w.inZone(b.owner, b.x, b.y), 'built inside its area');
-    for (const c of w.structures.filter((x) => x.kind === 'building' && x.hp > 0).slice(i + 1)) assert.ok(Math.hypot(b.x - c.x, b.y - c.y) >= b.r + c.r + 0.49, 'a gap between buildings');
+    for (const c of w.structures.filter((x) => x.kind === 'building' && x.hp > 0).slice(i + 1)) assert.ok(Math.hypot(b.x - c.x, b.y - c.y) >= (b.r + c.r) * BUILD.pack + BUILD.gap - 0.01, 'a gap between buildings');
   }
   console.log(`${keyA} v ${keyB}: ${w.winner === null ? 'no winner' : `${w.winner ? keyB : keyA} won`} after ${(w.t / 60).toFixed(1)} game min; trained ${w.sides.map((s) => s.stats.trained)}, most units on field ${maxUnits}, buildings standing ${built}; ${Math.round(ms)} ms (${(ms / (w.t / DT) * 1000).toFixed(0)} µs per step)`);
   assert.notEqual(w.winner, null, 'someone wins within an hour of game time');
@@ -242,10 +242,10 @@ for (const [i, [a, b]] of games.entries()) {
   const line = (band) => k.lines.find((l) => l.band === band);
   assert.equal(line('standard').tiers[0].every, 21, 'Militia every 21 game seconds, its real training time');
   assert.ok(line('spear').cost < line('standard').cost && line('cavalry').cost > line('standard').cost, 'prices follow real costs');
-  // Trebuchets: half range, and they pack/unpack
+  // Trebuchets: 65% of the real range, and they pack/unpack
   const treb = k.lines.find((l) => l.tiers[0].unitId === 42);
   const tf = k.fighter(treb.key, 0);
-  assert.equal(tf.range, 8, 'trebuchet range halved');
+  assert.ok(Math.abs(tf.range - 16 * 0.65) < 1e-9, 'trebuchet at 65% range');
   assert.ok(tf.packs > 0 && tf.walkAs === 331);
 }
 // Unique techs that make a line cheaper (Kamandaran) lower its building price; a Wonder in trouble rallies.
@@ -260,9 +260,20 @@ for (const [i, [a, b]] of games.entries()) {
   assert.ok(w.price(0, 'build', archers.key) < before, `Kamandaran: Archers cheaper (${before} -> ${w.price(0, 'build', archers.key)})`);
   const c = w.teams[0].castle;
   w.damage(1, c, c.maxHp * 0.55, null);
-  assert.equal(w.sides[0].blasts, 2, 'below half: another explosion');
   w.damage(1, c, c.maxHp * 0.25, null);
-  assert.equal(w.sides[0].blasts, 3, 'below a quarter: another');
+  assert.equal(w.sides[0].blasts, 1, 'still one explosion a game, however hurt the Wonder is');
+  // The explosion kills every enemy soldier it covers (even a full-HP Paladin-type unit)
+  {
+    const t = w.units.length;
+    w.spawn(1, { owner: 1, side: 1, line: w.kits[1].lines[0].key, tier: 0, x: 20, y: 0, kind: 'building' });
+    const foe = w.units.at(-1);
+    if (foe) { foe.x = 20; foe.y = 0; foe.f = { ...foe.f, hp: 5000 }; foe.hp = 5000; }
+    assert.ok(w.units.length > t);
+  }
+  assert.ok(w.blast(0, 20, 0) >= 1);
+  assert.ok(w.units.filter((v) => v.side === 1 && Math.hypot(v.x - 20, v.y) < 4).every((v) => v.hp <= 0), 'the explosion kills');
+  assert.equal(w.sides[0].blasts, 0);
+  assert.equal(w.blast(0, 20, 0), 0, 'only once');
   // Call to arms: only with enemies in your end; once; training carries on
   w.sides[0].gold = 5000;
   w.buy(0, 'build', archers.key, [20, -5]);

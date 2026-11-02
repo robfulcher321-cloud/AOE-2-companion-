@@ -796,3 +796,17 @@ body.sg-open { overflow: hidden; }
 @media (orientation: landscape) and (max-height: 600px) {
   .sg-call-btn { width: 44px; height: 44px; right: 62px; font-size: 1.2rem; }
 }
+/* Call to arms: are you sure? (the game keeps going behind it) */
+.sg-confirm { background: rgb(15 10 5 / .78); }
+.sg-confirm h2 { font-size: 1.7rem; }
+.sg-confirm p { max-width: 30em; margin: 0; color: #f2e2bb; line-height: 1.4; }
+/* Hold a building: all of that kind together */
+.sg-group-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.sg-group-at { display: inline-flex; align-items: center; gap: 6px; min-width: 9.5em; }
+.sg-group-at img { width: 34px; height: 34px; border-radius: 4px; }
+.sg-group-up { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid #c9a24a; background: #3a2a14; color: #ffe9a8; font: inherit; text-align: left; }
+.sg-group-up img { width: 30px; height: 30px; border-radius: 4px; }
+.sg-group-up span { display: grid; line-height: 1.15; }
+.sg-group-up:disabled { opacity: .5; }
+.sg-confirm .sg-end-acts { align-items: center; }
+.sg-confirm .sg-end-acts .fight { width: auto; font-size: 1.2rem; padding: 10px 20px; margin: 0; }

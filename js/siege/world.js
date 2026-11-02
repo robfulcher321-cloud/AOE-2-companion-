@@ -24,7 +24,9 @@ const LANE_Y = (RIVER.half + LANE.half) / 2;   // centre line of each lane
 export const CASTLE_X = [13, 73];
 // Where each player may build: anywhere in their team's base (in front of the Wonder and
 // behind it; teammates share it), leaving a small gap between buildings. Blue's x range; red mirrors it.
-export const BUILD = { x0: 1.5, x1: 26.5, gap: 0.5 };
+// gap: tiles kept clear between two buildings; pack: how much of each building's footprint
+// counts for that (they can sit a little inside each other's edge). The Wonder keeps the full room.
+export const BUILD = { x0: 1.5, x1: 26.5, gap: 0.15, pack: 0.78, wonderGap: 0.5 };
 // Your own end of the map, a little beyond where you can build: the explosion only lands here.
 export const TERRITORY = { edge: 30.5 };
 // Gold mines beside the lanes, two along each bank of the river. When a team's soldiers get past
@@ -46,8 +48,8 @@ const BUILD_HP = 0.15;          // a new building starts at this share of its HP
 const BUILD_WEAK = 1.5;         // ...and takes this much more damage until it's finished
 const SIEGE_TURN = 1.2;         // game seconds for siege with a minimum range to turn about
 // Holding on when you're losing: the Wonder shoots more arrows the more it's damaged
-// (+1 for each quarter of its HP gone), and when it falls below 50% and again below 25%,
-// everyone on its team gets another explosion.
+// (+1 for each quarter of its HP gone). The explosion and the call to arms stay once a game.
+// (RALLY_AT: when the "it fires more arrows" notice shows.)
 const WONDER_ARROWS = 4;
 const RALLY_AT = [0.5, 0.25];
 const BOUNTY = 0.02;            // a kill pays 2% of what the unit (or building) cost
@@ -62,7 +64,7 @@ const CAP = 70;                // most units a side can have on the field
 const INCOME_EVERY = 4;        // seconds between income ticks
 export const START_GOLD = 250;
 export const BASE_INCOME = 10;
-export const BLAST = { radius: 4, share: 0.6, flat: 25, per: 1 };   // the explosion: once per player
+export const BLAST = { radius: 4, per: 1 };   // the explosion: once per player, kills every enemy soldier it covers
 export const OVERTIME = 25 * 60;   // after this, buildings take more damage every minute, so games end
 const SELL_BACK = 0.5;
 const CRUMBLE = 0.004;          // share of a castle's HP lost per second in overtime
@@ -169,7 +171,8 @@ export class World {
     if (x - r < z.x0 || x + r > z.x1 || y - r < z.y0 || y + r > z.y1) return false;
     for (const b of this.structures) {
       if (b.hp <= 0 || b === ignore) continue;
-      if (hyp(b.x - x, b.y - y) < b.r + r + BUILD.gap) return false;
+      const room = b.kind === 'castle' ? b.r + r + BUILD.wonderGap : (b.r + r) * BUILD.pack + BUILD.gap;
+      if (hyp(b.x - x, b.y - y) < room) return false;
     }
     return true;
   }
@@ -391,7 +394,7 @@ export class World {
 
   /**
    * The explosion (once per player, like Castle Fight's comeback ability): hurts
-   * every enemy soldier within BLAST.radius of (x, y) for 60% of its full HP + 25.
+   * every enemy soldier within BLAST.radius of (x, y): kills them all, siege included.
    */
   /**
    * A chat line or emote from player p, seen by everyone (allies and enemies).
@@ -422,7 +425,7 @@ export class World {
     for (const v of this.units) {
       if (v.side === s.team || v.hp <= 0) continue;
       if (hyp(v.x - x, v.y - y) - v.r > BLAST.radius) continue;
-      this.damage(s.team, v, v.f.hp * BLAST.share + BLAST.flat, { side: s.team, owner: side });
+      this.damage(s.team, v, Math.max(v.hp, v.f.hp) + 1, { side: s.team, owner: side });
       hit += 1;
     }
     this.effects.push({ t: this.t, x, y, side: s.team, owner: side, hit });
@@ -656,11 +659,10 @@ export class World {
     if (target.kind) amount *= this.overtime() * (target.kind === 'building' && !target.done ? BUILD_WEAK : 1);
     target.hp -= amount;
     if (target.kind === 'castle' && target.hp > 0) {
-      // Rallying: an extra explosion each for the team at 50% and 25% of its Wonder's HP
+      // Under siege: tell the team at 50% and 25% (the Wonder fires more arrows as it's damaged)
       target.rallied ??= 0;
       while (target.rallied < RALLY_AT.length && target.hp < target.maxHp * RALLY_AT[target.rallied]) {
         target.rallied += 1;
-        for (const p of this.teams[target.side].players) this.sides[p].blasts += 1;
         this.events.push({ t: this.t, type: 'rally', side: target.side, at: RALLY_AT[target.rallied - 1] });
       }
     }

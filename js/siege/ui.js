@@ -120,13 +120,13 @@ export async function initSiege(root) {
         el('li', { textContent: 'You don\'t control units. Tap anywhere in your base (the dashed area, in front of your Wonder or behind it) to build: pick a building, drag it where you want it, then press Build. It turns red if it\'s too close to another building. Soldiers walk through buildings, so nothing can be walled off.' }),
         el('li', { textContent: 'Buildings take about 8 to 12 seconds to go up, and are weak until they\'re finished. Each training building then sends out one unit on a timer; the units march down the lane and fight on their own. Unique units train at the building of their kind (Longbowmen at the Archery Range); Trebuchets at the Siege Workshop in the Imperial Age.' }),
         el('li', { textContent: 'Towers, Bombard Towers and the Castle are defences: they shoot enemy soldiers that come near. Towers upgrade in place (Watch Tower → Guard Tower → Keep).' }),
-        el('li', { textContent: 'Tap a building for its menu: tap the next unit in its line to upgrade (Militia → Man-at-Arms → … → Champion; the price is on it), pause it, or sell it for half of what you put in. Each building upgrades on its own.' }),
+        el('li', { textContent: 'Tap a building for its menu: tap the next unit in its line to upgrade (Militia → Man-at-Arms → … → Champion; the price is on it), pause it, or sell it for half of what you put in. Each building upgrades on its own. Hold a building instead to select every one of yours of that kind: upgrade all of them at the same step at once, or sell them all.' }),
         el('li', { textContent: 'The red hand holds every building\'s next unit; GO sends them all out at once.' }),
         el('li', { textContent: 'The Armory (anvil, bottom left) has Blacksmith upgrades, Ballistics, Chemistry, Bloodlines and your civ\'s unique techs. One at a time; each one reaches all your units, even those already fighting.' }),
         el('li', { textContent: 'The middle of the map is split by a river into two lanes. Buildings above your Wonder send units down the top lane, those below it the bottom lane, those in line with it take turns. Arrows fly over the river; soldiers cross only near the bases.' }),
         el('li', { textContent: 'Call to arms: tap your Wonder. Once a game, while enemy soldiers are in your end of the map, every one of your finished buildings sends out a unit at once (their own training carries on). Everyone on a team has their own.' }),
         el('li', { textContent: 'Holding on when you\'re losing: your Wonder fires more arrows the more it\'s damaged (up to four at a time), and when it falls below half its HP, and again below a quarter, everyone on your team gets another explosion.' }),
-        el('li', { textContent: `One explosion each (the fire button): tap it, drag the circle, then Drop. It hurts every enemy soldier within ${BLAST.radius} tiles for ${Math.round(BLAST.share * 100)}% of their HP. It can only be dropped on your own end of the map (up to the dashed line, a little past your base): it's for defending against a deathball, not for pushing.` }),
+        el('li', { textContent: `One explosion each (the fire button): tap it, drag the circle, then Drop. It kills every enemy soldier within ${BLAST.radius} tiles, siege included. Only one per player, for the whole game. It can only be dropped on your own end of the map (up to the dashed line, a little past your base): it's for defending against a deathball, not for pushing.` }),
         el('li', { textContent: 'Gold comes in every few seconds; Markets add more (and their Coinage and Banking upgrades more again), and kills pay a small bounty (2% of what the unit or building cost; the Wonder\'s own arrows pay nobody). In team games everyone gets two thirds of the 1v1 base income (your own Markets and mines still pay you in full).' }),
         el('li', { textContent: 'Four gold mines sit beside the lanes, two along each bank of the river. When your soldiers get past one, the first of them past it builds a Mining Camp in your colour on your side of it, which pays you every income tick (+2 gold a tick). If enemy soldiers get past it, they pull your camp down in about 5 seconds and build their own.' }),
         el('li', { textContent: 'Prices follow the game: a building costs what its unit costs (with your civ\'s discounts, like Goths\' cheap infantry), gold counting double, so gold-heavy units and their upgrades cost more. Each unit comes out at its real training time.' }),
@@ -364,7 +364,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     tapGround: (x, y) => setMode({ kind: 'build', at: [x, y] }),
     tapBuilding: (b) => setMode({ kind: 'building', id: b.id }),
     tapWonder: () => setMode({ kind: 'wonder' }),
-    holdBuilding: (b) => setMode({ kind: 'building', id: b.id }),
+    holdBuilding: (b) => setMode(b.owner === ME ? { kind: 'group', line: b.line } : { kind: 'building', id: b.id }),
     placed: (pl) => { placeBtn.disabled = !pl.ok; placeBar.querySelector('.sg-aim-text').textContent = pl.ok ? 'Drag to move' : pl.high ? 'Too high: it would be cut off' : 'Too close to a building'; },
     tapEmpty: () => setMode({ kind: 'hint' }),
     aimAt: (x, y) => {
@@ -416,7 +416,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   tip(chatBtn, 'Chat', 'Emotes and messages. Everyone in the game sees them, allies and enemies.');
   tip(ageBtn, 'Ages', 'Advance to the next age for gold. Each age unlocks units, upgrades and Armory techs; everyone is told when you advance.');
   tip(armoryBtn, 'Armory', 'Blacksmith and unit techs. Each one reaches every unit it applies to, including those already fighting. One at a time.');
-  tip(blastBtn, 'Explosion', `Once per game. Drag the circle onto enemies inside your own third of the field (up to the dashed line), then Drop. It hits enemies only.`);
+  tip(blastBtn, 'Explosion', `Once per game. Drag the circle onto enemies inside your own third of the field (up to the dashed line), then Drop. It kills every enemy soldier inside the circle.`);
   tip(followBtn, 'To the fight', 'Moves the view to where the fighting is. The view never moves on its own.');
   callBtn.addEventListener('click', () => {
     const why = world.callBlocked(ME);
@@ -425,9 +425,34 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       clearTimeout(callBtn.t); callBtn.t = setTimeout(() => { banner.hidden = true; }, 1800);
       return;
     }
-    act('call');
-    navigator.vibrate?.([50, 30, 50, 30, 80]);
+    confirmCall();
   });
+  /** "Are you sure?" for the call to arms, saying what it does (it's once a game). */
+  function confirmCall() {
+    screen.querySelector('.sg-confirm')?.remove();
+    const why = world.callBlocked(ME);
+    if (why) {
+      banner.hidden = false; banner.textContent = `Call to arms: ${why.toLowerCase()}`;
+      clearTimeout(callBtn.t); callBtn.t = setTimeout(() => { banner.hidden = true; }, 1800);
+      return;
+    }
+    const n = world.trainers(ME).filter((b) => b.done).length;
+    const box = el('div', { className: 'sg-end sg-confirm', role: 'dialog', 'aria-label': 'Call to arms?' },
+      el('h2', { textContent: '📯 Call to arms?' }),
+      el('p', { textContent: `Every one of your finished training buildings (${n} now) sends out a unit straight away. Their training carries on where it was, so the next units still come out on time.` }),
+      el('p', { textContent: 'You get one for the whole game, and it only works while enemy soldiers are in your end of the map.' }),
+      el('div', { className: 'sg-end-acts' },
+        el('button', { type: 'button', className: 'fight', textContent: '📯 Yes, call to arms', onclick: () => {
+          box.remove();
+          const late = world.callBlocked(ME);
+          if (late) { banner.hidden = false; banner.textContent = `Call to arms: ${late.toLowerCase()}`; clearTimeout(callBtn.t); callBtn.t = setTimeout(() => { banner.hidden = true; }, 1800); return; }
+          act('call');
+          navigator.vibrate?.([50, 30, 50, 30, 80]);
+          setMode({ kind: 'hint' });
+        } }),
+        el('button', { type: 'button', className: 'sg-btn', textContent: 'Not yet', onclick: () => box.remove() })));
+    screen.append(box);
+  }
   tip(callBtn, 'Call to arms', 'Once a game, while enemy soldiers are in your end of the map (up to the dashed line): every one of your finished buildings sends out a unit at once. Their own training carries on. It glows when you can use it.');
   tip(goBtn, 'GO', 'Sends out every unit your buildings are holding, all at once.');
   tip(rotBtn, 'Screen', 'Tap to switch: follow your phone (⟳), keep it sideways (▭), or keep it upright (▯). Sideways gives the battle most of the screen.');
@@ -463,6 +488,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     flagBtn.classList.toggle('on', m.kind === 'civ');
     if (m.kind === 'chat') chatBtn.querySelector('.sg-chat-dot').hidden = true;
     view.selected = m.kind === 'building' ? m.id : null;
+    view.group = m.kind === 'group' ? new Set(world.buildings(ME).filter((x) => x.line === m.line).map((x) => x.id)) : null;
     view.buildAt = m.kind === 'build' ? m.at : null;
     // Chose a building: its ghost appears where you tapped, ready to drag
     // Placing a building needs the battlefield: put the opened panel back
@@ -555,6 +581,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       el('ul', { className: 'sg-hints' },
         el('li', {}, el('b', { textContent: 'Tap your base' }), ' (the dashed area) to build, then drag it into place.'),
         el('li', {}, el('b', { textContent: 'Tap a building' }), ' to upgrade it, pause it or sell it.'),
+        el('li', {}, el('b', { textContent: 'Hold a building' }), ' to select all of that kind and upgrade or sell them together.'),
         el('li', {}, 'The ', el('b', { textContent: 'red hand' }), ' holds every unit; ', el('b', { textContent: 'GO' }), ' sends them all out.'),
         el('li', {}, el('b', { textContent: 'Tap your Wonder' }), ' to call to arms once a game, when the enemy is in your end.'),
         el('li', {}, 'The ', el('b', { textContent: 'anvil' }), ' opens the Armory for upgrades that reach your whole army.'),
@@ -621,6 +648,68 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       'Selling it later gives back part of the price.', s.age < MARKET.age ? `Needs the ${AGES[MARKET.age].name}.` : '');
     out.push(el('div', { className: 'sg-opts' }, mkt));
     return out;
+  }
+
+  /**
+   * Hold a building: every one of yours of that kind, selected together. Upgrade all
+   * of them at the same step at once, or sell them all.
+   */
+  function groupView(lineKey) {
+    const bs = world.buildings(ME).filter((b) => b.line === lineKey);
+    view.group = new Set(bs.map((b) => b.id));
+    if (!bs.length) { setTimeout(() => setMode({ kind: 'hint' })); return []; }
+    const s = world.sides[ME];
+    const isMarket = lineKey === 'market';
+    const line = isMarket ? null : world.line(ME, lineKey);
+    const label = isMarket ? 'Market' : line.defence ? line.tiers[0].name || line.label : BUILDING_NAMES[line.building] || line.tiers[0].name;
+    const stepName = (t) => (isMarket ? (t ? MARKET.upgrades[t - 1].name : 'Market') : line.tiers[t].name);
+    const stepIcon = (t) => (isMarket ? (t ? imageUrl('Tech', MARKET.upgrades[t - 1].picture) : bldIcon(84)) : line.defence ? bldIcon(line.tiers[t].building) : unitIcon(line.tiers[t].unitId, line.tiers[t].picture));
+    const nextOf = (t) => (isMarket ? MARKET.upgrades[t] : line.tiers[t + 1]);
+    const done = bs.filter((b) => b.done);
+    const tiers = [...new Set(done.map((b) => b.tier || 0))].sort((a, b) => a - b);
+    const rows = tiers.map((t) => {
+      const here = done.filter((b) => (b.tier || 0) === t);
+      const next = nextOf(t);
+      const price = world.price(ME, 'upgrade', here[0].id);
+      const head = el('span', { className: 'sg-group-at' }, el('img', { src: stepIcon(t), alt: '' }), el('small', { textContent: `${here.length} × ${stepName(t)}` }));
+      if (!next) return el('div', { className: 'sg-group-row' }, head, el('small', { className: 'sg-note', textContent: 'Fully upgraded' }));
+      const locked = !isMarket && next.age > s.age;
+      if (price === null) return el('div', { className: 'sg-group-row' }, head, el('small', { className: 'sg-note', textContent: locked ? `${next.name}: needs the ${AGES[next.age].name}` : `${next.name}: not yet` }));
+      const btn = priced(el('button', { type: 'button', className: 'sg-group-up', onclick: () => {
+        // As many as you can afford, in order
+        let gold = world.sides[ME].gold;
+        for (const b of here) {
+          const p = world.price(ME, 'upgrade', b.id);
+          if (p === null || gold < p) break;
+          if (act('upgrade', { id: b.id }) !== false) gold -= p;
+        }
+        navigator.vibrate?.(20);
+        refresh(true);
+      } }, el('img', { src: isMarket ? imageUrl('Tech', next.picture) : line.defence ? bldIcon(next.building) : unitIcon(next.unitId, next.picture), alt: '' }),
+      el('span', {}, el('b', { textContent: `Upgrade ${here.length === 1 ? 'it' : `all ${here.length}`}` }), el('small', { textContent: `→ ${next.name}` })), priceTag(price * here.length)), price, false);
+      tip(btn, `Upgrade ${here.length} to ${next.name}`, `${price} gold each, ${price * here.length} for all of them.`, 'If you can\'t afford them all, it upgrades as many as you can.');
+      return el('div', { className: 'sg-group-row' }, head, btn);
+    });
+    const building = bs.length - done.length;
+    const total = bs.reduce((a, b) => a + world.sellValue(b.id), 0);
+    const sellAll = el('button', { type: 'button', className: 'sg-sell', onclick: () => {
+      if (!sellAll.dataset.sure) {
+        sellAll.dataset.sure = '1';
+        sellAll.replaceChildren(`Tap again to sell all ${bs.length} for `, goldImg(), String(total));
+        clearTimeout(sellAll.t); sellAll.t = setTimeout(() => { sellAll.dataset.sure = ''; refresh(true); }, 3000);
+        return;
+      }
+      for (const b of bs) act('sell', { id: b.id });
+      setMode({ kind: 'hint' });
+    } }, `Sell all ${bs.length} for `, goldImg(), String(total));
+    tip(sellAll, 'Sell all', `Gives back ${total} gold (half of what went into them) and clears their spots. Tap twice to be sure.`);
+    return [
+      closeRow(`${bs.length} × ${label}${bs.length === 1 || /s$/.test(label) ? '' : 's'}`),
+      el('p', { className: 'sg-note', textContent: 'All of yours of this kind are selected. Tap one to see just that one.' }),
+      ...rows,
+      building ? el('p', { className: 'sg-note', textContent: `${building} still going up (upgrade once built).` }) : null,
+      el('div', { className: 'sg-acts' }, sellAll),
+    ];
   }
 
   /** A building's menu: its upgrade steps (tap the next one to buy it), pause, sell. */
@@ -800,7 +889,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     const arrows = Math.min(4, 1 + Math.floor(lost * 4));
     const trainers = world.trainers(ME).filter((b) => b.done).length;
     const btn = tip(el('button', { type: 'button', className: 'sg-call', disabled: Boolean(why),
-      onclick: () => { act('call'); navigator.vibrate?.([50, 30, 50, 30, 80]); setMode({ kind: 'hint' }); } },
+      onclick: () => confirmCall() },
     el('b', { textContent: '📯 Call to arms' }),
     el('small', { textContent: why || `${trainers} building${trainers === 1 ? '' : 's'} send${trainers === 1 ? 's' : ''} a unit out now` })),
     'Call to arms', 'Once a game, while enemy soldiers are in your end of the map (up to the dashed line): every one of your finished buildings sends out a unit at once.',
@@ -896,7 +985,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     const wc = world.teams[myTeam].castle;
     const key = pmode.kind === 'wonder' ? ['wonder', world.callBlocked(ME), s.calls, Math.ceil(wc.hp / wc.maxHp * 40), world.trainers(ME).filter((x) => x.done).length].join('|')
       : pmode.kind === 'chat' || pmode.kind === 'civ' ? [pmode.kind, pmode.who, s.research?.id, s.aging?.to].join('|')
-      : [pmode.kind, pmode.at, pmode.key, pmode.id, world.buildings(ME).map((x) => `${x.id}${x.done ? '' : '…'}`).join(), s.markets, s.researched.size, s.research?.id, s.age, s.aging?.to,
+      : [pmode.kind, pmode.at, pmode.key, pmode.id, world.buildings(ME).map((x) => `${x.id}${x.done ? '' : '…'}${x.tier}`).join(), pmode.line, s.markets, s.researched.size, s.research?.id, s.age, s.aging?.to,
         b ? `${b.tier}${b.hold}${b.waiting}${s.stopAll}${b.done ? '' : Math.ceil((b.buildEnd - world.t) / GAME_SPEED)}` : '', held.length, s.stopAll, world.winner].join('|');
     if (!force && key === lastKey) {
       // Same content: just keep prices and the research bar current.
@@ -918,10 +1007,10 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       return;
     }
     lastKey = key;
-    const views = { wonder: wonderView, build: () => buildView(pmode.at, pmode.key), building: () => buildingView(pmode.id), armory: armoryView, age: ageView, chat: chatView, civ: () => civView(pmode.who), hint: hintView };
+    const views = { group: () => groupView(pmode.line), wonder: wonderView, build: () => buildView(pmode.at, pmode.key), building: () => buildingView(pmode.id), armory: armoryView, age: ageView, chat: chatView, civ: () => civView(pmode.who), hint: hintView };
     const content = (views[pmode.kind] || hintView)();
     // Same panel: keep where it was scrolled to; another panel starts at its beginning
-    const panel = [pmode.kind, pmode.at, pmode.id, pmode.who].join('|');
+    const panel = [pmode.kind, pmode.at, pmode.id, pmode.who, pmode.line].join('|');
     const same = panel === dock.dataset.panel;
     dock.dataset.panel = panel;
     const top = same ? dock.scrollTop : 0;
@@ -1048,7 +1137,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
           seenAges.add(k);
           const ours = e.side === myTeam;
           const n = el('div', { className: 'sg-notice', style: `--pc:${ours ? '#ffb067' : '#c9b48a'}` }, el('span', { textContent: '💥' }),
-            ours ? `Your Wonder is under siege: +1 explosion, and it fires more arrows` : 'The enemy Wonder rallies: more arrows, +1 explosion each');
+            ours ? 'Your Wonder is under siege: it fires more arrows' : 'The enemy Wonder fires more arrows');
           notices.append(n);
           setTimeout(() => n.remove(), 4500);
           if (ours) navigator.vibrate?.([60, 40, 60]);

@@ -352,13 +352,17 @@ export class SiegeView {
       items.push({ y: u.hp > 0 ? y : y - 100, u, x, uy: y });
     }
     items.sort((a, b) => a.y - b.y);
+    // Buildings first, then their badges and health bars over everything, so a building
+    // in front never hides the bar of the one behind it.
+    const tops = [];
     for (const it of items) {
       if (it.mine) this.drawMine(it.mine, t);
-      else if (it.b) this.drawStructure(it.b, t, ppt);
+      else if (it.b) { this.drawStructure(it.b, t, ppt, 'body'); tops.push(it.b); }
       else if (it.ghost) this.drawGhost(it.ghost);
       else if (it.tree) this.drawTree(it.tree, zoom);
       else this.drawUnit(it.u, it.x, it.uy, t, zoom * UNIT_SCALE);
     }
+    for (const b of tops) this.drawStructure(b, t, ppt, 'top');
     this.drawShots(t, zoom * UNIT_SCALE, ppt);
     this.drawBlasts(t);
     this.drawFloaters(t, zoom);
@@ -727,6 +731,19 @@ export class SiegeView {
     }
   }
 
+  /** A selection circle on the ground round (x, y), r tiles across, in gold. */
+  ring(x, y, r) {
+    const { ctx } = this;
+    const [cx, cy] = this.toScreen(x, y);
+    const [ex] = this.toScreen(x + r, y);
+    const [, ey] = this.toScreen(x, y + r);
+    const rx = Math.abs(ex - cx), ry = Math.max(4, Math.abs(ey - cy));
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgb(255 217 122 / .16)'; ctx.fill();
+    ctx.strokeStyle = '#ffd97a'; ctx.lineWidth = 2.5; ctx.stroke();
+  }
+
   diamond(x, y, half, fill, stroke) {
     const { ctx } = this;
     const pts = [[x - half, y - half], [x + half, y - half], [x + half, y + half], [x - half, y + half]].map(([px, py]) => this.toScreen(px, py));
@@ -737,7 +754,8 @@ export class SiegeView {
     if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); }
   }
 
-  drawStructure(b, t, ppt) {
+  /** pass: 'body' (the building), 'top' (its badge and bars, drawn after everything else), or 'all'. */
+  drawStructure(b, t, ppt, pass = 'all') {
     const { ctx } = this;
     const [sx] = this.toScreen(b.x, b.y);
     if (sx < -200 || sx > this.vw + 200) return;
@@ -745,11 +763,13 @@ export class SiegeView {
     const { size, iy, lift, lx, rx, ty, by } = this.boxOf(b);
     const zoom = this.cam.zoom;
     ctx.globalAlpha = dead ? Math.max(0, 1 - (t - b.diedAt) / 3) : 1;
-    const selected = this.selected === b.id;
+    const selected = this.selected === b.id || Boolean(this.group?.has(b.id));
     const own = b.owner !== undefined ? this.colours[b.owner] : SIDE[b.side];
     // The building itself: the game's graphic for the owner's civ, in their colour.
     // (Until it's ready, or without the graphics: a stone platform.)
     const bs = this.buildingSprite(b);
+    // Without the graphics (a plain platform), or collapsing, or going up: all in one go
+    if (pass === 'top' && (!bs || dead || (b.kind === 'building' && b.done === false))) { ctx.globalAlpha = 1; return; }
     if (dead && bs) { ctx.globalAlpha = 1; this.drawCollapse(b, bs, t, rx - lx); return; }
     if (!dead && b.kind === 'building' && b.done === false) { this.drawConstruction(b, bs, t, selected); return; }
     let spriteTop = null;
@@ -757,8 +777,11 @@ export class SiegeView {
       const [fx, fy, fw, fh, ax, ay] = bs.frame;
       const [gx, gy] = this.toScreen(b.x, b.y);
       const k = this.spriteScale(b, bs, rx - lx);
-      if (selected) this.diamond(b.x, b.y, b.r * 1.05, 'rgb(255 217 122 / .18)', '#ffd97a');
-      ctx.drawImage(bs.atlas, fx, fy, fw, fh, gx - ax * k, gy - ay * k, fw * k, fh * k);
+      if (pass !== 'top') {
+        if (selected) this.ring(b.x, b.y, b.r * 1.25);
+        ctx.drawImage(bs.atlas, fx, fy, fw, fh, gx - ax * k, gy - ay * k, fw * k, fh * k);
+        if (pass === 'body') { ctx.globalAlpha = 1; return; }
+      }
       if (dead) ctx.globalAlpha *= 0.5;
       spriteTop = gy - ay * k;
     } else {
@@ -882,7 +905,7 @@ export class SiegeView {
     const k = Math.max(0, Math.min(1, (t - b.buildStart) / Math.max(0.1, b.buildEnd - b.buildStart)));
     const [gx, gy] = this.toScreen(b.x, b.y);
     const { lx, rx, size, iy } = this.boxOf(b);
-    if (selected) this.diamond(b.x, b.y, b.r * 1.05, 'rgb(255 217 122 / .18)', '#ffd97a');
+    if (selected) this.ring(b.x, b.y, b.r * 1.25);
     const found = this.sprites?.foundations?.[BUILDING_KIND[b.building]];
     let top = iy;
     if (bs) {
