@@ -16,7 +16,7 @@ export const TRAIN_AT = [12, 87, 101, 49, 82];    // read from: Barracks, Archer
 // the Castle is a defence here.
 const TRAINS_IN = [12, 87, 101, 49];
 export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 49: 'Siege Workshop', 82: 'Castle', 84: 'Market', 79: 'Watch Tower', 234: 'Guard Tower', 235: 'Keep', 236: 'Bombard Tower' };
-export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 250, income: 5, max: 3, age: 2, r: 1.3, build: 8 };
+export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 200, income: 5, max: 3, age: 2, r: 1.3, build: 8 };
 // Size (tiles, as a circle) and build time (real seconds) of each kind of building.
 export const FOOTPRINT = { train: { r: 1.4, build: 10 } };
 // Defences: towers (upgraded in place, like a unit line), the Bombard Tower and the Castle.
@@ -30,6 +30,8 @@ export const DEFENCES = [
 const PRICE_UP = 1.15;
 const SIEGE_PRICE = 1.3;
 const SIEGE_TIME = 1.4;
+// Upgrading a building's unit (Militia → Man-at-Arms …) is cheaper, so investing in quality pays off
+const UNIT_UPGRADE = 0.65;
 export const NOT_UNITS = new Set([440]);         // Petard: not a lane fighter
 // The tech tree lists the Trebuchet packed; it fights unpacked.
 const FIGHTS_AS = { 331: 42 };
@@ -51,9 +53,9 @@ const TRAIN_SCALE = 1;
 export const AGES = [
   null,
   { name: 'Dark Age', tech: 104 },
-  { name: 'Feudal Age', tech: 101, cost: 175, time: 15 },
-  { name: 'Castle Age', tech: 102, cost: 250, time: 22 },
-  { name: 'Imperial Age', tech: 103, cost: 350, time: 30 },
+  { name: 'Feudal Age', tech: 101, cost: 100, time: 15 },
+  { name: 'Castle Age', tech: 102, cost: 200, time: 22 },
+  { name: 'Imperial Age', tech: 103, cost: 300, time: 30 },
 ];
 // Trebuchets: half their real range in this lane, and they pack/unpack (quicker than the game's).
 export const TREB = { id: 42, packed: 331, rangeShare: 0.5, packTime: 2 };
@@ -258,7 +260,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
       const st = civStats(t.unitId, 4);
       t.every = Math.max(6, Math.min(90, Math.round(st.trainTime * TRAIN_SCALE * (line.siege ? SIEGE_TIME : 1) * 10) / 10));
       // Upgrades: the real upgrade's resources, scaled down; dearer the more gold the unit costs.
-      t.upgrade = t.realUpgrade ? round5(upgradePrice(t.realUpgrade) * (1 + ((st.cost.Gold || 0) + (st.cost.Stone || 0)) / 200) * PRICE_UP * (line.siege ? SIEGE_PRICE : 1)) : 0;
+      t.upgrade = t.realUpgrade ? round5(upgradePrice(t.realUpgrade) * (1 + ((st.cost.Gold || 0) + (st.cost.Stone || 0)) / 200) * PRICE_UP * UNIT_UPGRADE * (line.siege ? SIEGE_PRICE : 1)) : 0;
     }
   }
 
