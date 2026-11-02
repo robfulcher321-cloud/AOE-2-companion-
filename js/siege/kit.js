@@ -22,9 +22,9 @@ export const FOOTPRINT = { train: { r: 1.4, build: 10 } };
 // Defences: towers (upgraded in place, like a unit line), the Bombard Tower and the Castle.
 // They shoot the nearest enemy soldier in range; they don't train anything.
 export const DEFENCES = [
-  { key: 'def:tower', label: 'Watch Tower', tiers: [{ building: 79, age: 2 }, { building: 234, age: 3, upgrade: 150 }, { building: 235, age: 4, upgrade: 225 }], cost: 175, r: 0.75, build: 8, arrows: 1, dmg: 1.8, hp: 1.3, shot: 'p_arrow_x1' },
-  { key: 'def:bombard', label: 'Bombard Tower', tiers: [{ building: 236, age: 4 }], needs: 47, cost: 600, r: 0.85, build: 10, arrows: 1, hp: 1.3, shot: 'p_ball_x1' },
-  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 350, r: 1.95, build: 12, arrows: 3, shot: 'p_arrow_x1' },
+  { key: 'def:tower', label: 'Watch Tower', tiers: [{ building: 79, age: 2 }, { building: 234, age: 3, upgrade: 120 }, { building: 235, age: 4, upgrade: 180 }], cost: 120, r: 0.75, build: 8, arrows: 1, dmg: 2.2, hp: 1.6, shot: 'p_arrow_x1' },
+  { key: 'def:bombard', label: 'Bombard Tower', tiers: [{ building: 236, age: 4 }], needs: 47, cost: 600, r: 0.85, build: 10, arrows: 1, hp: 1.6, shot: 'p_ball_x1' },
+  { key: 'def:castle', label: 'Castle', tiers: [{ building: 82, age: 3 }], cost: 300, r: 1.95, build: 12, arrows: 3, shot: 'p_arrow_x1' },
 ];
 // Everything a little dearer than before; siege dearer still, and slower to come out.
 const PRICE_UP = 1.15;
@@ -82,7 +82,7 @@ export function priceBand(rootId, unit) {
   return 'standard';
 }
 const UPGRADE_SHARE = 0.3;   // building upgrades cost this share of the real upgrade's resources (+30)
-const TECH_SHARE = 0.33;     // Armory techs: same idea (+25)
+const TECH_SHARE = 0.2;      // Armory techs: this share of the real tech's resources (+20)
 const TECH_TIME = 0.3;       // and this share of the real research time
 
 // Building upgrades: 30% of the real upgrade's resources (+30) up to 600 of them, then
@@ -186,7 +186,6 @@ export function buildKit({ data, strings = {}, tree, civ }) {
       });
       // Castle units go to the building of their kind; the Trebuchet to the Siege Workshop, from the Castle Age.
       const at = building === 82 ? classBuilding(rootUnit) : building;
-      if (rootUnit?.ID === TREB.id) tiers.forEach((t) => { t.age = Math.min(t.age, 3); });
       lines.push({
         key: `${at}-${root.node_id}`,
         building: at,
@@ -194,7 +193,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
         siege,
         label: tiers[0].name,
         band,
-        age: rootUnit?.ID === TREB.id ? 3 : root.age_id || 1,
+        age: root.age_id || 1,
         markup: PRICE_UP * (building === 82 && !siege ? UNIQUE_MARKUP : 1) * (siege ? SIEGE_PRICE : 1) * (MARKUP[FIGHTS_AS[root.node_id] ?? root.node_id] || 1),
         needs: NEEDS[root.node_id] ?? null,
         tiers,
@@ -207,7 +206,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
   const meOf = (u) => ({ id: u.ID, cls: UNIT_CLASS[u.ID] });
   const techCost = (id) => {
     const t = data.data.Tech[id];
-    return { cost: round5((25 + TECH_SHARE * total(t?.Cost)) * PRICE_UP), time: Math.max(6, Math.round((t?.ResearchTime || 40) * TECH_TIME)) };
+    return { cost: round5((20 + TECH_SHARE * total(t?.Cost)) * PRICE_UP), time: Math.max(6, Math.round((t?.ResearchTime || 40) * TECH_TIME)) };
   };
   const techRec = (id, group, label, extra = {}) => {
     const n = techNode.get(id);

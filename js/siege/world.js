@@ -43,14 +43,15 @@ export const TEAM_SHARE = 2 / 3;
 // Game seconds per real second at Normal speed (build times are given in real seconds).
 export const GAME_SPEED = 1.7;
 const BUILD_HP = 0.15;          // a new building starts at this share of its HP...
-const BUILD_WEAK = 1.5;
-const SIEGE_TURN = 1.2;
+const BUILD_WEAK = 1.5;         // ...and takes this much more damage until it's finished
+const SIEGE_TURN = 1.2;         // game seconds for siege with a minimum range to turn about
 // Holding on when you're losing: the Wonder shoots more arrows the more it's damaged
 // (+1 for each quarter of its HP gone), and when it falls below 50% and again below 25%,
 // everyone on its team gets another explosion.
 const WONDER_ARROWS = 4;
+const RALLY_AT = [0.5, 0.25];
 const BOUNTY = 0.02;            // a kill pays 2% of what the unit (or building) cost
-const RALLY_AT = [0.5, 0.25];         // game seconds for siege with a minimum range to turn about         // ...and takes this much more damage until it's finished
+const COMMIT_GAP = 2.5;         // tiles: this close to the building it's going for, a soldier won't turn away
 const BIN = 2;                 // tiles: units are bucketed along the lane for "who's near" lookups
 const MELEE_SLACK = 0.35;      // tiles: a melee unit this close counts as touching (no running on the spot in a crowd)
 const BUILDING_SLACK = 0.45;   // tiles: buildings are big; a unit at their foot can hit them
@@ -828,7 +829,9 @@ export class World {
     for (const u of live) {
       // A soldier already hitting a building sticks with it until it falls, even with defenders
       // turning up or hitting back: it doesn't break off to chase each new unit that comes out.
-      const committed = u.target && u.target.kind && u.target.hp > 0 && u.sieging;
+      // (and one already close to the building it's heading for: within a couple of tiles of its walls)
+      const tb = u.target;
+      const committed = tb && tb.kind && tb.hp > 0 && (u.sieging || hyp(tb.x - u.x, tb.y - u.y) - tb.r - u.r <= COMMIT_GAP);
       if (!committed && ((u.retarget -= DT) <= 0 || !u.target || u.target.hp <= 0)) {
         u.retarget = RETARGET * (0.8 + this.rand() * 0.4);
         u.target = this.pickTarget(u);
