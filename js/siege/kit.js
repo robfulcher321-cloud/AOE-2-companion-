@@ -164,7 +164,9 @@ export function buildKit({ data, strings = {}, tree, civ }) {
       if (seen.has(root.node_id)) continue;
       const chain = [root];
       for (;;) {
-        const next = here.find((n) => n.link_id === chain.at(-1).node_id && !chain.includes(n));
+        // (A unit the tree only draws under another one, like the Bohemians' Castle Age
+        // Hand Cannoneer under the Elite Skirmisher, is its own line, not an upgrade.)
+        const next = here.find((n) => n.link_id === chain.at(-1).node_id && n.link_node_type !== 'BuildingTech' && !chain.includes(n));
         if (!next) break;
         chain.push(next);
       }
