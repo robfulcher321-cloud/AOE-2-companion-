@@ -66,9 +66,12 @@ export function openLobby({ data, strings, action, name }) {
     return el('img', { className: 'sg-qr', src: `data:image/svg+xml,${encodeURIComponent(svg)}`, alt: 'QR code for the join link' });
   };
   let qrShown = false;
-  const iphoneBox = (link) => {
+  const iphoneBox = (link, why) => {
+    if (!link) {
+      return el('div', { className: 'sg-iphone' }, el('b', { textContent: '📱 iPhone friends can\'t join this time' }), el('p', { className: 'sg-note', textContent: why }));
+    }
     const box = el('details', { className: 'sg-iphone', open: qrShown, ontoggle: () => { qrShown = box.open; } },
-      el('summary', { textContent: 'Friends on iPhone (or any phone without the app)' }),
+      el('summary', { className: 'sg-iphone-btn', textContent: '📱 Show the QR code for iPhone friends' }),
       el('p', { className: 'sg-note', textContent: 'On the same Wi-Fi, point the camera at this code (or open the link in Safari). The game loads from this phone; then tap Join a game.' }),
       qrSvg(link),
       el('div', { className: 'sg-iphone-link' },
@@ -101,8 +104,14 @@ export function openLobby({ data, strings, action, name }) {
     let online = false;
     let netNote = null;
     let webLink = null;   // for iPhones: open this in Safari to join
+    let webWhy = null;    // or why there's no link
     if (lan) {
-      try { const r = await lan.host(gameName); online = true; webLink = r?.web ? joinLink(r.web) : null; } catch (err) { netNote = `Others can't join right now (${err.message}). You can still play against the computer.`; }
+      try {
+        const r = await lan.host(gameName);
+        online = true;
+        webLink = r?.web ? joinLink(r.web) : null;
+        webWhy = r?.web ? null : r?.webError || 'This version of the app can\'t host iPhones: update it, or check you\'re on Wi-Fi.';
+      } catch (err) { netNote = `Others can't join right now (${err.message}). You can still play against the computer.`; }
     } else netNote = 'Friends can join when you create the game in the Android app, on the same Wi-Fi.';
 
     const slots = SLOT_NAMES.map(() => ({ kind: online ? 'open' : 'closed' }));
@@ -208,7 +217,7 @@ export function openLobby({ data, strings, action, name }) {
       show(head(gameName),
         el('p', { className: 'sg-note', textContent: online ? 'Tap a place to set it up: the computer, open for someone on this Wi-Fi to join, or empty.' : 'Tap a place to add the computer or change it.' }),
         netNote ? el('p', { className: 'sg-note', textContent: netNote }) : null,
-        webLink ? iphoneBox(webLink) : null,
+        online ? iphoneBox(webLink, webWhy) : null,
         slotGrid(slots, { me: me(), selected, online, onTap: (i) => { selected = i; render(); } }),
         editor(selected),
         !teamsOk ? el('p', { className: 'sg-note sg-warn', textContent: 'Each team needs at least one player or computer.' }) : null,

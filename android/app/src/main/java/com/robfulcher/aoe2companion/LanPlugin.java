@@ -187,6 +187,7 @@ public class LanPlugin extends Plugin {
         ret.put("port", port);
         String ip = wifiAddress();
         if (web != null && ip != null) ret.put("web", "http://" + ip + ":" + web.getLocalPort() + "/");
+        else ret.put("webError", web == null ? "Couldn't start the iPhone join server: " + webError : "Couldn't find this phone's Wi-Fi address. Are you connected to Wi-Fi?");
         call.resolve(ret);
     }
 
@@ -388,6 +389,7 @@ public class LanPlugin extends Plugin {
     private int gamePort;
     private String gameName = "Wonder Wars game";
     private final Map<String, Object> spriteLocks = new ConcurrentHashMap<>();
+    private String webError = "";
 
     private void startWeb() {
         if (web != null && !web.isClosed()) return;
@@ -408,6 +410,7 @@ public class LanPlugin extends Plugin {
             });
         } catch (Exception e) {
             Log.w(TAG, "web server: " + e);
+            webError = String.valueOf(e.getMessage());
             web = null;
         }
     }
@@ -432,10 +435,15 @@ public class LanPlugin extends Plugin {
                     if (fallback == null) fallback = a.getHostAddress();
                 }
             }
-            return fallback;
-        } catch (Exception e) {
-            return null;
-        }
+            if (fallback != null) return fallback;
+        } catch (Exception ignored) { }
+        // Older way: what the Wi-Fi manager says
+        try {
+            WifiManager wifi = (WifiManager) getContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            @SuppressWarnings("deprecation") int ip = wifi != null ? wifi.getConnectionInfo().getIpAddress() : 0;
+            if (ip != 0) return (ip & 0xff) + "." + ((ip >> 8) & 0xff) + "." + ((ip >> 16) & 0xff) + "." + ((ip >> 24) & 0xff);
+        } catch (Exception ignored) { }
+        return null;
     }
 
     private static String readLine(InputStream in) throws IOException {

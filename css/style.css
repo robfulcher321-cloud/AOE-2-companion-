@@ -784,3 +784,6 @@ body.sg-open { overflow: hidden; }
 .sg-call b { font-size: 1rem; }
 .sg-call small { font-size: .72rem; color: #f0dcae; }
 .sg-call:disabled { opacity: .55; filter: grayscale(.6); cursor: default; }
+.sg-iphone-btn { list-style: none; display: block; padding: 10px 12px; border-radius: 8px; background: var(--gold, #c99a3a); color: #23170b; text-align: center; font-weight: 800; }
+.sg-iphone-btn::-webkit-details-marker { display: none; }
+.sg-iphone[open] .sg-iphone-btn { margin-bottom: 6px; }
