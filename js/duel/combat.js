@@ -78,6 +78,46 @@ export function radiusOf(u) {
   return 0.2;
 }
 
+// Charge shots a unique tech adds to a unit that doesn't have one in the game data we read.
+// Gothikon (Varangians): Varangian Guards throw an axe within 3 tiles every 30 seconds.
+// (Published: the 30 s and the 3 tiles. The axe's damage is our estimate, like a Throwing
+// Axeman's axe: 7 for the Varangian Guard, 9 for the Elite, melee, against armour.)
+const CHARGE_SHOTS = {
+  2703: { max: 1, rate: 1 / 30, projectile: { id: 0, attacks: [[4, 7]], speed: 7, arc: -0.05, sprite: 'p_throwing_axe_x1', minRange: 0.5, accuracy: 100, spread: 0.3, fullStray: true, count: 1, combat: 0 } },
+  2704: { max: 1, rate: 1 / 30, projectile: { id: 0, attacks: [[4, 9]], speed: 7, arc: -0.05, sprite: 'p_throwing_axe_x1', minRange: 0.5, accuracy: 100, spread: 0.3, fullStray: true, count: 1, combat: 0 } },
+};
+// Unique techs whose effects aren't plain stat changes in the game data we read (abilities added
+// in newer DLCs), written out by hand. who(id, cls) says which units it changes; apply(f) changes
+// the finished fighter. Numbers marked "est." aren't published; they're our best estimate.
+const INFANTRY = 6, CAVALRY = 12, SCOUT = 47, FOOT_ARCHER = 0;
+const GUNPOWDER = new Set([5, 36, 1001, 1003, 771, 773, 46, 557, 1911]);
+export const CUSTOM_UTS = {
+  // Hamask (Danes): infantry hit harder as they lose HP: up to +50% near death (est.)
+  1484: { who: (id, cls) => cls === INFANTRY, apply: (f) => { f.special.hamask = 0.5; } },
+  // Shield Wall (Saxons): infantry +1/+1 armour for each 15 infantry near it (3 tiles, est.), up to +3/+3
+  1464: { who: (id, cls) => cls === INFANTRY, apply: (f) => { f.special.shieldWall = { per: 15, max: 3, radius: 3 }; } },
+  // Coiled Serpent Array (Shu): Spearman-line and White Feather Guards up to +15% HP with 30 of them near (3 tiles, est.)
+  1070: { who: (id) => [93, 358, 359, 1959, 1961].includes(id), apply: (f) => { f.special.serpent = { share: 0.15, full: 30, radius: 3 }; } },
+  // Ordo Cavalry (Khitans): melee cavalry regenerate while fighting: 30 HP a minute (est.)
+  1007: { who: (id, cls, ranged) => (cls === CAVALRY || cls === SCOUT) && !ranged, apply: (f) => { f.special.combatRegen = 30; } },
+  // Curare (Tupi): foot archers poison what they hit: 5 more damage over 5 seconds (est.)
+  1393: { who: (id, cls, ranged) => cls === FOOT_ARCHER && ranged, apply: (f) => { f.special.poison = { dmg: 5, secs: 5 }; } },
+  // Malon (Mapuche): Bolas Riders, Slingers and Skirmishers' shots go on into the enemy behind: half damage (est.)
+  1379: { who: (id) => [2569, 2571, 185, 7, 6, 1155].includes(id), apply: (f) => { if (f.projectile) f.projectile.pass = 0.5; } },
+  // Pirotechnia (Italians): Hand Cannoneers' shots go on into the enemy behind for 15% (and +accuracy, in the data)
+  902: { who: (id) => id === 5, apply: (f) => { if (f.projectile) f.projectile.pass = (f.projectile.pass || 0) + 0.15; } },
+  // Thunderclap Bombs (Jurchens): Rocket Carts and Grenadiers blow up when killed: 20 damage within 1.25 tiles (est.)
+  997: { who: (id) => [1904, 1907, 1911].includes(id), apply: (f) => { f.special.deathBlast = { radius: 1.25, dmg: 20 }; } },
+  // Arquebus (Portuguese): gunpowder units aim ahead of moving targets (like Ballistics)
+  573: { who: (id) => GUNPOWDER.has(id), apply: (f) => { if (f.projectile) f.projectile.ballistics = true; } },
+  // Red Cliffs Tactics (Wu): Fire Archers set buildings burning: 5 more damage over 5 seconds
+  1080: { who: (id) => id === 1968 || id === 1970, apply: (f) => { f.special.burn = { dmg: 5, secs: 5 }; } },
+  // Butalmapu (Mapuche): Kona and Bolas Riders cost -15%
+  1380: { who: (id) => [2566, 2568, 2569, 2571].includes(id), apply: (f) => { for (const k of Object.keys(f.cost)) f.cost[k] = Math.round(f.cost[k] * 0.85); } },
+};
+/** Does one of the hand-written unique techs change this unit? */
+export const customUtAffects = (techId, unit) => Boolean(CUSTOM_UTS[techId]?.who(unit.ID, UNIT_CLASS[unit.ID], Boolean(RANGED[unit.ID])));
+
 const ATTR = { HP: 0, SPEED: 5, ARMOUR: 8, ATTACK: 9, RELOAD: 10, ACCURACY: 11, RANGE: 12, PROJECTILES: 102 };
 // Special-ability attributes (UGC guide numbering), kept in stats.sp
 const SP_ATTRS = new Set([22, 24, 59, 60, 61, 62, 63, 109, 115, 118]);
@@ -229,6 +269,7 @@ export function buildFighter(unit, name, opts = {}) {
     attacks: new Map((unit.Attacks || []).map((a) => [a.Class, a.Amount])),
     armours: new Map((unit.Armours || []).map((a) => [a.Class, a.Amount])),
     sp: spBase(SPECIALS[unit.ID]),
+    baseBlast: spBase(SPECIALS[unit.ID])[22] || 0,
     cost: { Food: 0, Wood: 0, Gold: 0, Stone: 0, ...(unit.Cost || {}) },
     trainTime: unit.TrainTime || 0,
   };
@@ -266,10 +307,12 @@ export function buildFighter(unit, name, opts = {}) {
   };
   const sp = stats.sp;
   const chargeType = Math.round(sp[62] || 0);
+  // A charge a tech gives a unit that has no charge shot of its own in the data (Gothikon)
+  const given = CHARGE_SHOTS[unit.ID];
   const special = {
     charge: chargeType && sp[59] > 0 ? {
-      type: chargeType, max: sp[59], rate: sp[60], event: Math.round(sp[61] || 0),
-      projectile: chargeShot(spec.charge?.projectile),
+      type: chargeType, max: given?.max ?? sp[59], rate: given?.rate ?? sp[60], event: Math.round(sp[61] || 0),
+      projectile: chargeShot(spec.charge?.projectile || given?.projectile),
       extra: chargeShot(spec.charge?.extra),
     } : null,
     rush: spec.rush || null,
@@ -291,9 +334,10 @@ export function buildFighter(unit, name, opts = {}) {
   bump(stats.armours, CLASS.PIERCE, Number(extra.pierceArmour) || 0);
   stats.hp += Number(extra.hp) || 0;
 
-  return {
+  const out = {
     name,
     unitId: unit.ID,
+    cls: UNIT_CLASS[unit.ID],
     hp: Math.max(1, Math.round(stats.hp * 100) / 100),
     attacks: stats.attacks,
     armours: stats.armours,
@@ -314,7 +358,8 @@ export function buildFighter(unit, name, opts = {}) {
       // Chemistry: burning arrows, bolts and stones, as in the game
       sprite: effectOpts.chosen.includes(47) && ranged.fire ? ranged.fire : ranged.sprite,
       spread: ranged.spread,
-      blast: ranged.blast,
+      // (techs that widen the blast, Warwolf and Torsion Engines, add to the projectile's)
+      blast: (ranged.blast || 0) + Math.max(0, (stats.sp[22] || 0) - stats.baseBlast),
       ballistics: hasBallistics,
       fullStray: Boolean(ranged.fullStray),
       pierces: Boolean(ranged.pierces),
@@ -323,6 +368,8 @@ export function buildFighter(unit, name, opts = {}) {
       secondary,
     },
   };
+  for (const id of uts) if (customUtAffects(id, unit)) CUSTOM_UTS[id].apply(out);
+  return out;
 }
 
 /** Special-ability attributes a unit starts with (charge, trample, etc.). */
@@ -357,7 +404,9 @@ export function damagePerHit(attacker, defender, attacks = attacker.attacks, { a
     const base = cls === CLASS.MELEE || cls === CLASS.PIERCE;
     let armour = defender.armours.get(cls);
     if (base) armour = ignore ? Math.min(0, armour) : armour > 0 ? Math.max(0, armour - armourLoss) : armour;
-    let part = Math.max(0, amount - armour);
+    // A negative bonus (mounted units' -3 in class 39) takes damage off, as in the game:
+    // camels' own -3 cancels it, and Royal Heirs (+3) lets it through.
+    let part = !base && raw < 0 ? Math.min(0, amount - armour) : Math.max(0, amount - armour);
     if (!base && part > 0) part *= 1 - resist;
     sum += part;
   }

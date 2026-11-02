@@ -8,7 +8,7 @@
 // down: a building trains about the same value of army per second whatever it
 // makes, so cheap units come in numbers and expensive ones in quality.
 
-import { buildFighter, otherTechsFor, isDuelEligible, buildingsOnly, trackFor, affectsUnit, isInfantry, TRACKS, OTHER_TECHS } from '../duel/combat.js';
+import { buildFighter, otherTechsFor, isDuelEligible, buildingsOnly, trackFor, affectsUnit, customUtAffects, isInfantry, TRACKS, OTHER_TECHS } from '../duel/combat.js';
 import { CIV_EFFECTS, UNIT_CLASS, PLAYER_TECHS } from '../duel/effects.js';
 
 export const TRAIN_AT = [12, 87, 101, 49, 82];    // read from: Barracks, Archery Range, Stable, Siege Workshop, Castle
@@ -62,6 +62,46 @@ export const AGES = [
   { name: 'Imperial Age', tech: 103, cost: 300, time: 30 },
 ];
 // Trebuchets: 65% of their real range in this lane, and they pack/unpack (quicker than the game's).
+// Unique techs for training, gold and defences, as they work in Wonder Wars (there are no
+// villagers, walls or Town Centers here, so each does the nearest thing it can).
+//   train: building (or unique lines) trains in k of the time. income: gold a tick (x mult, + flat).
+//   def: Wonder Wars defences it changes (keys), with hp x, +attack, +range, +arrows, reload x,
+//   regen (HP a minute) and poison (Curare).
+export const WW_UTS = {
+  493: { note: 'Stables train 40% faster.', train: { building: 101, k: 1 / 1.4 } },                  // Chivalry
+  457: { note: 'Barracks train twice as fast.', train: { building: 12, k: 0.5 } },                    // Perfusion
+  578: { note: 'Unique units train 25% faster.', train: { unique: true, k: 0.8 } },                    // Kasbah
+  506: { note: '+10% gold income.', income: { mult: 1.1 } },                                          // Grand Trunk Road
+  754: { note: '+2 gold every 4 seconds.', income: { flat: 2 } },                                     // Burgundian Vineyards
+  629: { note: '+2 gold every 4 seconds.', income: { flat: 2 } },                                     // Paper Money
+  1061: { note: '+2 gold every 4 seconds.', income: { flat: 2 } },                                    // Tuntian
+  484: { note: 'Watch Towers fire an extra arrow.', def: { keys: ['def:tower'], arrows: 1 } },        // Yasama
+  486: { note: 'Watch Towers +2 range.', def: { keys: ['def:tower'], range: 2 } },                    // Eupseong
+  462: { note: 'Watch Towers and Bombard Towers +30% HP.', def: { keys: ['def:tower', 'def:bombard'], hp: 1.3 } },  // Great Wall
+  482: { note: 'Castles and Watch Towers fire 33% faster.', def: { keys: ['def:tower', 'def:castle'], reload: 1 / 1.33 } },  // Stronghold
+  923: { note: 'Towers and Castles +2 attack.', def: { keys: ['def:tower', 'def:bombard', 'def:castle'], attack: 2 } },  // Svan Towers
+  11: { note: 'Castles +3 range.', def: { keys: ['def:castle'], range: 3 } },                         // Crenellations
+  7: { note: 'Castles +4 attack.', def: { keys: ['def:castle'], attack: 4 } },                        // Citadels
+  996: { note: 'Towers and Castles regenerate 500 HP a minute.', def: { keys: ['def:tower', 'def:bombard', 'def:castle'], regen: 500 } },  // Fortified Bastions
+  3: { note: 'Watch Towers +2 attack too.', def: { keys: ['def:tower'], attack: 2 } },                // Yeomen (its tower part)
+  10: { note: 'Bombard Towers +2 range too.', def: { keys: ['def:bombard'], range: 2 } },             // Artillery (its tower part)
+  1393: { note: 'Towers and Castles poison what they hit too.', def: { keys: ['def:tower', 'def:castle'], poison: { dmg: 5, secs: 5 } } },  // Curare
+};
+
+// What the hand-written unique techs do here (see CUSTOM_UTS in duel/combat.js). "About": an estimate.
+const HOW = {
+  1474: 'an axe within 3 tiles every 30 seconds (about 7 damage, 9 for the Elite).',
+  1484: 'up to about +50% damage as they near death.',
+  1464: '+1/+1 armour for every 15 infantry within 3 tiles, up to +3/+3.',
+  1070: 'up to +15% HP with 30 of them within 3 tiles.',
+  1007: 'about 30 HP a minute while fighting.',
+  1393: 'about 5 more damage over 5 seconds on each hit.',
+  1379: 'shots carry on into the enemy behind for about half damage.',
+  902: 'shots carry on into the enemy behind for 15%.',
+  997: 'about 20 damage within 1.25 tiles when one is killed.',
+  573: 'no misses on soldiers that are walking.',
+  1080: 'buildings they hit burn for 5 more damage over 5 seconds.',
+};
 // Arson: +2 attack for infantry against buildings (armour class 11, which every building has)
 export const ARSON = { id: 602, vs: 11, bonus: 2 };
 export const TREB = { id: 42, packed: 331, rangeShare: 0.65, packTime: 2 };
@@ -241,8 +281,14 @@ export function buildKit({ data, strings = {}, tree, civ }) {
   // Arson (Barracks): infantry +2 attack against buildings
   if (techOk.has(ARSON.id) && allUnits.some((u) => isInfantry(u))) techs.push(techRec(ARSON.id, 'Unit upgrades', 'Arson'));
   // The civ's unique techs that change its units
-  const uts = (CIV_EFFECTS[civ]?.uts || []).filter((u) => techOk.has(u.id) && allUnits.some((x) => affectsUnit(u, meOf(x))));
-  for (const u of uts) techs.push(techRec(u.id, 'Unique techs', u.name || `Tech ${u.id}`));
+  const uts = (CIV_EFFECTS[civ]?.uts || []).filter((u) => techOk.has(u.id) && (WW_UTS[u.id]
+    || allUnits.some((x) => affectsUnit(u, meOf(x)) || customUtAffects(u.id, x))));
+  for (const u of uts) {
+    const rec = techRec(u.id, 'Unique techs', u.name || `Tech ${u.id}`);
+    if (WW_UTS[u.id]) rec.help = `${rec.help || ''}${rec.help ? '\n' : ''}In Wonder Wars: ${WW_UTS[u.id].note}`;
+    else if (HOW[u.id]) rec.help = `${rec.help || ''}${rec.help ? '\n' : ''}Here: ${HOW[u.id]}`;
+    techs.push(rec);
+  }
   const utIds = new Set(uts.map((u) => u.id));
 
   const buildingPicture = new Map((tree.buildings || []).map((b) => [b.node_id ?? b.building_id, b.picture_index]));
@@ -311,9 +357,33 @@ export function buildKit({ data, strings = {}, tree, civ }) {
     /** How often a building of this line sends out a unit at a step, with unique techs that speed training. */
     every(line, tier, researched = null) {
       const uts = utsOf(researched);
+      // Chivalry, Perfusion, Kasbah: whole buildings work faster
+      let k = 1;
+      for (const id of uts) {
+        const tr = WW_UTS[id]?.train;
+        if (tr && (tr.unique ? line.unique : tr.building === line.building)) k *= tr.k;
+      }
       if (!uts.length) return line.tiers[tier].every;
       const st = civStats(line.tiers[tier].unitId, 4, uts);
-      return Math.max(6, Math.min(90, Math.round(st.trainTime * TRAIN_SCALE * (line.siege ? SIEGE_TIME : 1) * 10) / 10));
+      const base = Math.max(6, Math.min(90, Math.round(st.trainTime * TRAIN_SCALE * (line.siege ? SIEGE_TIME : 1) * 10) / 10));
+      return Math.max(4, Math.round(base * k * 10) / 10);
+    },
+    /** Gold-income unique techs researched: { mult, flat }. */
+    incomeBonus(researched) {
+      let mult = 1, flat = 0;
+      for (const id of utsOf(researched)) { const inc = WW_UTS[id]?.income; if (inc) { mult *= inc.mult || 1; flat += inc.flat || 0; } }
+      return { mult, flat };
+    },
+    /** What researched unique techs do to a defence (Watch Tower, Bombard Tower, Castle). */
+    defenceBonus(key, researched) {
+      const b = { hp: 1, attack: 0, range: 0, arrows: 0, reload: 1, regen: 0, poison: null };
+      for (const id of utsOf(researched)) {
+        const d = WW_UTS[id]?.def;
+        if (!d || !d.keys.includes(key)) continue;
+        b.hp *= d.hp || 1; b.attack += d.attack || 0; b.range += d.range || 0; b.arrows += d.arrows || 0;
+        b.reload *= d.reload || 1; b.regen += d.regen || 0; b.poison = d.poison || b.poison;
+      }
+      return b;
     },
     /** Fighter stats for a line at a tier with the researched techs (a Set of tech ids). */
     linePrice,

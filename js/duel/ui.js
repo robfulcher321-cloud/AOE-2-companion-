@@ -2,7 +2,7 @@ import { loadCore, loadTree, imageUrl, civIconUrl, nameText } from '../data.js';
 import { Picker } from '../picker.js';
 import { UNIT_CLASS, CIV_EFFECTS } from './effects.js';
 import { civKeys } from '../techtree.js';
-import { buildFighter, isDuelEligible, buildingsOnly, damagePerHit, hitsToKill, affectsUnit, trackFor, otherTechsFor, CLASS } from './combat.js';
+import { customUtAffects, buildFighter, isDuelEligible, buildingsOnly, damagePerHit, hitsToKill, affectsUnit, trackFor, otherTechsFor, CLASS } from './combat.js';
 import { simulateMany } from './sim.js';
 import { ArenaPlayer } from './render.js';
 import { loadPack, onPackProgress } from './spritepack.js';
@@ -179,7 +179,7 @@ class SidePanel {
     this.utInputs = [];
     this.utBox.replaceChildren(el('h3', { textContent: 'Unique techs' }), ...uts.map((u) => {
       const node = this.techNodes.get(u.id);
-      const relevant = affectsUnit(u, me);
+      const relevant = affectsUnit(u, me) || customUtAffects(u.id, unit);
       const input = el('input', { type: 'checkbox', value: u.id, disabled: !relevant,
         checked: relevant && (this.lastUnit === unit.ID && this.lastCiv === this.civ ? prevOn.has(u.id) : true) });
       input.addEventListener('input', () => this.update());
@@ -440,6 +440,6 @@ function showResult(box, { result, many, fa, fb, counts }) {
     odds,
     el('p', { className: 'subtle', textContent: `${odds ? 'This fight' : 'Fight'} lasted ${result.duration.toFixed(1)} game seconds (${(result.duration / 1.7).toFixed(1)} real seconds at Normal speed).` }),
     table,
-    el('p', { className: 'caveat', textContent: 'Imperial Age, flat ground, no micro: units go for the nearest enemy, and ranged units stand and shoot rather than running from melee units. Shots roll accuracy, fly at their real speed, can be dodged by sideways movement without Ballistics, and misses can still hit. Includes Blacksmith, Archery Range, Stable, Barracks and University upgrades, civ bonuses and unique techs that change unit stats. Special abilities come from the game data: charge attacks and charge shots, trample, dodging, blocking, armour-ignoring and tearing, regeneration from techs and civ bonuses, and the Konnik fighting on foot. Not yet simulated: the Bolas Rider\'s slow, the Berserk\'s built-in regeneration and hero auras.' }),
+    el('p', { className: 'caveat', textContent: 'Imperial Age, flat ground, no micro: units go for the nearest enemy, and ranged units stand and shoot rather than running from melee units. Shots roll accuracy, fly at their real speed, can be dodged by sideways movement without Ballistics, and misses can still hit. Includes Blacksmith, Archery Range, Stable, Barracks and University upgrades, civ bonuses and unique techs that change unit stats. Special abilities come from the game data: charge attacks and charge shots, trample, dodging, blocking, armour-ignoring and tearing, regeneration from techs and civ bonuses, and the Konnik fighting on foot. Unique techs without plain stat changes in the game data are written in by hand (Gothikon\'s axes, Hamask, Shield Wall, Coiled Serpent Array, Ordo Cavalry, Curare, Malon, Pirotechnia, Thunderclap Bombs, Arquebus); where the game doesn\'t publish the numbers, they\'re estimates. Not yet simulated: the Bolas Rider\'s slow, the Berserk\'s built-in regeneration and hero auras.' }),
   ].filter(Boolean));
 }

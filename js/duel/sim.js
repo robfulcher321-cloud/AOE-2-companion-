@@ -159,20 +159,32 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
   const sideAlive = (s) => units.some((u) => u.side === s && alive(u));
   const chargeOf = (u) => u.f.special?.charge || null;
   const full = (u) => { const ch = chargeOf(u); return ch && u.charge >= ch.max - 1e-9; };
-  const dmgOf = (u, v, attacks, extraMelee = 0, ignoreArmour = false) => damagePerHit(u.f, v.f, attacks ?? u.f.attacks, { armourLoss: v.armourLoss, extraMelee, ignoreArmour });
+  // Hamask: hits harder the more HP it has lost. Shield Wall: v.fx is v with its massed armour.
+  const fury = (u) => { const h = u.f.special?.hamask || 0; return h ? 1 + h * Math.max(0, 1 - u.hp / (u.maxHp || u.f.hp)) : 1; };
+  const dmgOf = (u, v, attacks, extraMelee = 0, ignoreArmour = false) => damagePerHit(u.f, v.fx || v.f, attacks ?? u.f.attacks, { armourLoss: v.armourLoss, extraMelee, ignoreArmour }) * fury(u);
 
+  const died = (victim, at) => {
+    victim.diedAt = at;
+    // Konnik: the rider fights on as infantry.
+    if (victim.f.dismount) spawn(victim.f.dismount, victim.side, victim.x, victim.y, at);
+    // Thunderclap Bombs: it blows up, hurting enemies round it.
+    const db = victim.f.special?.deathBlast;
+    if (db) for (const e of enemiesNear(victim, victim.x, victim.y, db.radius + 1)) {
+      if (Math.hypot(e.x - victim.x, e.y - victim.y) - e.r <= db.radius) deal(victim, e, db.dmg, at, 'blast');
+    }
+  };
   const deal = (by, victim, amount, at, note) => {
     if (!alive(victim)) return;
     victim.hp -= amount;
     by.hits += 1;
     by.dealt += amount;
+    by.fightAt = at; victim.fightAt = at;
     hits.push({ t: at, by: by.id, side: by.side, victim: victim.id, dmg: Math.round(amount * 100) / 100, note });
     if ((by.f.special?.combat || 0) & 4) victim.armourLoss += 1;   // Obuch tears armour
-    if (victim.hp <= 0 && victim.diedAt === null) {
-      victim.diedAt = at;
-      // Konnik: the rider fights on as infantry.
-      if (victim.f.dismount) spawn(victim.f.dismount, victim.side, victim.x, victim.y, at);
-    }
+    // Curare: poisoned for a few seconds
+    const po = by.f.special?.poison;
+    if (po && note !== 'poison' && note !== 'blast') victim.poison = { until: at + po.secs, rate: po.dmg / po.secs, by };
+    if (victim.hp <= 0 && victim.diedAt === null) died(victim, at);
   };
 
   const inBox = (u, x, y) => Math.abs(u.x - x) <= u.r + PROJECTILE_SIZE && Math.abs(u.y - y) <= u.r + PROJECTILE_SIZE;
@@ -269,6 +281,16 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
         hits.push({ t, by: shooter.id, side: s.side, victim: target.id, dmg: 0, note: 'dodged' });
       } else {
         deal(shooter, target, shotDmg(target), t);
+        // Malon, Pirotechnia: the shot goes on into the enemy just behind
+        if (p.pass > 0) {
+          const dx = target.x - s.x0, dy = target.y - s.y0, dl = Math.hypot(dx, dy) || 1;
+          const behind = foesNear().filter((e) => e.id !== target.id).map((e) => {
+            const along = ((e.x - target.x) * dx + (e.y - target.y) * dy) / dl;
+            const off = Math.abs((e.x - target.x) * dy - (e.y - target.y) * dx) / dl;
+            return { e, along, off };
+          }).filter((o) => o.along > 0 && o.along < 1.5 && o.off < o.e.r + 0.2).sort((a, b) => a.along - b.along)[0];
+          if (behind) deal(shooter, behind.e, shotDmg(behind.e) * p.pass, t, 'pass');
+        }
         return stop(target.id);
       }
     }
@@ -424,8 +446,38 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
       if (!alive(u)) continue;
       const ch = chargeOf(u);
       if (ch && u.charge < ch.max) u.charge = Math.min(ch.max, u.charge + ch.rate * DT);
-      const regen = u.f.special?.regen || 0;
-      if (regen > 0 && u.hp < u.f.hp) u.hp = Math.min(u.f.hp, u.hp + (regen / 60) * DT);
+      const sp = u.f.special || {};
+      const cap = u.maxHp || u.f.hp;
+      // (Ordo Cavalry: more while it's been fighting in the last 2 seconds)
+      const regen = (sp.regen || 0) + (sp.combatRegen && t - (u.fightAt ?? -9) < 2 ? sp.combatRegen : 0);
+      if (regen > 0 && u.hp < cap) u.hp = Math.min(cap, u.hp + (regen / 60) * DT);
+      if (u.poison) {
+        if (t >= u.poison.until) u.poison = null;
+        else { u.hp -= u.poison.rate * DT; if (u.hp <= 0 && u.diedAt === null) { hits.push({ t, by: u.poison.by.id, side: u.poison.by.side, victim: u.id, dmg: 0, note: 'poison' }); died(u, t); } }
+      }
+    }
+    // Massed units (Shield Wall armour, Coiled Serpent Array HP), counted twice a second
+    if (step % 30 === 0) {
+      for (const u of units) {
+        if (!alive(u)) continue;
+        const sp = u.f.special || {};
+        if (sp.shieldWall) {
+          let n = 0;
+          near(u.x, u.y, sp.shieldWall.radius, (v) => { if (v !== u && v.side === u.side && alive(v) && v.f.cls === 6 && Math.hypot(v.x - u.x, v.y - u.y) <= sp.shieldWall.radius) n++; });
+          const lvl = Math.min(sp.shieldWall.max, Math.floor(n / sp.shieldWall.per));
+          if (lvl !== (u.wall || 0)) {
+            u.wall = lvl;
+            u.fx = lvl ? { ...u.f, armours: new Map([...u.f.armours].map(([c, a]) => [c, c === 3 || c === 4 ? a + lvl : a])) } : null;
+          }
+        }
+        if (sp.serpent) {
+          let n = 0;
+          near(u.x, u.y, sp.serpent.radius, (v) => { if (v !== u && v.side === u.side && alive(v) && v.f.special?.serpent && Math.hypot(v.x - u.x, v.y - u.y) <= sp.serpent.radius) n++; });
+          const want = u.f.hp * (1 + sp.serpent.share * Math.min(1, n / sp.serpent.full));
+          const before = u.maxHp || u.f.hp;
+          if (Math.abs(want - before) > 0.01) { u.maxHp = want; u.hp = Math.max(1, Math.min(want, u.hp + (want - before))); }
+        }
+      }
     }
     // Everyone decides from the same snapshot, so nobody gets a head start
     // from being processed first.

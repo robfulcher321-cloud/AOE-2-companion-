@@ -184,6 +184,9 @@ async function loadAssets(kits, onStatus = () => {}) {
         const f = kit.fighter(line.key, t);
         unitIds.add(f.unitId);
         if (f.projectile?.sprite) shotNames.add(f.projectile.sprite);
+        // charge shots (Fire Lancer's lances, Bolas...) and the dismounted Konnik
+        for (const c of [f.special?.charge?.projectile, f.special?.charge?.extra]) if (c?.sprite) shotNames.add(c.sprite);
+        if (f.dismount) unitIds.add(f.dismount.unitId);
         if (RANGED[f.unitId]?.fire) shotNames.add(RANGED[f.unitId].fire);   // burning, after Chemistry
         const pic = line.tiers[t].picture;
         if (pic !== undefined && !unitIcons[f.unitId]) jobs.push(loadImg(imageUrl('Unit', pic)).then((img) => { unitIcons[f.unitId] = img; }));
@@ -200,6 +203,7 @@ async function loadAssets(kits, onStatus = () => {}) {
   if (pack) {
     sprites = { pack, grass: await pack.grass(), projectiles: {}, textures: {}, rubble: {}, trees: {} };
     shotNames.add('p_arrow_x1');   // the Wonder's arrows
+    shotNames.add('p_throwing_axe_x1');   // Gothikon's axes (a tech's charge shot)
     jobs.push(...[...shotNames].map(async (n) => { sprites.projectiles[n] = await pack.projectile(n); }));
     jobs.push(...['water', 'shallow', 'beach', 'wetbeach'].map(async (n) => { sprites.textures[n] = await pack.texture(n); }));
     jobs.push(...['barracks', 'archery', 'stable', 'castle', 'market', 'workshop', 'wonder', 'tower1', 'tower2', 'tower3', 'bombard', 'miningcamp'].map(async (n) => { sprites.rubble[n] = await pack.rubble(n); }));
@@ -630,7 +634,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         const p = world.price(ME, 'build', d.key);
         const locked = d.age > s.age ? AGES[d.age].name : null;
         const needs = locked || (d.needs && !world.unlocked(ME, d) ? `Needs ${kit.techs.find((t) => t.id === d.needs)?.name || 'Chemistry'} (Armory)` : null);
-        const st = world.defenceStats(d, 0);
+        const st = world.defenceStats(d, 0, ME);
         const atk = st.attacks.get(3) ?? 0;
         const btn = option(d.key, d.tiers[0].name, `${d.arrows > 1 ? `${d.arrows} arrows` : d.key === 'def:bombard' ? 'cannon' : 'arrows'} · range ${st.range}${d.tiers.length > 1 ? ` · → ${d.tiers.at(-1).name}` : ''}`, bldIcon(d.building), d.cost, p === null, needs);
         if (locked) btn.classList.add('locked');
@@ -753,7 +757,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       const btn = priced(el('button', { type: 'button', className: `sg-step sg-step-buy${locked ? ' locked' : ''}`, onclick: () => { act('upgrade', { id: b.id }); refresh(true); } },
         el('img', { src: icon, alt: '' }), el('small', { textContent: locked ? AGES[t.age].name : t.name }), priceTag(t.upgrade)), t.upgrade, upPrice === null);
       if (b.def) {
-        const st = world.defenceStats(line, i);
+        const st = world.defenceStats(line, i, ME);
         tip(btn, `Upgrade to ${t.name}`, `${Math.round(st.hp)} HP, ${st.attacks.get(3) ?? 0} attack (now ${Math.round(b.maxHp)} HP, ${b.f.attacks.get(3) ?? 0} attack).`, 'Upgrades in place.', locked ? `Needs the ${AGES[t.age].name}.` : !b.done ? 'Once it\'s built.' : '');
       } else {
         const f = kit.fighter(b.line, b.tier, s.researched, s.researchKey, s.age);

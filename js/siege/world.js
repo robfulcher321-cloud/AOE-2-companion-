@@ -53,6 +53,7 @@ const SIEGE_TURN = 1.2;         // game seconds for siege with a minimum range t
 const WONDER_ARROWS = 4;
 const RALLY_AT = [0.5, 0.25];
 const BOUNTY = 0.02;            // a kill pays 2% of what the unit (or building) cost
+const MOVING_HIT = 0.75;        // share of a shot's accuracy left against a walking soldier, without Ballistics
 const COMMIT_GAP = 2.5;         // tiles: this close to the building it's going for, a soldier won't turn away
 const BIN = 2;                 // tiles: units are bucketed along the lane for "who's near" lookups
 const MELEE_SLACK = 0.35;      // tiles: a melee unit this close counts as touching (no running on the spot in a crowd)
@@ -221,7 +222,9 @@ export class World {
     const camps = this.mines.filter((m) => m.camp?.done && m.camp.owner === side).length;
     const markets = this.structures.filter((b) => b.line === 'market' && b.owner === side && b.done && b.hp > 0)
       .reduce((a, b) => a + this.marketIncome(b), 0);
-    const g = (BASE_INCOME * (team ? TEAM_SHARE : 1) + markets + camps * this.mineGold()) * s.incomeMult;
+    // (Grand Trunk Road: +10%; Vineyards, Paper Money, Tuntian: a little more each tick)
+    const ut = this.kits[side].incomeBonus?.(s.researched) || { mult: 1, flat: 0 };
+    const g = ((BASE_INCOME * (team ? TEAM_SHARE : 1) + markets + camps * this.mineGold()) * ut.mult + ut.flat) * s.incomeMult;
     return Math.round(g);   // whole gold only
   }
 
@@ -348,7 +351,7 @@ export class World {
       const def = Boolean(line?.defence);
       const fp = this.footprint(side, key);
       const buildingId = isMarket ? MARKET.building : line.building;
-      const st = def ? this.defenceStats(line, 0) : this.buildingStats(buildingId);
+      const st = def ? this.defenceStats(line, 0, side) : this.buildingStats(buildingId);
       const time = fp.build * GAME_SPEED;
       const b = {
         id: this.nextId++, side: s.team, owner: side, kind: 'building', building: buildingId,
@@ -367,7 +370,7 @@ export class World {
       const line = b.line === 'market' ? null : this.line(side, b.line);
       if (!line) { /* a Market: more gold a tick (see marketIncome) */ } else if (b.def) {
         // A tower goes up a step in place: new look, more HP and a harder arrow.
-        const st = this.defenceStats(line, b.tier);
+        const st = this.defenceStats(line, b.tier, side);
         b.building = line.tiers[b.tier].building;
         b.hp += st.hp - b.maxHp;
         b.maxHp = st.hp;
@@ -385,11 +388,18 @@ export class World {
   }
 
   /** A defence's stats at a step: the game's building (HP, arrow, range), with its arrows and shot. */
-  defenceStats(line, tier) {
+  defenceStats(line, tier, side = null) {
     const st = this.buildingStats(line.tiers[tier].building);
+    // Its owner's unique techs (Yasama, Great Wall, Stronghold, Svan Towers, Citadels...)
+    const ut = side !== null && this.kits[side].defenceBonus ? this.kits[side].defenceBonus(line.key, this.sides[side].researched) : null;
     // (towers hit a bit harder than in the game: `dmg`)
-    const attacks = new Map([...st.attacks].map(([c, a]) => [c, a > 0 ? Math.round(a * (line.dmg || 1)) : a]));
-    return { ...st, hp: Math.round(st.hp * (line.hp || 1)), attacks, arrows: line.arrows, projectile: { sprite: line.shot, arc: line.shot === 'p_ball_x1' ? -0.05 : -0.06 } };
+    const attacks = new Map([...st.attacks].map(([c, a]) => [c, a > 0 ? Math.round(a * (line.dmg || 1)) + (c === 3 && ut ? ut.attack : 0) : a]));
+    return {
+      ...st, hp: Math.round(st.hp * (line.hp || 1) * (ut?.hp || 1)), attacks, arrows: line.arrows + (ut?.arrows || 0),
+      range: st.range + (ut?.range || 0), reload: Math.round(st.reload * (ut?.reload || 1) * 100) / 100, regen: ut?.regen || 0,
+      special: ut?.poison ? { poison: ut.poison } : {},
+      projectile: { sprite: line.shot, arc: line.shot === 'p_ball_x1' ? -0.05 : -0.06 },
+    };
   }
 
   /**
@@ -548,6 +558,14 @@ export class World {
     }
     // Unique techs that speed up training reach the buildings too
     for (const b of this.trainers(side)) b.every = this.kits[side].every(this.line(side, b.line), b.tier, s.researched);
+    // and ones for towers and castles reach those already standing
+    for (const b of this.structures) {
+      if (!b.def || b.owner !== side || b.hp <= 0) continue;
+      const st = this.defenceStats(this.line(side, b.line), b.tier, side);
+      if (b.done) b.hp = Math.max(1, b.hp + st.hp - b.maxHp); else b.hp = Math.min(b.hp, st.hp);
+      b.maxHp = st.hp;
+      b.f = st;
+    }
   }
 
   // ---------- Simulation ----------
@@ -565,16 +583,23 @@ export class World {
     // Which lane: by the building's row; the middle row takes turns.
     b.nextLane = -(b.nextLane || 1);
     const lane = b.y < -1 ? -1 : b.y > 1 ? 1 : b.nextLane;
-    const u = {
-      id: this.nextId++, side: team, owner: side, line: b.line, tier, f, r: f.radius, lane,
-      x: b.x + dir * (b.r + f.radius + 0.3), y: b.y + (this.rand() - 0.5) * 0.6,
-      px: 0, py: 0, hp: f.hp, target: null, retarget: 0, ready: 0, pending: null,
-      attackStart: null, diedAt: null, face: dir, moving: false, bornAt: this.t, stuck: 0, lastGap: null, sidestep: 0,
-    };
-    u.px = u.x; u.py = u.y;
-    if (f.packs) { u.packed = true; u.packing = null; }   // trebuchets come out packed
+    this.addUnit(side, b.line, tier, f, b.x + dir * (b.r + f.radius + 0.3), b.y + (this.rand() - 0.5) * 0.6, lane);
     s.stats.trained += 1;
+  }
+
+  /** Puts a soldier on the field (a new one from a building, or a Konnik's rider fighting on). */
+  addUnit(side, line, tier, f, x, y, lane) {
+    const team = this.sides[side].team;
+    const u = {
+      id: this.nextId++, side: team, owner: side, line, tier, f, r: f.radius, lane,
+      x, y, px: x, py: y, hp: f.hp, target: null, retarget: 0, ready: 0, pending: null,
+      attackStart: null, diedAt: null, face: team === 0 ? 1 : -1, moving: false, bornAt: this.t, stuck: 0, lastGap: null, sidestep: 0,
+      // special abilities: charge (full to start), armour torn off by Obuch hits, poison
+      charge: f.special?.charge ? f.special.charge.max : 0, armourLoss: 0,
+    };
+    if (f.packs) { u.packed = true; u.packing = null; }   // trebuchets come out packed
     this.units.push(u);
+    return u;
   }
 
   enemyCastle(team) { return this.teams[1 - team].castle; }
@@ -645,10 +670,29 @@ export class World {
     return best;
   }
 
-  attackOn(u, target, extra = 1) {
-    if (target.hp <= 0) return;
-    const d = damagePerHit(u.f, target.f) * extra;
+  /** Damage of one blow or shot from u on v (attacks: the shot's own, if any). */
+  hitOf(u, v, attacks = u.f.attacks, { extraMelee = 0, special = null } = {}) {
+    const f = special ? { ...u.f, special } : u.f;
+    const h = u.f.special?.hamask || 0;   // Hamask: harder the more HP it has lost
+    const fury = h && !u.kind ? 1 + h * Math.max(0, 1 - u.hp / (u.maxHp || u.f.hp)) : 1;
+    return damagePerHit(f, v.fx || v.f, attacks, { armourLoss: v.armourLoss || 0, extraMelee }) * fury;
+  }
+
+  attackOn(u, target, extra = 1, extraMelee = 0) {
+    if (target.hp <= 0) return 0;
+    const d = this.hitOf(u, target, u.f.attacks, { extraMelee }) * extra;
     this.damage(u.side, target, d, u);
+    return d;
+  }
+
+  /** After a hit lands on a soldier or building: armour tearing (Obuch), poison (Curare), fire (Red Cliffs). */
+  afterHit(by, v) {
+    if (!by?.f?.special) return;
+    const sp = by.f.special;
+    if (!v.kind && (sp.combat || 0) & 4) v.armourLoss = (v.armourLoss || 0) + 1;
+    const dot = v.kind ? sp.burn : sp.poison;
+    if (dot && v.hp > 0) v.dot = { until: this.t + dot.secs, rate: dot.dmg / dot.secs, by };
+    if (!v.kind) { v.fightAt = this.t; by.fightAt = this.t; }
   }
 
   /** Damage multiplier on buildings in overtime: +20% for each minute past it. */
@@ -668,7 +712,22 @@ export class World {
     }
     if (target.hp > 0) return;
     target.diedAt = this.t;
-    if (!target.kind) { this.alive[target.side] -= 1; this.sides[target.owner].out -= 1; }
+    if (!target.kind) {
+      this.alive[target.side] -= 1; this.sides[target.owner].out -= 1;
+      // Konnik: the rider fights on, on foot
+      const dm = target.f.dismount;
+      if (dm) {
+        const r = this.addUnit(target.owner, target.line, target.tier, dm, target.x, target.y, target.lane);
+        r.dismounted = true;
+        this.alive[target.side] += 1; this.sides[target.owner].out += 1;
+      }
+      // Thunderclap Bombs: it blows up, hurting enemies round it
+      const db = target.f.special?.deathBlast;
+      if (db) this.near(target.x, db.radius + 1, (v) => {
+        if (v.side === target.side || v.hp <= 0) return;
+        if (hyp(v.x - target.x, v.y - target.y) - v.r <= db.radius) this.damage(target.side, v, db.dmg, target);
+      });
+    }
     // Bounties (2% of what it cost) go to the player whose soldier, tower or explosion did it;
     // the Wonder's own arrows pay nobody.
     const payee = by?.owner !== undefined ? this.sides[by.owner] : null;
@@ -691,14 +750,14 @@ export class World {
     }
   }
 
-  launch(u, target, attacks, { accuracy, speed, spread = 0.3, scatter = 0 }, isCastle = false) {
+  launch(u, target, attacks, { accuracy, speed, spread = 0.3, scatter = 0, proj = null }, isCastle = false) {
     const dist = Math.max(0.1, hyp(target.x - u.x, target.y - u.y));
     const hit = !scatter && this.rand() * 100 < accuracy;
     let x1 = target.x, y1 = target.y;
     if (scatter) {
       const a = this.rand() * Math.PI * 2, d = scatter * Math.sqrt(this.rand());
       x1 += Math.cos(a) * d; y1 += Math.sin(a) * d;
-    } else if (u.f?.projectile?.pierces && !isCastle) {
+    } else if (u.f?.projectile?.pierces && !isCastle && !proj) {
       // a Scorpion bolt flies on 2 tiles past its target, through anyone in the way
       x1 += ((x1 - u.x) / dist) * 2; y1 += ((y1 - u.y) / dist) * 2;
     } else if (!hit) {
@@ -707,16 +766,26 @@ export class World {
       y1 += (this.rand() * 2 - 1) * d;
     }
     this.shots.push({
-      side: u.side, by: u, target, attacks, hit, castle: isCastle,
+      side: u.side, by: u, target, attacks, hit, castle: isCastle, proj,
       x0: u.x, y0: u.y, x1, y1, t0: this.t, t1: this.t + hyp(x1 - u.x, y1 - u.y) / speed,
-      sprite: u.f?.projectile?.sprite || (isCastle ? 'p_arrow_x1' : undefined), arc: u.f?.projectile?.arc ?? (isCastle ? -0.06 : 0),
+      sprite: proj?.sprite || u.f?.projectile?.sprite || (isCastle ? 'p_arrow_x1' : undefined), arc: proj?.arc ?? u.f?.projectile?.arc ?? (isCastle ? -0.06 : 0),
     });
   }
 
   landShot(s) {
-    const f = s.castle ? s.by.f : s.by.f;
-    const dmgTo = (v) => damagePerHit({ ...f, attacks: s.attacks, special: f.special || {} }, v.f);
-    const p = f.projectile || {};
+    const f = s.by.f;
+    // A charge shot (Fire Lancer's lances, Gothikon's axe) has its own armour rule (combat)
+    const special = s.proj ? { ...(f.special || {}), combat: s.proj.combat || 0 } : null;
+    const dmgTo = (v) => (s.castle || s.by.kind ? damagePerHit({ ...f, attacks: s.attacks, special: f.special || {} }, v.fx || v.f) : this.hitOf(s.by, v, s.attacks, { special }));
+    const p = s.proj ? { blast: 0 } : f.projectile || {};
+    // Shrivamsha: a charge point dodges a shot aimed at it
+    const dodges = (v) => {
+      const ch = !v.kind && v.f.special?.charge;
+      if (ch?.type !== 4 || v.charge < 1) return false;
+      v.charge -= 1;
+      return true;
+    };
+    const hit = (v, k = 1) => { if (dodges(v)) return; this.damage(s.side, v, dmgTo(v) * k, s.by); this.afterHit(s.by, v); };
     // Extra stones with no attack of their own (a mangonel's scatter) are just for show.
     if (s.attacks && (s.attacks.length === 0 || s.attacks.size === 0)) { s.landed = null; return; }
     // Catapult stones and cannon balls: everyone in the blast. (Enemies only, to keep the lane readable.)
@@ -725,10 +794,10 @@ export class World {
       this.near(s.x1, p.blast + 1, (v) => {
         if (v.side === s.side || v.hp <= 0) return;
         if (hyp(v.x - s.x1, v.y - s.y1) > p.blast + v.r) return;
-        this.damage(s.side, v, dmgTo(v), s.by);
+        hit(v);
         any = any || v;
       });
-      if (s.target.kind && s.target.hp > 0 && hyp(s.target.x - s.x1, s.target.y - s.y1) <= s.target.r + p.blast) { this.damage(s.side, s.target, dmgTo(s.target), s.by); any = any || s.target; }
+      if (s.target.kind && s.target.hp > 0 && hyp(s.target.x - s.x1, s.target.y - s.y1) <= s.target.r + p.blast) { hit(s.target); any = any || s.target; }
       s.landed = any;
       return;
     }
@@ -739,20 +808,36 @@ export class World {
       this.near((lx + hx) / 2, (hx - lx) / 2 + 1, (v) => {
         if (v.side === s.side || v.hp <= 0) return;
         const t = Math.max(0, Math.min(1, ((v.x - s.x0) * (ex - s.x0) + (v.y - s.y0) * (ey - s.y0)) / ((ex - s.x0) ** 2 + (ey - s.y0) ** 2 || 1)));
-        if (hyp(v.x - (s.x0 + (ex - s.x0) * t), v.y - (s.y0 + (ey - s.y0) * t)) <= v.r + 0.15) this.damage(s.side, v, dmgTo(v), s.by);
+        if (hyp(v.x - (s.x0 + (ex - s.x0) * t), v.y - (s.y0 + (ey - s.y0) * t)) <= v.r + 0.15) hit(v);
       });
-      if (s.target.kind && s.target.hp > 0) this.damage(s.side, s.target, dmgTo(s.target), s.by);
+      if (s.target.kind && s.target.hp > 0) hit(s.target);
       s.landed = s.target;
       return;
     }
-    if (s.hit && s.target.hp > 0) { this.damage(s.side, s.target, dmgTo(s.target), s.by); s.landed = s.target; return; }
+    if (s.hit && s.target.hp > 0) {
+      hit(s.target);
+      s.landed = s.target;
+      // Malon, Pirotechnia: the shot goes on into the enemy just behind
+      if (p.pass > 0 && !s.target.kind) {
+        const tg = s.target, dx = tg.x - s.x0, dy = tg.y - s.y0, dl = hyp(dx, dy) || 1;
+        let best = null, bestA = Infinity;
+        this.near(tg.x, 2, (v) => {
+          if (v === tg || v.side === s.side || v.hp <= 0) return;
+          const along = ((v.x - tg.x) * dx + (v.y - tg.y) * dy) / dl;
+          const off = Math.abs((v.x - tg.x) * dy - (v.y - tg.y) * dx) / dl;
+          if (along > 0 && along < 1.5 && off < v.r + 0.2 && along < bestA) { bestA = along; best = v; }
+        });
+        if (best) hit(best, p.pass);
+      }
+      return;
+    }
     // A miss can still come down on someone: half damage.
     let hitV = null;
     this.near(s.x1, 1, (v) => {
       if (hitV || v.side === s.side || v.hp <= 0) return;
       if (Math.abs(v.x - s.x1) <= v.r + 0.1 && Math.abs(v.y - s.y1) <= v.r + 0.1) hitV = v;
     });
-    if (hitV) { this.damage(s.side, hitV, dmgTo(hitV) / 2, s.by); s.landed = hitV; }
+    if (hitV) { hit(hitV, s.proj?.fullStray ? 1 : 0.5); s.landed = hitV; }
   }
 
   step() {
@@ -846,6 +931,47 @@ export class World {
       (this.bins[b] ||= []).push(u);
       u.px = u.x; u.py = u.y; u.wantsMove = false;
     }
+    // Special abilities: charges refill, regeneration (Ordo Cavalry: while fighting), poison and fire
+    for (const u of live) {
+      const sp = u.f.special;
+      if (!sp) continue;
+      const ch = sp.charge;
+      if (ch && u.charge < ch.max) u.charge = Math.min(ch.max, u.charge + ch.rate * DT);
+      const cap = u.maxHp || u.f.hp;
+      const regen = (sp.regen || 0) + (sp.combatRegen && t - (u.fightAt ?? -9) < 2 ? sp.combatRegen : 0);
+      if (regen > 0 && u.hp < cap) u.hp = Math.min(cap, u.hp + (regen / 60) * DT);
+    }
+    for (const b of this.structures) if (b.def && b.done && b.hp > 0 && b.f.regen && b.hp < b.maxHp) b.hp = Math.min(b.maxHp, b.hp + (b.f.regen / 60) * DT);
+    for (const v of [...live, ...this.structures]) {
+      if (!v.dot || v.hp <= 0) continue;
+      if (t >= v.dot.until) { v.dot = null; continue; }
+      this.damage(v.dot.by.side, v, v.dot.rate * DT, v.dot.by);
+    }
+    // Massed soldiers (Shield Wall armour, Coiled Serpent Array HP), counted twice a second
+    if (Math.round(t / DT) % 30 === 0) {
+      for (const u of live) {
+        const sp = u.f.special;
+        if (!sp || (!sp.shieldWall && !sp.serpent)) continue;
+        if (sp.shieldWall) {
+          const R = sp.shieldWall.radius;
+          let n = 0;
+          this.near(u.x, R, (v) => { if (v !== u && v.side === u.side && v.hp > 0 && v.f.cls === 6 && hyp(v.x - u.x, v.y - u.y) <= R) n++; });
+          const lvl = Math.min(sp.shieldWall.max, Math.floor(n / sp.shieldWall.per));
+          if (lvl !== (u.wall || 0)) {
+            u.wall = lvl;
+            u.fx = lvl ? { ...u.f, armours: new Map([...u.f.armours].map(([c, a]) => [c, c === 3 || c === 4 ? a + lvl : a])) } : null;
+          }
+        }
+        if (sp.serpent) {
+          const R = sp.serpent.radius;
+          let n = 0;
+          this.near(u.x, R, (v) => { if (v !== u && v.side === u.side && v.hp > 0 && v.f.special?.serpent && hyp(v.x - u.x, v.y - u.y) <= R) n++; });
+          const want = u.f.hp * (1 + sp.serpent.share * Math.min(1, n / sp.serpent.full));
+          const before = u.maxHp || u.f.hp;
+          if (Math.abs(want - before) > 0.01) { u.maxHp = want; u.hp = Math.max(1, Math.min(want, u.hp + (want - before))); }
+        }
+      }
+    }
     for (const u of live) {
       // A soldier already hitting a building sticks with it until it falls, even with defenders
       // turning up or hitting back: it doesn't break off to chase each new unit that comes out.
@@ -860,9 +986,9 @@ export class World {
       }
       if (u.pending) {
         if (t >= u.pending.at) {
-          const tg = u.pending.target;
+          const { target: tg, kind } = u.pending;
           u.pending = null;
-          if (tg.hp > 0) this.release(u, tg);
+          if (tg.hp > 0 && u.hp > 0) this.release(u, tg, kind);
         }
         continue;
       }
@@ -905,6 +1031,24 @@ export class World {
       // Melee units count as touching a little before their edges meet, so they
       // swing instead of shuffling on the spot when the crowd nudges them.
       const reach = u.f.range + (ranged ? 0.1 : MELEE_SLACK) + (tg.kind ? BUILDING_SLACK : 0);
+      const ch = u.f.special?.charge;
+      const full = ch && u.charge >= ch.max - 1e-9;
+      // Melee units with a charge shot (Fire Lancer, Hearth Troop, Gothikon's axe) throw it as they close in
+      if (!ranged && full && ch.type === 6 && ch.projectile && !tg.kind && gap <= ch.event && gap >= (ch.projectile.minRange || 0) && t >= u.ready) {
+        u.pending = { at: t + (u.f.attackDelay || 0), target: tg, kind: 'charge' };
+        u.ready = t + u.f.reload;
+        u.charge = 0;
+        u.attackStart = t;
+        u.face = Math.sign(tg.x - u.x) || u.face;
+        continue;
+      }
+      // Samurai: charges in faster from a few tiles away when its charge is full
+      const rush = u.f.special?.rush;
+      if (rush && full && !tg.kind) {
+        const c = hyp(tg.x - u.x, tg.y - u.y);
+        if (c >= rush.from && c <= rush.to) u.rushing = true;
+      }
+      u.speedK = u.rushing && rush ? rush.speed : 1;
       if (gap > reach) {
         // Blocked (by friends in the way): try another target, or step aside.
         if (u.lastGap !== null && u.lastGap - gap < u.f.speed * DT * 0.25) u.stuck += DT; else u.stuck = Math.max(0, u.stuck - DT);
@@ -951,7 +1095,11 @@ export class World {
         u.face = Math.sign(tg.x - u.x) || u.face;
         if (t >= u.ready) {
           if (tg.kind) u.sieging = true;
-          u.pending = { at: t + (u.f.attackDelay || 0), target: tg };
+          // Bolas Rider, Xianbei Raider: a full charge makes the next shot a charge shot
+          const charged = ranged && full && (ch.type === 6 || ch.type === 7) && ch.projectile && !tg.kind;
+          u.pending = { at: t + (u.f.attackDelay || 0), target: tg, kind: charged ? 'charged' : 'normal' };
+          if (charged) u.charge = 0;
+          if (u.rushing) { u.rushing = false; u.charge = 0; u.chargedBlow = true; }
           u.ready = t + u.f.reload;
           u.attackStart = t;
         }
@@ -1037,25 +1185,49 @@ export class World {
       const nx = dx - dy * k, ny = dy + dx * k, nl = hyp(nx, ny) || 1;
       dx = nx / nl; dy = ny / nl;
     }
-    const len = Math.min(u.f.speed * DT, Math.max(0, maxStep));
+    const len = Math.min(u.f.speed * (u.speedK || 1) * DT, Math.max(0, maxStep));
     u.x += dx * len; u.y += dy * len;
     u.wantsMove = true;
     // Turn round only on a clear change of direction, not every sidestep.
     if (Math.abs(dx) > 0.35 && Math.sign(dx) !== u.face && this.t - (u.turnedAt ?? -1) > 0.4) { u.face = Math.sign(dx); u.turnedAt = this.t; }
   }
 
-  release(u, tg) {
+  release(u, tg, kind = 'normal') {
+    const ch = u.f.special?.charge;
+    // Charge shots: thrown while closing in (melee), or in place of a normal shot (Bolas Rider, Xianbei Raider)
+    if ((kind === 'charge' || kind === 'charged') && ch?.projectile) {
+      const cp = ch.projectile;
+      for (let k = 0; k < (cp.count || 1); k++) this.launch(u, tg, cp.attacks, { accuracy: cp.accuracy ?? 100, speed: cp.speed || 7, spread: cp.spread || 0.3, proj: cp });
+      const ex = kind === 'charged' && ch.extra;
+      if (ex) for (let k = 0; k < (ex.count || 0); k++) this.launch(u, tg, ex.attacks, { accuracy: ex.accuracy ?? 100, speed: ex.speed || 7, spread: ex.spread || 0.5, proj: ex });
+      return;
+    }
     const p = u.f.projectile;
     if (!p) {
       if (hyp(tg.x - u.x, tg.y - u.y) - tg.r - u.r > u.f.range + MELEE_SLACK + BUILDING_SLACK + 0.5) return;
-      this.attackOn(u, tg);
+      // Charged blow (Coustillier, Comitatenses, Urumi's sweep, Samurai): its charge adds to the hit
+      let extraMelee = 0;
+      let bl = u.f.special?.blast;
+      if (ch && (ch.type === 1 || ch.type === 3) && u.charge >= ch.max - 1e-9 && (ch.type === 3 || ch.event === 1)) {
+        extraMelee = ch.max;
+        u.charge = 0;
+        if (ch.type === 3) bl = bl || { width: 0.75, level: 2, damage: 0.5 };
+      } else if (ch?.type === 3) bl = null;   // the Urumi only sweeps with a charged blow
+      u.chargedBlow = false;
+      // Iron Pagoda: a full charge blocks a blow
+      const tch = !tg.kind && tg.f.special?.charge;
+      if (tch?.type === 5 && tg.charge >= tch.max - 1e-9) { tg.charge = 0; return; }
+      const d = this.attackOn(u, tg, 1, extraMelee);
+      this.afterHit(u, tg);
+      // Lamellar Armor: some of a melee blow comes back on the attacker
+      const refl = !tg.kind && tg.f.special?.reflect;
+      if (refl > 0 && u.hp > 0) this.damage(tg.side, u, d * refl, tg);
       // Trample: enemies around the target take some of the blow.
-      const bl = u.f.special?.blast;
       if (bl) {
         this.near(tg.x, bl.width + 1, (v) => {
           if (v === tg || v.side === u.side || v.hp <= 0) return;
           if (hyp(v.x - tg.x, v.y - tg.y) - v.r > bl.width) return;
-          const amt = bl.damage < 0 ? -bl.damage : bl.damage * damagePerHit(u.f, v.f);
+          const amt = bl.damage < 0 ? -bl.damage : bl.damage * this.hitOf(u, v, u.f.attacks, { extraMelee });
           this.damage(u.side, v, amt, u);
         });
       }
@@ -1064,8 +1236,12 @@ export class World {
     for (let k = 0; k < (p.count || 1); k++) {
       const extra = k > 0 && p.secondary;
       const attacks = extra ? p.secondary.attacks : u.f.attacks;
-      // A mangonel's extra stones spread round the target (just for show; the main stone does the damage)
-      this.launch(u, tg, attacks, { accuracy: tg.kind ? 100 : p.accuracy, speed: p.speed, spread: p.spread || 0.3, scatter: extra ? 0.6 + 0.08 * p.count : 0 });
+      // A mangonel's extra stones spread round the target (just for show; the main stone does the damage).
+      // Extra arrows that carry damage (Chu Ko Nu, Hul'che, Bolt Magazine) are aimed like the first.
+      const show = extra && (p.blast > 0 || !(attacks?.size > 0));
+      // A soldier on the move is harder to hit without Ballistics (or Arquebus) to lead it
+      const acc = tg.kind ? 100 : p.accuracy * (tg.moving && !p.ballistics ? MOVING_HIT : 1);
+      this.launch(u, tg, attacks, { accuracy: acc, speed: p.speed, spread: p.spread || 0.3, scatter: show ? 0.6 + 0.08 * p.count : 0 });
     }
   }
 

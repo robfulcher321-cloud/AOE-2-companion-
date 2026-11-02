@@ -47,6 +47,7 @@ export function snapshot(w, since) {
       u.id, u.side, u.owner, u.line, u.tier, r2(u.x), r2(u.y), Math.max(0, Math.round(u.hp * 10) / 10),
       u.face, u.moving ? 1 : 0, u.attackStart ?? -1, u.diedAt ?? -1,
       u.f.packs ? (u.packing === 'pack' ? 2 : u.packing === 'unpack' ? 3 : u.packed ? 1 : 0) : 0, r2(u.packStart ?? 0),
+      u.dismounted ? 1 : 0,
     ]),
     shots: w.shots.filter((s) => !s.done || w.t - s.t1 < 0.6).map((s) => [
       r2(s.x0), r2(s.y0), r2(s.x1), r2(s.y1), r2(s.t0), r2(s.t1), s.sprite || '', s.arc || 0, s.castle ? 1 : 0, s.landed ? 1 : 0,
@@ -95,13 +96,15 @@ export function applySnapshot(w, snap) {
   w.sides.forEach((s) => { s.castle = w.castles[s.team]; });
   // Soldiers: last positions become the starting point for this round of sliding
   const units = new Map(w.units.map((u) => [u.id, u]));
-  w.units = snap.units.map(([id, side, owner, line, tier, x, y, hp, face, moving, attackStart, diedAt, pack, packStart]) => {
+  w.units = snap.units.map(([id, side, owner, line, tier, x, y, hp, face, moving, attackStart, diedAt, pack, packStart, dis]) => {
     let u = units.get(id);
     const s = w.sides[owner];
     if (!u) u = { id, x, y, r: 0.2 };
     u.px = u.x; u.py = u.y;
-    if (u.line !== line || u.tier !== tier || u.key !== s.researchKey) {
+    if (u.line !== line || u.tier !== tier || u.key !== s.researchKey || Boolean(u.dismounted) !== Boolean(dis)) {
       u.f = w.kits[owner].fighter(line, tier, s.researched, s.researchKey, s.age);
+      if (dis && u.f.dismount) u.f = u.f.dismount;   // a Konnik's rider, on foot
+      u.dismounted = Boolean(dis);
       u.key = s.researchKey;
       u.r = u.f.radius;
     }
