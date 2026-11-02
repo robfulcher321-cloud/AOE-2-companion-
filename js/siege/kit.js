@@ -16,7 +16,7 @@ export const TRAIN_AT = [12, 87, 101, 49, 82];    // read from: Barracks, Archer
 // the Castle is a defence here.
 const TRAINS_IN = [12, 87, 101, 49];
 export const BUILDING_NAMES = { 12: 'Barracks', 87: 'Archery Range', 101: 'Stable', 49: 'Siege Workshop', 82: 'Castle', 84: 'Market', 79: 'Watch Tower', 234: 'Guard Tower', 235: 'Keep', 236: 'Bombard Tower' };
-export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 200, income: 5, max: 3, age: 2, r: 1.3, build: 8 };
+export const MARKET = { key: 'market', label: 'Market', building: 84, cost: 200, income: 4, max: 3, age: 2, r: 1.3, build: 8 };
 // Size (tiles, as a circle) and build time (real seconds) of each kind of building.
 export const FOOTPRINT = { train: { r: 1.4, build: 10 } };
 // Defences: towers (upgraded in place, like a unit line), the Bombard Tower and the Castle.

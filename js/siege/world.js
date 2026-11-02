@@ -34,7 +34,7 @@ export const TERRITORY = { edge: 30.5 };
 export const MINES = {
   spots: [[36.5, -1], [49.5, -1], [36.5, 1], [49.5, 1]],   // x, lane (−1 top, 1 bottom)
   y: 7.9,            // how far out from the middle, beside each lane
-  gold: 2, solo: 5,  // a tick per mine: in team games, and in a 1v1
+  gold: 2, solo: 2,  // a tick per mine: in team games, and in a 1v1
   camp: 1.9,         // camp this far from the mine, on its owner's side
   build: 5, raze: 5, // real seconds
 };

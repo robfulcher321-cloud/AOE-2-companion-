@@ -118,7 +118,7 @@ for (const [i, [a, b]] of games.entries()) {
   assert.ok(v.buy(0, 'market'));
   assert.equal(v.income(0), 10, 'a Market pays once it\'s built');
   for (let i = 0; i < 9 * GAME_SPEED * 30; i++) v.step();
-  assert.equal(v.income(0), 15);
+  assert.equal(v.income(0), 14);
   // Defences: a Watch Tower shoots, and goes up to a Guard Tower in place
   const tower = k.defences.find((d) => d.key === 'def:tower');
   assert.ok(v.buy(0, 'build', tower.key, [24, 8]));
@@ -154,7 +154,7 @@ for (const [i, [a, b]] of games.entries()) {
   for (let i = 0; i < 30 * 12; i++) { w.updateMines(w.t); w.t += 1 / 30; }
   assert.ok(m.camp?.done && m.camp.owner === 0, 'blue got past: a blue camp');
   const base = w.income(0);
-  assert.equal(base, 15, '+5 a tick for a mine in a 1v1');
+  assert.equal(base, 12, '+2 a tick for a mine');
   blue.hp = 0;
   const red = put(1, m.x - 2);
   for (let i = 0; i < 30 * 4; i++) { w.updateMines(w.t); w.t += 1 / 30; }
