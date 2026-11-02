@@ -826,10 +826,14 @@ export class World {
       u.px = u.x; u.py = u.y; u.wantsMove = false;
     }
     for (const u of live) {
-      if ((u.retarget -= DT) <= 0 || !u.target || u.target.hp <= 0) {
+      // A soldier already hitting a building sticks with it until it falls, even with defenders
+      // turning up or hitting back: it doesn't break off to chase each new unit that comes out.
+      const committed = u.target && u.target.kind && u.target.hp > 0 && u.sieging;
+      if (!committed && ((u.retarget -= DT) <= 0 || !u.target || u.target.hp <= 0)) {
         u.retarget = RETARGET * (0.8 + this.rand() * 0.4);
         u.target = this.pickTarget(u);
         u.lastGap = null;
+        u.sieging = false;
       }
       if (u.pending) {
         if (t >= u.pending.at) {
@@ -887,9 +891,9 @@ export class World {
           // First choice: anything it can hit from here (often the building it's pressed against).
           // (It sticks with the new choice for a while instead of switching straight back.)
           const here = this.inReach(u, u.f.range + (ranged ? 0 : MELEE_SLACK + BUILDING_SLACK) + 0.3);
-          if (here) { u.target = here; u.lastGap = null; u.retarget = 1.5; continue; }
+          if (here) { u.target = here; u.lastGap = null; u.retarget = 1.5; u.sieging = false; continue; }
           const alt = this.pickTarget(u, tg);
-          if (alt && alt !== tg) { u.target = alt; u.lastGap = null; u.retarget = 1.5; continue; }
+          if (alt && alt !== tg) { u.target = alt; u.lastGap = null; u.retarget = 1.5; u.sieging = false; continue; }
           u.sidestep = 0.6;   // nobody else in reach: walk round the crowd for a moment
           u.retarget = Math.max(u.retarget, 0.8);
         }
@@ -923,6 +927,7 @@ export class World {
         u.lastGap = null;
         u.face = Math.sign(tg.x - u.x) || u.face;
         if (t >= u.ready) {
+          if (tg.kind) u.sieging = true;
           u.pending = { at: t + (u.f.attackDelay || 0), target: tg };
           u.ready = t + u.f.reload;
           u.attackStart = t;
