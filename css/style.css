@@ -787,3 +787,12 @@ body.sg-open { overflow: hidden; }
 .sg-iphone-btn { list-style: none; display: block; padding: 10px 12px; border-radius: 8px; background: var(--gold, #c99a3a); color: #23170b; text-align: center; font-weight: 800; }
 .sg-iphone-btn::-webkit-details-marker { display: none; }
 .sg-iphone[open] .sg-iphone-btn { margin-bottom: 6px; }
+
+/* Call to arms button, beside the explosion */
+.sg-call-btn { position: absolute; right: 72px; bottom: 8px; width: 52px; height: 52px; border: 2px solid #8a6a2c; border-radius: 50%; background: radial-gradient(#4a3416, #24170b); font-size: 1.45rem; line-height: 1; cursor: pointer; box-shadow: 0 2px 8px rgb(0 0 0 / .5); opacity: .55; }
+.sg-call-btn.ready { opacity: 1; border-color: #ffd97a; box-shadow: 0 0 12px rgb(255 217 122 / .8); animation: sg-pulse 1.2s infinite; }
+.sg-call-btn.used { opacity: .3; filter: grayscale(1); }
+.sg-call-n { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 9px; background: #c99a3a; color: #23170b; font-size: .7rem; font-weight: 800; line-height: 18px; }
+@media (orientation: landscape) and (max-height: 600px) {
+  .sg-call-btn { width: 44px; height: 44px; right: 62px; font-size: 1.2rem; }
+}

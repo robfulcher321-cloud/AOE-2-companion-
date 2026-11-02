@@ -276,6 +276,9 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     banner.hidden = false; banner.textContent = 'In-game graphics didn\'t load: showing icons';
     setTimeout(() => { banner.hidden = true; }, 6000);
   }
+  // Call to arms, beside the explosion: every finished building sends a unit out now (once a game)
+  const callBtn = el('button', { type: 'button', className: 'sg-call-btn', 'aria-label': 'Call to arms (once per game)' },
+    el('span', { textContent: '📯' }), el('small', { className: 'sg-call-n', textContent: '1' }));
   const blastBtn = el('button', { type: 'button', className: 'sg-blast-btn', 'aria-label': 'Explosion (once per game)' },
     el('span', { className: 'sg-blast-ic', textContent: '💥' }), el('small', { className: 'sg-blast-n', textContent: String(BLAST.per) }));
   // Aiming the explosion: drag the circle with your finger; Drop and Cancel sit at the bottom, out of the way.
@@ -312,7 +315,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
         el('img', { className: 'sg-gold-ic', src: 'img/res/gold.webp', alt: 'Gold', width: 28, height: 28 }), goldNum, incomeTxt),
       clock, stopBtn, goBtn, pauseBtn, closeBtn,
       el('div', { className: 'sg-castles' }, castles[0].wrap, castles[1].wrap)),
-    el('div', { className: 'sg-field' }, canvas, followBtn, rotBtn, ageBtn, armoryBtn, blastBtn, chatBtn, chatFeed, aimBar, placeBar, banner, notices),
+    el('div', { className: 'sg-field' }, canvas, followBtn, rotBtn, ageBtn, armoryBtn, blastBtn, callBtn, chatBtn, chatFeed, aimBar, placeBar, banner, notices),
     mini,
     dock,
     tipBox);
@@ -415,6 +418,17 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
   tip(armoryBtn, 'Armory', 'Blacksmith and unit techs. Each one reaches every unit it applies to, including those already fighting. One at a time.');
   tip(blastBtn, 'Explosion', `Once per game. Drag the circle onto enemies inside your own third of the field (up to the dashed line), then Drop. It hits enemies only.`);
   tip(followBtn, 'To the fight', 'Moves the view to where the fighting is. The view never moves on its own.');
+  callBtn.addEventListener('click', () => {
+    const why = world.callBlocked(ME);
+    if (why) {
+      banner.hidden = false; banner.textContent = `Call to arms: ${why.toLowerCase()}`;
+      clearTimeout(callBtn.t); callBtn.t = setTimeout(() => { banner.hidden = true; }, 1800);
+      return;
+    }
+    act('call');
+    navigator.vibrate?.([50, 30, 50, 30, 80]);
+  });
+  tip(callBtn, 'Call to arms', 'Once a game, while enemy soldiers are in your end of the map (up to the dashed line): every one of your finished buildings sends out a unit at once. Their own training carries on. It glows when you can use it.');
   tip(goBtn, 'GO', 'Sends out every unit your buildings are holding, all at once.');
   tip(rotBtn, 'Screen', 'Tap to switch: follow your phone (⟳), keep it sideways (▭), or keep it upright (▯). Sideways gives the battle most of the screen.');
   // Sideways: hide the phone's status and navigation bars too (swipe from an edge to get them back)
@@ -991,6 +1005,12 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
       incomeTxt.classList.toggle('bonus', world.minesOf(ME) > 0);
       const left = world.sides[ME].blasts;
       blastBtn.disabled = left <= 0;
+      // Call to arms: lit when it can be used (enemies in your end), dimmed otherwise
+      const callWhy = world.callBlocked(ME);
+      callBtn.classList.toggle('ready', !callWhy);
+      callBtn.classList.toggle('used', world.sides[ME].calls <= 0);
+      callBtn.querySelector('.sg-call-n').textContent = String(Math.max(0, world.sides[ME].calls));
+      callBtn.dataset.why = callWhy || '';
       blastBtn.querySelector('.sg-blast-n').textContent = String(left);
       const ot = world.overtime();
       // "Rob advanced to the Castle Age", for everyone, as in the game

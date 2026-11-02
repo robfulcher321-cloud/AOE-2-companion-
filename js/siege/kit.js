@@ -82,7 +82,8 @@ export function priceBand(rootId, unit) {
   return 'standard';
 }
 const UPGRADE_SHARE = 0.3;   // building upgrades cost this share of the real upgrade's resources (+30)
-const TECH_SHARE = 0.2;      // Armory techs: this share of the real tech's resources (+20)
+const TECH_SHARE = 0.12;     // Armory techs: this share of the real tech's resources (+TECH_BASE),
+const TECH_BASE = 45;        // so the first level costs a bit more and each later level climbs less
 const TECH_TIME = 0.3;       // and this share of the real research time
 
 // Building upgrades: 30% of the real upgrade's resources (+30) up to 600 of them, then
@@ -206,7 +207,7 @@ export function buildKit({ data, strings = {}, tree, civ }) {
   const meOf = (u) => ({ id: u.ID, cls: UNIT_CLASS[u.ID] });
   const techCost = (id) => {
     const t = data.data.Tech[id];
-    return { cost: round5((20 + TECH_SHARE * total(t?.Cost)) * PRICE_UP), time: Math.max(6, Math.round((t?.ResearchTime || 40) * TECH_TIME)) };
+    return { cost: round5((TECH_BASE + TECH_SHARE * total(t?.Cost)) * PRICE_UP), time: Math.max(6, Math.round((t?.ResearchTime || 40) * TECH_TIME)) };
   };
   const techRec = (id, group, label, extra = {}) => {
     const n = techNode.get(id);
