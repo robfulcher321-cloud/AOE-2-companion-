@@ -55,7 +55,7 @@ export class SiegeView {
    * from the sprite pack; other colours are repainted in a worker the first time
    * that unit is needed).
    */
-  setup(world, { sprites = null, unitIcons = {}, buildingIcons = {}, mySide = 0, colours = null, civs = [] } = {}) {
+  setup(world, { sprites = null, unitIcons = {}, buildingIcons = {}, mySide = 0, colours = null, civs = [], names = [] } = {}) {
     this.w = world;
     this.sprites = sprites;
     this.unitIcons = unitIcons;
@@ -66,6 +66,7 @@ export class SiegeView {
     // The pack's own blue and red, or any other colour (brightest channel scaled like theirs)
     this.paint = this.colours.map((hex) => (hex === COLOURS[0].hex ? 'blue' : hex === COLOURS[1].hex ? 'red' : rgbOf(hex)));
     this.civs = civs;
+    this.names = names;
     this.grassPattern = null;
     this.riverImg = undefined;
     this.trees = null;
@@ -1130,27 +1131,47 @@ export class SiegeView {
     }
   }
 
-  // "+7" gold over enemies your side kills, and building news.
+  // Gold floating up: "+3" and who got it over each kill or razed building, and "+4"
+  // over each Market and Mining Camp when income comes in.
   drawFloaters(t, zoom) {
     const ev = this.w.events;
     // The world trims old events; keep our place in the list.
     if (this.seen > ev.length) this.seen = 0;
     for (; this.seen < ev.length; this.seen++) {
       const e = ev[this.seen];
-      if ((e.type === 'kill' || e.type === 'razed') && e.owner === this.me) this.floaters.push({ t: e.t, x: e.x, y: e.y, text: `+${e.bounty}` });
+      if ((e.type === 'kill' || e.type === 'razed') && e.owner !== undefined && e.bounty) {
+        this.floaters.push({ t: e.t, x: e.x, y: e.y, text: `+${e.bounty}`, who: this.names[e.owner] || `P${e.owner + 1}`, col: this.colours[e.owner], life: 2.4, lift: 50, dx: ((this.seen * 5) % 7 - 3) * 7, dy: ((this.seen * 3) % 4) * 9 });
+      } else if (e.type === 'pay' && e.gold > 0) {
+        this.floaters.push({ t: e.t, x: e.x, y: e.y, text: `+${e.gold}`, life: 2.6, lift: e.mine ? 78 : 64, big: true });
+      }
     }
+    if (this.floaters.length > 120) this.floaters.splice(0, this.floaters.length - 120);
     const { ctx } = this;
-    ctx.font = `700 ${Math.round(11 + 4 * zoom)}px "Merriweather", Georgia, serif`;
     ctx.textAlign = 'center';
-    this.floaters = this.floaters.filter((f) => t - f.t < 1.2);
+    ctx.lineJoin = 'round';
+    this.floaters = this.floaters.filter((f) => t - f.t < f.life && t >= f.t - 0.5);
+    const gold = `700 ${Math.round(11 + 4 * zoom)}px "Merriweather", Georgia, serif`;
+    const goldBig = `700 ${Math.round(13 + 5 * zoom)}px "Merriweather", Georgia, serif`;
+    const small = `700 ${Math.round(9 + 2.5 * zoom)}px system-ui, sans-serif`;
     for (const f of this.floaters) {
-      const age = t - f.t;
+      const age = Math.max(0, t - f.t);
       const [sx, sy] = this.toScreen(f.x, f.y);
-      ctx.globalAlpha = 1 - age / 1.2;
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgb(0 0 0 / .7)';
+      if (sx < -60 || sx > this.vw + 60) continue;
+      const y = sy - f.lift * zoom - age * 16 - (f.dy || 0);
+      const x = sx + (f.dx || 0);
+      ctx.globalAlpha = Math.min(1, 1.6 * (1 - age / f.life));
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgb(0 0 0 / .75)';
+      ctx.font = f.big ? goldBig : gold;
       ctx.fillStyle = '#ffd34d';
-      ctx.strokeText(f.text, sx, sy - 50 * zoom - age * 30);
-      ctx.fillText(f.text, sx, sy - 50 * zoom - age * 30);
+      ctx.strokeText(f.text, x, y);
+      ctx.fillText(f.text, x, y);
+      if (f.who) {
+        // who killed it (and got the gold), in their colour, just above
+        ctx.font = small;
+        ctx.fillStyle = f.col || '#fff';
+        ctx.strokeText(f.who, x, y - 12 - 3 * zoom);
+        ctx.fillText(f.who, x, y - 12 - 3 * zoom);
+      }
     }
     ctx.globalAlpha = 1;
   }

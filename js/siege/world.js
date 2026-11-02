@@ -216,9 +216,17 @@ export class World {
     const s = this.sides[side];
     const team = this.teams[s.team].players.length > 1;
     const camps = this.mines.filter((m) => m.camp?.done && m.camp.owner === side).length;
-    const g = (BASE_INCOME * (team ? TEAM_SHARE : 1) + MARKET.income * s.markets + camps * (this.sides.length > 2 ? MINES.gold : MINES.solo)) * s.incomeMult;
+    const markets = this.structures.filter((b) => b.line === 'market' && b.owner === side && b.done && b.hp > 0)
+      .reduce((a, b) => a + this.marketIncome(b), 0);
+    const g = (BASE_INCOME * (team ? TEAM_SHARE : 1) + markets + camps * this.mineGold()) * s.incomeMult;
     return Math.round(g);   // whole gold only
   }
+
+  /** Gold a Market adds each tick: its base plus its upgrades (Coinage, Banking). */
+  marketIncome(b) { return MARKET.income + MARKET.upgrades.slice(0, b.tier || 0).reduce((a, u) => a + u.income, 0); }
+
+  /** Gold a working Mining Camp adds each tick. */
+  mineGold() { return this.sides.length > 2 ? MINES.gold : MINES.solo; }
 
   /** Mines a player's camps are working. */
   minesOf(side) { return this.mines.filter((m) => m.camp?.done && m.camp.owner === side).length; }
@@ -296,7 +304,8 @@ export class World {
       }
       case 'upgrade': {
         const b = this.building(key);
-        if (!b || b.owner !== side || b.line === 'market' || !b.done) return null;
+        if (!b || b.owner !== side || !b.done) return null;
+        if (b.line === 'market') return MARKET.upgrades[b.tier || 0]?.cost ?? null;
         const line = this.line(side, b.line);
         const next = line.tiers[b.tier + 1];
         return next && next.age <= s.age ? next.upgrade : null;
@@ -352,8 +361,8 @@ export class World {
       b.tier += 1;
       b.invested += p;
       b.upgradedAt = this.t;
-      const line = this.line(side, b.line);
-      if (b.def) {
+      const line = b.line === 'market' ? null : this.line(side, b.line);
+      if (!line) { /* a Market: more gold a tick (see marketIncome) */ } else if (b.def) {
         // A tower goes up a step in place: new look, more HP and a harder arrow.
         const st = this.defenceStats(line, b.tier);
         b.building = line.tiers[b.tier].building;
@@ -759,6 +768,15 @@ export class World {
     if (t >= this.incomeAt) {
       this.incomeAt += INCOME_EVERY;
       this.sides.forEach((s, i) => { const g = this.income(i); s.gold += g; s.stats.earned += g; });
+      // What each Market and Mining Camp paid, for the "+4" floating over it
+      for (const b of this.structures) {
+        if (b.line !== 'market' || !b.done || b.hp <= 0) continue;
+        this.events.push({ t, type: 'pay', owner: b.owner, x: b.x, y: b.y, gold: Math.round(this.marketIncome(b) * this.sides[b.owner].incomeMult) });
+      }
+      for (const m of this.mines) {
+        if (!m.camp?.done) continue;
+        this.events.push({ t, type: 'pay', owner: m.camp.owner, x: m.x, y: m.y, gold: Math.round(this.mineGold() * this.sides[m.camp.owner].incomeMult), mine: true });
+      }
     }
     // Gold mines change hands (checked a few times a second)
     if (Math.round(t / DT) % 6 === 0) this.updateMines(t);
@@ -1190,6 +1208,11 @@ export class Computer {
       }
     }
     if (military.length >= 1 && w.price(side, 'market') !== null && w.t < 600) options.push({ kind: 'market', score: 2.2 - w.count(side, 'market') * 0.5 });
+    // Market upgrades pay for themselves in a few minutes
+    for (const b of builds.filter((x) => x.line === 'market')) {
+      const p = w.price(side, 'upgrade', b.id);
+      if (p !== null && military.length >= 2 && w.t < 900) options.push({ kind: 'upgrade', key: b.id, score: 1.6 - (b.tier || 0) * 0.3 - p / 1500 });
+    }
     // Defences: when enemies are getting into its end of the map (and not before it has an army)
     if (military.length >= 3) {
       for (const d of kit.defences) {

@@ -127,7 +127,7 @@ export async function initSiege(root) {
         el('li', { textContent: 'Call to arms: tap your Wonder. Once a game, while enemy soldiers are in your end of the map, every one of your finished buildings sends out a unit at once (their own training carries on). Everyone on a team has their own.' }),
         el('li', { textContent: 'Holding on when you\'re losing: your Wonder fires more arrows the more it\'s damaged (up to four at a time), and when it falls below half its HP, and again below a quarter, everyone on your team gets another explosion.' }),
         el('li', { textContent: `One explosion each (the fire button): tap it, drag the circle, then Drop. It hurts every enemy soldier within ${BLAST.radius} tiles for ${Math.round(BLAST.share * 100)}% of their HP. It can only be dropped on your own end of the map (up to the dashed line, a little past your base): it's for defending against a deathball, not for pushing.` }),
-        el('li', { textContent: 'Gold comes in every few seconds; Markets add more, and kills pay a small bounty (2% of what the unit or building cost; the Wonder\'s own arrows pay nobody). In team games everyone gets two thirds of the 1v1 base income (your own Markets and mines still pay you in full).' }),
+        el('li', { textContent: 'Gold comes in every few seconds; Markets add more (and their Coinage and Banking upgrades more again), and kills pay a small bounty (2% of what the unit or building cost; the Wonder\'s own arrows pay nobody). In team games everyone gets two thirds of the 1v1 base income (your own Markets and mines still pay you in full).' }),
         el('li', { textContent: 'Four gold mines sit beside the lanes, two along each bank of the river. When your soldiers get past one, the first of them past it builds a Mining Camp in your colour on your side of it, which pays you every income tick (+2 gold a tick). If enemy soldiers get past it, they pull your camp down in about 5 seconds and build their own.' }),
         el('li', { textContent: 'Prices follow the game: a building costs what its unit costs (with your civ\'s discounts, like Goths\' cheap infantry), gold counting double, so gold-heavy units and their upgrades cost more. Each unit comes out at its real training time.' }),
         el('li', { textContent: 'Rams and Trebuchets only attack buildings. Trebuchets unpack to fire and pack up to move, so keep them behind your army.' }),
@@ -406,7 +406,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     navigator.vibrate?.([40, 30, 80]);
     setAim(false);
   });
-  view.setup(world, { ...assets, mySide: ME, colours: players.map((p) => p.colour), civs: players.map((p) => p.civ) });
+  view.setup(world, { ...assets, mySide: ME, colours: players.map((p) => p.colour), civs: players.map((p) => p.civ), names: players.map((p, i) => (i === ME ? 'You' : p.name || `Player ${i + 1}`)) });
   screen.view = view;
   view.resize();
   followBtn.addEventListener('click', () => view.jumpToFight());
@@ -617,6 +617,7 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     const mkt = option('market', 'Market', `+${MARKET.income} gold every 4s · ${world.count(ME, 'market')}/${MARKET.max} built`, bldIcon(84), MARKET.cost, mp === null, s.age < MARKET.age ? AGES[MARKET.age].name : null);
     if (s.age < MARKET.age) mkt.classList.add('locked');
     tip(mkt, 'Market', `Earns you ${MARKET.income} more gold every 4 seconds once it's built, on top of your income. Up to ${MARKET.max}.`,
+      `Tap a Market to upgrade it: ${MARKET.upgrades.map((u) => `${u.name} +${u.income} (${u.cost} gold)`).join(', then ')}.`,
       'Selling it later gives back part of the price.', s.age < MARKET.age ? `Needs the ${AGES[MARKET.age].name}.` : '');
     out.push(el('div', { className: 'sg-opts' }, mkt));
     return out;
@@ -632,7 +633,22 @@ function openGame({ data, kits, assets, players, me, mode = 'solo', net = null, 
     `Gives back ${world.sellValue(b.id)} gold (half of what you put in) and clears the spot.${b.done && !b.def && b.line !== 'market' ? ' Units already out keep fighting.' : ''}`);
     const building = b.done ? null : el('p', { className: 'sg-note sg-building-up', textContent: `Building… ${Math.max(0, Math.ceil((b.buildEnd - world.t) / GAME_SPEED))}s left. It's weak until it's finished.` });
     if (b.line === 'market') {
-      return [closeRow('Market'), building, el('p', { className: 'sg-note', textContent: `Adds ${MARKET.income} gold every 4 seconds.` }), el('div', { className: 'sg-acts' }, sellBtn)];
+      // Market, then its upgrades (Coinage, Banking): each adds more gold a tick
+      const tier = b.tier || 0;
+      const upPrice = world.price(ME, 'upgrade', b.id);
+      const mSteps = [{ name: 'Market', icon: bldIcon(84) }, ...MARKET.upgrades.map((u) => ({ ...u, icon: imageUrl('Tech', u.picture) }))];
+      const steps = el('div', { className: 'sg-steps' }, mSteps.map((u, i) => {
+        if (i !== tier + 1) {
+          return el('span', { className: `sg-step${i === tier ? ' now' : i < tier ? ' done' : ''}` },
+            el('img', { src: u.icon, alt: '' }), el('small', { textContent: i ? `${u.name} +${u.income}` : u.name }));
+        }
+        const btn = priced(el('button', { type: 'button', className: 'sg-step sg-step-buy', onclick: () => { act('upgrade', { id: b.id }); refresh(true); } },
+          el('img', { src: u.icon, alt: '' }), el('small', { textContent: `${u.name} +${u.income}` }), priceTag(u.cost)), u.cost, upPrice === null);
+        return tip(btn, u.name, `This Market makes ${u.income} more gold every 4 seconds (${world.marketIncome(b)} → ${world.marketIncome(b) + u.income}).`,
+          !b.done ? 'Once it\'s built.' : '');
+      }));
+      return [closeRow(tier ? `Market: ${MARKET.upgrades[tier - 1].name}` : 'Market'), building, steps,
+        el('p', { className: 'sg-note', textContent: `Adds ${world.marketIncome(b)} gold every 4 seconds.` }), el('div', { className: 'sg-acts' }, sellBtn)];
     }
     const line = world.line(ME, b.line);
     const cur = line.tiers[b.tier];

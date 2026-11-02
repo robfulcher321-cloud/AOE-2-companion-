@@ -119,6 +119,18 @@ for (const [i, [a, b]] of games.entries()) {
   assert.equal(v.income(0), 10, 'a Market pays once it\'s built');
   for (let i = 0; i < 9 * GAME_SPEED * 30; i++) v.step();
   assert.equal(v.income(0), 14);
+  // Market upgrades: +2 a tick each, 150 then 200, twice only; each tick shows what it paid
+  const mk = v.buildings(0).find((b) => b.line === 'market');
+  v.sides[0].gold += 400;
+  assert.equal(v.price(0, 'upgrade', mk.id), 150);
+  assert.ok(v.buy(0, 'upgrade', mk.id));
+  assert.equal(v.price(0, 'upgrade', mk.id), 200);
+  assert.ok(v.buy(0, 'upgrade', mk.id));
+  assert.equal(v.price(0, 'upgrade', mk.id), null, 'two upgrades only');
+  assert.equal(v.income(0), 18);
+  const seen = v.events.length;
+  for (let i = 0; i < 5 * 30; i++) v.step();
+  assert.ok(v.events.slice(seen).some((e) => e.type === 'pay' && e.owner === 0 && e.gold === 8), 'the Market shows +8');
   // Defences: a Watch Tower shoots, and goes up to a Guard Tower in place
   const tower = k.defences.find((d) => d.key === 'def:tower');
   assert.ok(v.buy(0, 'build', tower.key, [24, 8]));
