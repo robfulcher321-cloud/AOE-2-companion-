@@ -30,12 +30,10 @@ export const DEFENCES = [
 const PRICE_UP = 1.15;
 const SIEGE_PRICE = 1.3;
 const SIEGE_TIME = 1.4;
-// Upgrading a building's unit (Militia → Man-at-Arms …) is cheaper, so investing in quality pays off
-const UNIT_UPGRADE = 0.65;
-// and these key steps a further 20%: Champion, Crossbowman, Arbalester, Cavalier, Paladin
-const CHEAP_UPGRADES = new Set([567, 24, 492, 283, 569]);
-// and Castle/Imperial Age steps of the Archer, Militia, Scout and Knight lines another 20%
-const LATE_CHEAPER = new Set([4, 74, 448, 38]);
+// Upgrading a building's unit (Militia → Man-at-Arms …): the first step costs 35% of the
+// building's price, each later step 10% more of it.
+const UPGRADE_FIRST = 0.35;
+const UPGRADE_STEP = 0.1;
 export const NOT_UNITS = new Set([440]);         // Petard: not a lane fighter
 // The tech tree lists the Trebuchet packed; it fights unpacked.
 const FIGHTS_AS = { 331: 42 };
@@ -260,13 +258,13 @@ export function buildKit({ data, strings = {}, tree, civ }) {
   };
   for (const line of lines) {
     line.cost = linePrice(line, line.age);
-    for (const t of line.tiers) {
+    line.tiers.forEach((t, ti) => {
       const st = civStats(t.unitId, 4);
       t.every = Math.max(6, Math.min(90, Math.round(st.trainTime * TRAIN_SCALE * (line.siege ? SIEGE_TIME : 1) * 10) / 10));
-      // Upgrades: the real upgrade's resources, scaled down; dearer the more gold the unit costs.
-      t.upgrade = t.realUpgrade ? round5(upgradePrice(t.realUpgrade) * (1 + ((st.cost.Gold || 0) + (st.cost.Stone || 0)) / 200) * PRICE_UP * UNIT_UPGRADE * (CHEAP_UPGRADES.has(t.unitId) ? 0.8 : 1)
-        * (t.age >= 3 && LATE_CHEAPER.has(Number(line.key.split('-')[1])) ? 0.8 : 1) * (line.siege ? SIEGE_PRICE : 1)) : 0;
-    }
+      // Upgrades: a share of the building's own price that climbs gently with each step
+      // (35%, 45%, 55%, 65% ...), so the last steps (Champion, Paladin, Elite unique units) stay affordable.
+      t.upgrade = ti ? round5(line.cost * (UPGRADE_FIRST + UPGRADE_STEP * (ti - 1))) : 0;
+    });
   }
 
   // Defences this civ has: tower steps it can reach, the Bombard Tower, the Castle.
