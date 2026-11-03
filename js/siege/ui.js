@@ -11,6 +11,7 @@ import { SiegeView, COLOURS } from './view.js';
 export { COLOURS };
 import { COMMANDS, snapshot, applySnapshot } from './sync.js';
 import { openLobby } from './lobby.js';
+import { onlineReady } from './net.js';
 import { setOrientation, setImmersive } from '../orient.js';
 
 // Player colours (AoE II's), for names, buildings and the minimap. Soldiers wear their team's blue or red.
@@ -90,17 +91,22 @@ export async function initSiege(root) {
   const start = el('button', { type: 'button', className: 'fight', textContent: 'Start game' });
   const status = el('p', { className: 'status', hidden: true });
   const nameIn = el('input', { type: 'text', className: 'sg-name', maxLength: 16, value: store.get('sg-name') || '', placeholder: 'Your name', autocomplete: 'nickname', 'aria-label': 'Your name' });
+  // A friend's link (?join=CODE) goes straight into their game, once there's a name
+  const linkCode = (new URLSearchParams(location.search).get('join') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || null;
   const lobby = (action) => () => {
     const name = nameIn.value.trim();
     if (!name) { nameIn.focus(); nameIn.classList.add('need'); return; }
     nameIn.classList.remove('need');
     store.set('sg-name', name);
-    openLobby({ data, strings, action, name });
+    openLobby({ data, strings, action, name, code: action === 'join' ? linkCode : null });
   };
   root.replaceChildren(
     el('div', { className: 'sg-create' },
       el('h3', { textContent: 'Custom game' }),
-      el('p', { className: 'sg-note', textContent: 'Up to 6 players, 3 a team. Put the computer in any place, or leave places open for friends on the same Wi-Fi to join.' }),
+      el('p', { className: 'sg-note', textContent: onlineReady()
+        ? 'Up to 6 players, 3 a team. Put the computer in any place, or leave places open for friends to join: on the same Wi-Fi, or from anywhere with the game\'s code.'
+        : 'Up to 6 players, 3 a team. Put the computer in any place, or leave places open for friends on the same Wi-Fi to join.' }),
+      linkCode ? el('p', { className: 'sg-note sg-warn', textContent: `Joining game ${linkCode}: type your name, then tap Join a game.` }) : null,
       el('label', { className: 'field' }, el('span', { textContent: 'Your name' }), nameIn),
       el('div', { className: 'sg-create-acts' },
         el('button', { type: 'button', className: 'fight', textContent: 'Create game', onclick: lobby('create') }),
@@ -125,7 +131,7 @@ export async function initSiege(root) {
         el('li', { textContent: 'The Armory (anvil, bottom left) has Blacksmith upgrades, Ballistics, Chemistry, Bloodlines and your civ\'s unique techs. One at a time; each one reaches all your units, even those already fighting.' }),
         el('li', { textContent: 'The middle of the map is split by a river into two lanes. Buildings above your Wonder send units down the top lane, those below it the bottom lane, those in line with it take turns. Arrows fly over the river; soldiers cross only near the bases.' }),
         el('li', { textContent: 'Call to arms: tap your Wonder. Once a game, while enemy soldiers are in your end of the map, every one of your finished buildings sends out a unit at once (their own training carries on). Everyone on a team has their own.' }),
-        el('li', { textContent: 'Holding on when you\'re losing: your Wonder fires more arrows the more it\'s damaged (up to four at a time), and when it falls below half its HP, and again below a quarter, everyone on your team gets another explosion.' }),
+        el('li', { textContent: 'Holding on when you\'re losing: your Wonder fires more arrows the more it\'s damaged (up to four at a time).' }),
         el('li', { textContent: `One explosion each (the fire button): tap it, drag the circle, then Drop. It kills every enemy soldier within ${BLAST.radius} tiles, siege included. Only one per player, for the whole game. It can only be dropped on your own end of the map (up to the dashed line, a little past your base): it's for defending against a deathball, not for pushing.` }),
         el('li', { textContent: 'Gold comes in every few seconds; Markets add more (and their Coinage and Banking upgrades more again), and kills pay a small bounty (2% of what the unit or building cost; the Wonder\'s own arrows pay nobody). In team games everyone gets two thirds of the 1v1 base income (your own Markets and mines still pay you in full).' }),
         el('li', { textContent: 'Four gold mines sit beside the lanes, two along each bank of the river. When your soldiers get past one, the first of them past it builds a Mining Camp in your colour on your side of it, which pays you every income tick (+2 gold a tick). If enemy soldiers get past it, they pull your camp down in about 5 seconds and build their own.' }),
@@ -135,6 +141,12 @@ export async function initSiege(root) {
         el('li', { textContent: 'Drag the battlefield or tap the minimap to look around. The camera stays put; tap "To the fight" to jump to where the armies meet.' }),
         el('li', { textContent: `After ${OVERTIME / 60} game minutes (about ${Math.round(OVERTIME / 60 / 1.7)} real minutes) it's overtime: both Wonders crumble and buildings take more damage every minute, so games always end.` }))),
   );
+
+  // From a friend's link with a name already saved: join their game now (once)
+  if (linkCode) {
+    try { history.replaceState(null, '', location.pathname); } catch { /* */ }
+    if (nameIn.value.trim()) setTimeout(lobby('join'));
+  }
 
   start.addEventListener('click', async () => {
     start.disabled = true;

@@ -810,3 +810,19 @@ body.sg-open { overflow: hidden; }
 .sg-group-up:disabled { opacity: .5; }
 .sg-confirm .sg-end-acts { align-items: center; }
 .sg-confirm .sg-end-acts .fight { width: auto; font-size: 1.2rem; padding: 10px 20px; margin: 0; }
+/* Online games: the host's room code, and joining with a code */
+.sg-online { margin: 8px 0; padding: 10px 12px; border: 2px solid var(--gold, #c99a3a); border-radius: 10px; background: rgb(255 240 200 / .75); }
+.sg-online-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 800; }
+.sg-code { font: 800 2rem/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: .18em; color: #23170b; background: #fff8e4; border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; }
+.sg-online .sg-note { margin: 6px 0; }
+.sg-online-qr summary { cursor: pointer; font-weight: 700; margin: 4px 0; }
+.sg-online .sg-iphone-link { justify-content: flex-start; }
+.sg-join-code { margin: 6px 0 14px; padding: 10px 12px; border: 2px solid var(--gold, #c99a3a); border-radius: 10px; background: rgb(255 240 200 / .75); }
+.sg-join-code .sg-note { margin: 4px 0 8px; }
+.sg-code-row { display: flex; gap: 10px; align-items: stretch; }
+.sg-code-in { flex: 1; min-width: 0; font: 800 1.8rem/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: .3em; text-align: center; text-transform: uppercase; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: #fff8e4; color: #23170b; }
+.sg-code-in.need { outline: 2px solid #c0392b; }
+.sg-code-row .fight { width: auto; margin: 0; padding: 8px 22px; }
+.sg-wifi-h { display: block; margin: 8px 0 4px; }
+.sg-online-qr summary { list-style: none; }
+.sg-online-qr summary::-webkit-details-marker { display: none; }

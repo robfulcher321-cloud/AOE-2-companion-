@@ -29,6 +29,12 @@ jobs:
       - name: Test combat maths
         run: npm test
 
+      - name: Online games (Cloudflare relay)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash scripts/online-relay.sh
+
       - name: Prepare web app
         run: npm run build:web
 

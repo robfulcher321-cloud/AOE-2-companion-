@@ -22,6 +22,13 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 20
+      - name: Online games (Cloudflare relay)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DEPLOY: '0'
+        run: bash scripts/online-relay.sh
+
       - name: Prepare web app
         run: npm run build:web
       - name: Push to the gh-pages branch

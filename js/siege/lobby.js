@@ -9,7 +9,8 @@
 import { loadTree, civIconUrl, nameText } from '../data.js';
 import { Picker } from '../picker.js';
 import { civOptions } from '../techtree.js';
-import { getLan } from './net.js';
+import { getLan, onlineLan, BothLan } from './net.js';
+import { WEB_URL } from './online-config.js';
 import qrcode from '../vendor/qrcode.js';
 import { buildKit } from './kit.js';
 import { loadAssets, openGame, COLOURS, LEVELS } from './ui.js';
@@ -36,8 +37,9 @@ const store = {
 };
 
 /** action: 'create' or 'join'. name: this player's name. */
-export function openLobby({ data, strings, action, name }) {
-  const lan = getLan();
+export function openLobby({ data, strings, action, name, code: startCode = null }) {
+  const wifi = getLan();   // the Wi-Fi (Android app), or a development relay
+  let lan = wifi;          // hosting: the Wi-Fi and online together
   const civs = civOptions(data, strings);
   const civChoices = [{ value: 'random', label: 'Random', icon: DICE }, ...civs];
   const civName = (c) => (c === 'random' ? 'Random' : nameText(strings[data.civs[c]?.name_string_id] || c));
@@ -81,6 +83,21 @@ export function openLobby({ data, strings, action, name }) {
     return box;
   };
 
+  /** The room code for friends who aren't on this Wi-Fi, with a link and QR code to send them. */
+  const onlineBox = (code, why) => {
+    if (!code) {
+      return why ? el('div', { className: 'sg-iphone' }, el('b', { textContent: '🌐 Online joining isn\'t working right now' }), el('p', { className: 'sg-note', textContent: why })) : null;
+    }
+    const link = `${WEB_URL}?join=${code}`;
+    return el('div', { className: 'sg-online' },
+      el('div', { className: 'sg-online-head' }, el('span', { textContent: '🌐 Online code' }), el('b', { className: 'sg-code', textContent: code })),
+      el('p', { className: 'sg-note', textContent: `Friends anywhere (any Wi-Fi or mobile data): in the app, tap Join a game and type ${code}. On an iPhone, open the link or scan the code.` }),
+      el('details', { className: 'sg-online-qr' }, el('summary', { textContent: 'Show the QR code' }), qrSvg(link)),
+      el('div', { className: 'sg-iphone-link' },
+        el('button', { type: 'button', className: 'sg-btn', textContent: 'Copy link', onclick: (e) => { navigator.clipboard?.writeText(link).then(() => { e.target.textContent = 'Copied'; }, () => {}); } }),
+        navigator.share ? el('button', { type: 'button', className: 'sg-btn', textContent: 'Share', onclick: () => navigator.share({ title: 'Join my Wonder Wars game', text: `Join my Wonder Wars game: code ${code}`, url: link }).catch(() => {}) }) : null));
+  };
+
   const head = (title) => el('div', { className: 'sg-lobby-head' },
     el('button', { type: 'button', className: 'sg-x', textContent: '‹', 'aria-label': 'Back', onclick: close }),
     el('h2', { textContent: title }));
@@ -103,14 +120,22 @@ export function openLobby({ data, strings, action, name }) {
     show(head(gameName), el('p', { className: 'status', textContent: 'Setting up…' }));
     let online = false;
     let netNote = null;
-    let webLink = null;   // for iPhones: open this in Safari to join
+    let webLink = null;   // for iPhones on this Wi-Fi: open this in Safari to join
     let webWhy = null;    // or why there's no link
-    if (lan) {
+    let code = null;      // for friends anywhere: the online room code
+    let codeWhy = null;   // or why there isn't one
+    const remote = onlineLan();
+    if (wifi || remote) {
+      lan = new BothLan(wifi, remote);
       try {
         const r = await lan.host(gameName);
         online = true;
-        webLink = r?.web ? joinLink(r.web) : null;
-        webWhy = r?.web ? null : r?.webError || 'This version of the app can\'t host iPhones: update it, or check you\'re on Wi-Fi.';
+        if (wifi) {
+          webLink = r?.web ? joinLink(r.web) : null;
+          webWhy = r?.web ? null : r?.wifiError || r?.webError || 'This version of the app can\'t host iPhones: update it, or check you\'re on Wi-Fi.';
+        }
+        code = r?.code || null;
+        codeWhy = remote && !code ? r?.onlineError || 'Couldn\'t reach the online server.' : null;
       } catch (err) { netNote = `Others can't join right now (${err.message}). You can still play against the computer.`; }
     } else netNote = 'Friends can join when you create the game in the Android app, on the same Wi-Fi.';
 
@@ -198,7 +223,7 @@ export function openLobby({ data, strings, action, name }) {
       // Open or closed
       return el('div', { className: 'sg-mine' },
         el('h3', { textContent: `${where}: ${s.kind === 'open' ? 'open' : 'empty'}` }),
-        el('p', { className: 'sg-note', textContent: s.kind === 'open' ? 'Anyone on this Wi-Fi who joins your game takes an open place.' : 'Nobody plays here.' }),
+        el('p', { className: 'sg-note', textContent: s.kind === 'open' ? 'Anyone who joins your game takes an open place.' : 'Nobody plays here.' }),
         el('div', { className: 'sg-slot-acts' },
           el('button', { type: 'button', className: 'fight', textContent: 'Add the computer', onclick: () => {
             slots[i] = { kind: 'ai', colour: freeColour(), civ: 'random', level: store.get('sg-level') || 'normal' }; refresh();
@@ -215,9 +240,10 @@ export function openLobby({ data, strings, action, name }) {
       const teamsOk = [0, 1].every((t) => slots.some((s, i) => SLOT_TEAM[i] === t && filled(s)));
       const waiting = slots.some((s) => s.kind === 'open');
       show(head(gameName),
-        el('p', { className: 'sg-note', textContent: online ? 'Tap a place to set it up: the computer, open for someone on this Wi-Fi to join, or empty.' : 'Tap a place to add the computer or change it.' }),
+        el('p', { className: 'sg-note', textContent: online ? 'Tap a place to set it up: the computer, open for a friend to join, or empty.' : 'Tap a place to add the computer or change it.' }),
         netNote ? el('p', { className: 'sg-note', textContent: netNote }) : null,
-        online ? iphoneBox(webLink, webWhy) : null,
+        online ? onlineBox(code, codeWhy) : null,
+        online && wifi ? iphoneBox(webLink, webWhy) : null,
         slotGrid(slots, { me: me(), selected, online, onTap: (i) => { selected = i; render(); } }),
         editor(selected),
         !teamsOk ? el('p', { className: 'sg-note sg-warn', textContent: 'Each team needs at least one player or computer.' }) : null,
@@ -254,29 +280,53 @@ export function openLobby({ data, strings, action, name }) {
   }
 
   // ---------- Joining ----------
-  function join() {
-    if (!lan) {
-      show(head('Join a game'), el('p', { className: 'sg-note', textContent: 'Joining works in the Android app: everyone on the same Wi-Fi opens Wonder Wars, one creates a game, the others join it.' }));
+  function join(errorText = null, prefill = '') {
+    // Online: type the host's code
+    const codeIn = el('input', { type: 'text', className: 'sg-code-in', maxLength: 4, placeholder: 'CODE', value: prefill, autocomplete: 'off', autocapitalize: 'characters', spellcheck: false, enterKeyHint: 'go' });
+    codeIn.addEventListener('input', () => { codeIn.value = codeIn.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+    let stopWifi = () => {};
+    const byCode = () => {
+      const c = codeIn.value.trim().toUpperCase();
+      if (c.length !== 4) { codeIn.focus(); codeIn.classList.add('need'); return; }
+      stopWifi();
+      connect({ name: `Game ${c}`, code: c }, onlineLan());
+    };
+    const codeBox = onlineLan() ? el('form', { className: 'sg-join-code', onsubmit: (e) => { e.preventDefault(); byCode(); } },
+      el('b', { textContent: '🌐 Join with a code' }),
+      el('p', { className: 'sg-note', textContent: 'From anywhere: type the code shown in the host\'s game.' }),
+      el('div', { className: 'sg-code-row' }, codeIn, el('button', { type: 'submit', className: 'fight', textContent: 'Join' }))) : null;
+    const errorNote = errorText ? el('p', { className: 'status error', textContent: errorText }) : null;
+    if (!wifi) {
+      show(head('Join a game'), errorNote, codeBox,
+        el('p', { className: 'sg-note', textContent: codeBox ? 'Games on the same Wi-Fi show up here in the Android app.' : 'Joining works in the Android app: everyone on the same Wi-Fi opens Wonder Wars, one creates a game, the others join it.' }));
       return;
     }
+    const lan = wifi;
     const games = new Map();
     const list = el('div', { className: 'sg-games' });
     const draw = () => list.replaceChildren(...(games.size ? [...games.values()].map((g) => el('button', {
-      type: 'button', className: 'sg-game', onclick: () => connect(g),
+      type: 'button', className: 'sg-game', onclick: () => { stop(); connect(g); },
     }, el('b', { textContent: g.name }), el('small', { textContent: 'Tap to join' }))) : [el('p', { className: 'sg-note sg-searching', textContent: 'Looking for games on this Wi-Fi…' })]));
     const offFound = lan.on('found', (g) => { games.set(g.id, g); draw(); });
     const offLost = lan.on('lost', (g) => { games.delete(g.id); draw(); });
-    const stop = () => { offFound(); offLost(); lan.stopDiscover(); };
+    let stopped = false;
+    const stop = () => { if (stopped) return; stopped = true; offFound(); offLost(); lan.stopDiscover(); };
+    stopWifi = stop;
     cleanups.push(stop);
     lan.discover().catch((err) => list.replaceChildren(el('p', { className: 'status error', textContent: err.message })));
-    show(head('Join a game'), list,
+    show(head('Join a game'), errorNote, codeBox, codeBox ? el('b', { className: 'sg-wifi-h', textContent: '📶 Games on this Wi-Fi' }) : null, list,
       el('p', { className: 'sg-note', textContent: 'Games created on this Wi-Fi show up here. If nothing appears, check you\'re on the same network as the host.' }));
     draw();
+  }
 
-    async function connect(game) {
-      stop(); cleanups.pop();
+  /** Joins a game: one found on the Wi-Fi, or by its online code (via: that connection). */
+  async function connect(game, via = wifi) {
+      const lan = via;
       show(head(game.name), el('p', { className: 'status', textContent: 'Joining…' }));
-      try { await lan.join(game); } catch (err) { show(head('Join a game'), el('p', { className: 'status error', textContent: err.message })); return; }
+      try { await lan.join(game); } catch (err) {
+        if (game.code) { lan.leave(); join(err.message, game.code); } else show(head('Join a game'), el('p', { className: 'status error', textContent: err.message }));
+        return;
+      }
       let slots = null;
       let mySlot = null;
       let civ = data.civs[store.get('sg-civ')] ? store.get('sg-civ') : 'random';
@@ -309,7 +359,6 @@ export function openLobby({ data, strings, action, name }) {
               onclick: () => lan.send(JSON.stringify({ t: 'ready', on: !ready })) })),
           el('p', { className: 'sg-note', textContent: ready ? 'Waiting for the host to start…' : 'Pick your civ and colour, then tick Ready.' }));
       }
-    }
   }
 
   // ---------- The six places ----------
@@ -348,5 +397,7 @@ export function openLobby({ data, strings, action, name }) {
     }
   }
 
-  if (action === 'join') join(); else create();
+  // Opened from a friend's link (?join=CODE): straight into their game
+  if (action === 'join' && startCode && onlineLan()) connect({ name: `Game ${startCode}`, code: startCode }, onlineLan());
+  else if (action === 'join') join(); else create();
 }
