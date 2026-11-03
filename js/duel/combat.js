@@ -78,6 +78,13 @@ export function radiusOf(u) {
   return 0.2;
 }
 
+// Abilities units have that aren't in the game data we read.
+// Jaguar Warrior: +1 attack for each enemy soldier it kills, up to +4, for good.
+const UNIT_ABILITIES = {
+  725: { killBonus: { per: 1, max: 4 } },
+  726: { killBonus: { per: 1, max: 4 } },
+};
+
 // Charge shots a unique tech adds to a unit that doesn't have one in the game data we read.
 // Gothikon (Varangians): Varangian Guards throw an axe within 3 tiles every 30 seconds.
 // (Published: the 30 s and the 3 tiles. The axe's damage is our estimate, like a Throwing
@@ -321,6 +328,7 @@ export function buildFighter(unit, name, opts = {}) {
     bonusResist: sp[24] || 0,
     regen: sp[109] || 0,             // HP per minute
     reflect: sp[118] || 0,
+    ...(UNIT_ABILITIES[unit.ID] || {}),
   };
   let dismount = null;
   if (spec.dismount && opts.units?.[spec.dismount]) {

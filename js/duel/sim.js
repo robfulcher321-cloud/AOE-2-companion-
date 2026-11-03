@@ -161,7 +161,8 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
   const full = (u) => { const ch = chargeOf(u); return ch && u.charge >= ch.max - 1e-9; };
   // Hamask: hits harder the more HP it has lost. Shield Wall: v.fx is v with its massed armour.
   const fury = (u) => { const h = u.f.special?.hamask || 0; return h ? 1 + h * Math.max(0, 1 - u.hp / (u.maxHp || u.f.hp)) : 1; };
-  const dmgOf = (u, v, attacks, extraMelee = 0, ignoreArmour = false) => damagePerHit(u.f, v.fx || v.f, attacks ?? u.f.attacks, { armourLoss: v.armourLoss, extraMelee, ignoreArmour }) * fury(u);
+  // (Jaguar Warriors: + what their kills have earned them, on their own blows)
+  const dmgOf = (u, v, attacks, extraMelee = 0, ignoreArmour = false) => damagePerHit(u.f, v.fx || v.f, attacks ?? u.f.attacks, { armourLoss: v.armourLoss, extraMelee: extraMelee + (!attacks || attacks === u.f.attacks ? u.kb || 0 : 0), ignoreArmour }) * fury(u);
 
   const died = (victim, at) => {
     victim.diedAt = at;
@@ -184,7 +185,11 @@ export function simulate(a, b, { counts = [1, 1], seed = 1, startGap, record = t
     // Curare: poisoned for a few seconds
     const po = by.f.special?.poison;
     if (po && note !== 'poison' && note !== 'blast') victim.poison = { until: at + po.secs, rate: po.dmg / po.secs, by };
-    if (victim.hp <= 0 && victim.diedAt === null) died(victim, at);
+    if (victim.hp <= 0 && victim.diedAt === null) {
+      died(victim, at);
+      const kb = by.f.special?.killBonus;   // Jaguar Warrior: stronger with each kill
+      if (kb && by !== victim) by.kb = Math.min(kb.max, (by.kb || 0) + kb.per);
+    }
   };
 
   const inBox = (u, x, y) => Math.abs(u.x - x) <= u.r + PROJECTILE_SIZE && Math.abs(u.y - y) <= u.r + PROJECTILE_SIZE;

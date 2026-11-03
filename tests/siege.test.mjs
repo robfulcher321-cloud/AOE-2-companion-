@@ -318,3 +318,26 @@ for (const [i, [a, b]] of games.entries()) {
   assert.ok(kits[0].help.includes('Foot Archer') && kits[0].techs.some((t) => /\+1 attack/.test(t.help)), 'game help text');
 }
 console.log('AOSiege checks passed.');
+
+// Jaguar Warriors in Wonder Wars: the infantry bonus lands, and each kill adds +1 attack (up to +4)
+{
+  const az = await kitFor('Aztecs');
+  const fr = await kitFor('Franks');
+  const w = new World([az, fr], data, { seed: 2 });
+  const jl = az.lines.find((l) => l.tiers.some((t) => t.unitId === 726));
+  const ej = az.fighter(jl.key, 1, new Set(), '', 4);
+  const cl = fr.lines.find((l) => l.key === '12-74');
+  const champ = fr.fighter(cl.key, cl.tiers.length - 1, new Set(), '', 4);
+  const j = w.addUnit(0, jl.key, 1, ej, 30, 4, 1);
+  const base = w.hitOf(j, { f: champ });
+  assert.ok(ej.attacks.get(1) >= 6 && champ.armours.has(1), 'Elite Jaguar Warrior has its bonus against infantry');
+  for (let i = 0; i < 6; i++) {
+    const c = w.addUnit(1, cl.key, cl.tiers.length - 1, champ, 31, 4, 1);
+    c.hp = 1;
+    w.damage(0, c, 5, j);
+  }
+  assert.equal(j.kb, 4, 'six kills: +4, no more');
+  assert.equal(w.hitOf(j, { f: champ }), base + 4, 'its blows hit 4 harder');
+  console.log('Jaguar Warrior (Wonder Wars) checks passed.');
+}
+

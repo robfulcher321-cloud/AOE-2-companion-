@@ -197,3 +197,20 @@ const kn = buildFighter(U[283], 'Cavalier', allTechs);
 assert.ok(damagePerHit(camel, kn) > damagePerHit(kn, camel), 'camels hit cavalry harder than cavalry hits them');
 assert.ok(buildFighter(U[282], 'Mameluke').projectile, 'the Mameluke throws its scimitar');
 console.log('All combat tests passed.');
+
+// Jaguar Warriors: their bonus against infantry, and +1 attack per kill (up to +4). (Wonder Wars: siege.test.mjs)
+{
+  const ej = buildFighter(U[726], 'EJ', { civ: 'Aztecs', age: 4, units: U });
+  const champ = buildFighter(U[567], 'C', { civ: 'Franks', age: 4, units: U });
+  const pal = buildFighter(U[569], 'P', { civ: 'Franks', age: 4, units: U });
+  assert.equal(ej.attacks.get(1), 6, 'Elite Jaguar Warrior +6 vs infantry');
+  assert.ok(damagePerHit(ej, champ) - damagePerHit(ej, { ...champ, armours: new Map([...champ.armours].filter(([c]) => c !== 1)) }) === 6, 'and it lands on infantry');
+  assert.ok(!pal.armours.has(1) || damagePerHit(ej, pal) < damagePerHit(ej, champ) + 6);
+  assert.deepEqual(ej.special.killBonus, { per: 1, max: 4 });
+  const maa = buildFighter(U[75], 'MAA', { civ: 'Franks', age: 4, units: U });
+  const r = simulate(ej, maa, { counts: [1, 6], seed: 3 });
+  const blows = r.hits.filter((h) => h.side === 0 && !h.note).map((h) => h.dmg);
+  assert.ok(Math.max(...blows) > blows[0], `Jaguar hits harder after a kill (${blows[0]} → ${Math.max(...blows)})`);
+  assert.ok(Math.max(...blows) <= blows[0] + 4, 'at most +4');
+}
+console.log('Jaguar Warrior checks passed.');

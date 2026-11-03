@@ -675,7 +675,9 @@ export class World {
     const f = special ? { ...u.f, special } : u.f;
     const h = u.f.special?.hamask || 0;   // Hamask: harder the more HP it has lost
     const fury = h && !u.kind ? 1 + h * Math.max(0, 1 - u.hp / (u.maxHp || u.f.hp)) : 1;
-    return damagePerHit(f, v.fx || v.f, attacks, { armourLoss: v.armourLoss || 0, extraMelee }) * fury;
+    // (Jaguar Warriors: + what their kills have earned them, on their own blows)
+    const kb = attacks === u.f.attacks ? u.kb || 0 : 0;
+    return damagePerHit(f, v.fx || v.f, attacks, { armourLoss: v.armourLoss || 0, extraMelee: extraMelee + kb }) * fury;
   }
 
   attackOn(u, target, extra = 1, extraMelee = 0) {
@@ -714,6 +716,9 @@ export class World {
     target.diedAt = this.t;
     if (!target.kind) {
       this.alive[target.side] -= 1; this.sides[target.owner].out -= 1;
+      // Jaguar Warrior: +1 attack for each enemy soldier it kills, up to +4
+      const kb = by?.f?.special?.killBonus;
+      if (kb && !by.kind && by.side !== target.side) by.kb = Math.min(kb.max, (by.kb || 0) + kb.per);
       // Konnik: the rider fights on, on foot
       const dm = target.f.dismount;
       if (dm) {
