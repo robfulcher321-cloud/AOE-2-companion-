@@ -1,0 +1,194 @@
+{
+  "name": "ROM Knights Scorpions",
+  "civilization": "Romans",
+  "author": "Morley Games",
+  "source": "https://youtu.be/LEs55GypUIs",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 2 @other/House_aoe2DE.webp@ | First 6 @resource/MaleVillDE.webp@ to @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 7,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Lure 1st @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "1:40"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 4 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ (@lumber_camp/Lumber_camp_aoe2de.webp@) | Build 1 @other/House_aoe2DE.webp@ | Push @animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "3:20"
+    },
+    {
+      "villager_count": 12,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 8,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ lures 2nd @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "3:45"
+    },
+    {
+      "villager_count": 18,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 6 @resource/MaleVillDE.webp@ to @resource/BerryBushDE.webp@ (@mill/Mill_aoe2de.webp@) | Build 1 @other/House_aoe2DE.webp@"
+      ],
+      "time": "6:15"
+    },
+    {
+      "villager_count": 21,
+      "age": 1,
+      "resources": {
+        "wood": 7,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ | 22 Pop @age/FeudalAgeIconDE.webp@"
+      ],
+      "time": "7:30"
+    },
+    {
+      "villager_count": 21,
+      "age": 2,
+      "resources": {
+        "wood": 7,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE.webp@ | Build @barracks/Barracks_aoe2DE.webp@"
+      ],
+      "time": "9:40"
+    },
+    {
+      "villager_count": 22,
+      "age": 2,
+      "resources": {
+        "wood": 7,
+        "food": 14,
+        "gold": 1,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE.webp@ | Build @stable/Stable_aoe2DE.webp@ (2) & @market/Market_aoe2DE.webp@ (3) | Research @town_center/LoomDE.webp@",
+        "Next @resource/MaleVillDE.webp@ goes to @resource/Aoe2de_gold.webp@ | Sell 200 @resource/Aoe2de_stone.webp@ | 23 Pop @age/CastleAgeIconDE.webp@"
+      ],
+      "time": "10:30"
+    },
+    {
+      "villager_count": 22,
+      "age": 3,
+      "resources": {
+        "wood": 11,
+        "food": 5,
+        "gold": 6,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE.webp@ | 8 @animal/Sheep_aoe2DE.webp@@resource/MaleVillDE.webp@ to @resource/Aoe2de_gold.webp@ (5) & @mill/FarmDE.webp@ (3) | Build @other/House_aoe2DE.webp@",
+        "6 @resource/BerryBushDE.webp@@resource/MaleVillDE.webp@ to @mill/FarmDE.webp@ (2) & @resource/Aoe2de_wood.webp@ (4) | Research @stable/BloodlinesDE.webp@"
+      ],
+      "time": "13:10"
+    },
+    {
+      "villager_count": 25,
+      "age": 2,
+      "resources": {
+        "wood": 11,
+        "food": 8,
+        "gold": 6,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/CastleAgeIconDE.webp@ | Next 3 @resource/MaleVillDE.webp@ to @mill/FarmDE.webp@ | Make 2-3 @stable/Knight_aoe2DE.webp@ | Build @blacksmith/Blacksmith_aoe2de.webp@"
+      ],
+      "time": "14:25"
+    },
+    {
+      "villager_count": 26,
+      "age": 2,
+      "resources": {
+        "wood": 11,
+        "food": 8,
+        "gold": 6,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ builds forward @siege_workshop/Siege_workshop_aoe2DE.webp@ | Use @market/Market_aoe2DE.webp@ for @stable/Knight_aoe2DE.webp@ / @lumber_camp/DoubleBitAxe_aoe2DE.webp@"
+      ],
+      "time": "14:50"
+    },
+    {
+      "villager_count": 29,
+      "age": 2,
+      "resources": {
+        "wood": 14,
+        "food": 8,
+        "gold": 6,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ (straggler) | 2 @animal/Sheep_aoe2DE.webp@@resource/MaleVillDE.webp@ to @mill/FarmDE.webp@ | Build 2nd @siege_workshop/Siege_workshop_aoe2DE.webp@"
+      ],
+      "time": "16:05"
+    },
+    {
+      "villager_count": 36,
+      "age": 2,
+      "resources": {
+        "wood": 14,
+        "food": 10,
+        "gold": 12,
+        "stone": 0
+      },
+      "notes": [
+        "Next 6 to @resource/Aoe2de_gold.webp@ (then @resource/Aoe2de_food.webp@) | Spam @siege_workshop/HeavyScorpionDE.webp@ & @stable/Knight_aoe2DE.webp@"
+      ],
+      "time": "19:00"
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "name": "Tati Rush",
+  "civilization": "Saracens",
+  "author": "TaToH",
+  "source": "https://buildorderguide.com",
+  "description": "The goal is to click up with 20 pop and then cease producing villagers in order to have 3 ranges produce archers constantly. It's played with Saracens because of their archers' bonus. Named after its creator TaToH. Only stay on food as long as needed to afford fletching.",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Create 6 @resource/MaleVillDE.webp@ on @animal/Sheep_aoe2DE.webp@"
+      ]
+    },
+    {
+      "villager_count": 9,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Create 3 @resource/MaleVillDE.webp@ on @resource/Aoe2de_wood.webp@"
+      ]
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Create 1 @resource/MaleVillDE.webp@ on @animal/Boar_aoe2DE.webp@"
+      ]
+    },
+    {
+      "villager_count": 17,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Create 7 @resource/MaleVillDE.webp@ on @animal/Sheep_aoe2DE.webp@"
+      ]
+    },
+    {
+      "villager_count": 17,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 11,
+        "gold": 3,
+        "stone": 0
+      },
+      "notes": [
+        "Move 3 @resource/MaleVillDE.webp@ from @animal/Sheep_aoe2DE.webp@ to @resource/Aoe2de_gold.webp@"
+      ]
+    },
+    {
+      "villager_count": 19,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 13,
+        "gold": 3,
+        "stone": 0
+      },
+      "notes": [
+        "Create 2 @resource/MaleVillDE.webp@ on @animal/Sheep_aoe2DE.webp@",
+        "Research @town_center/LoomDE.webp@",
+        "Click up to feudalAge"
+      ]
+    },
+    {
+      "villager_count": 19,
+      "age": 2,
+      "resources": {
+        "wood": 12,
+        "food": 0,
+        "gold": 5,
+        "stone": 0,
+        "builder": 2
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE_alpha.webp@",
+        "Move 9 @resource/MaleVillDE.webp@ from @animal/Sheep_aoe2DE.webp@ to @resource/Aoe2de_wood.webp@",
+        "Move 2 @resource/MaleVillDE.webp@ from @animal/Sheep_aoe2DE.webp@ to @resource/Aoe2de_gold.webp@",
+        "Move 2 @resource/MaleVillDE.webp@ from @animal/Sheep_aoe2DE.webp@ to forward",
+        "@resource/Aoe2de_hammer.webp@ 1 @barracks/Barracks_aoe2DE.webp@"
+      ]
+    },
+    {
+      "villager_count": 19,
+      "age": 2,
+      "resources": {
+        "wood": 12,
+        "food": 0,
+        "gold": 5,
+        "stone": 0,
+        "builder": 2
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE_alpha.webp@",
+        "@resource/Aoe2de_hammer.webp@ 2 archeryRange",
+        "@resource/Aoe2de_hammer.webp@ 1 @blacksmith/Blacksmith_aoe2de.webp@",
+        "Research @blacksmith/FletchingDE.webp@",
+        "@resource/Aoe2de_hammer.webp@ 1 archeryRange"
+      ]
+    },
+    {
+      "villager_count": 19,
+      "age": 2,
+      "resources": {
+        "wood": 7,
+        "food": 0,
+        "gold": 10,
+        "stone": 0,
+        "builder": 2
+      },
+      "notes": [
+        "Move 5 @resource/MaleVillDE.webp@ from @resource/Aoe2de_wood.webp@ to @resource/Aoe2de_gold.webp@"
+      ]
+    }
+  ]
+}

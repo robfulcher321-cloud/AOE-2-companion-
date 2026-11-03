@@ -1,0 +1,140 @@
+{
+  "name": "KHM Arena Rush",
+  "civilization": "Khmer",
+  "author": "AOE2 Builds",
+  "source": "https://youtu.be/iW7uY6zs8IM",
+  "description": "A Khmer Arena rush that will be knocking on your opponent's gate with rams, knights, and scorpions before 17 minutes.",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "2 @other/House_aoe2DE.webp@ + 6 on @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "4 on @resource/Aoe2de_wood.webp@"
+      ],
+      "time": "2:55"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "1 Lures @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "3:20"
+    },
+    {
+      "villager_count": 17,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "2 @other/House_aoe2DE.webp@ + @mill/Mill_aoe2de.webp@ + 6 on @resource/BerryBushDE.webp@ | Lure @animal/Boar_aoe2DE.webp@ with @resource/MaleVillDE.webp@ Under @town_center/Towncenter_aoe2DE.webp@"
+      ],
+      "time": "5:50"
+    },
+    {
+      "villager_count": 21,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 17,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "4 on @animal/Sheep_aoe2DE.webp@ | Push 4 @animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "7:30"
+    },
+    {
+      "villager_count": 24,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 17,
+        "gold": 3,
+        "stone": 0
+      },
+      "notes": [
+        "3 on @resource/Aoe2de_gold.webp@ | Research 25 Pop @age/FeudalAgeIconDE_alpha.webp@"
+      ],
+      "time": "8:45"
+    },
+    {
+      "villager_count": 24,
+      "age": 2,
+      "resources": {
+        "wood": 4,
+        "food": 17,
+        "gold": 3,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE_alpha.webp@ | Research @age/CastleAgeIconDE_alpha.webp@"
+      ],
+      "time": "10:55"
+    },
+    {
+      "villager_count": 24,
+      "age": 3,
+      "resources": {
+        "wood": 11,
+        "food": 4,
+        "gold": 8,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE_alpha.webp@ | Seed 4 @mill/FarmDE.webp@ | 2 @animal/Sheep_aoe2DE.webp@ \u2192 2 @resource/Aoe2de_wood.webp@ | Research @lumber_camp/DoubleBitAxe_aoe2DE.webp@ + @mill/HorseCollarDE.webp@",
+        "5 @animal/Deer_aoe2DE.webp@ \u2192 5 @resource/Aoe2de_wood.webp@ | 5 @resource/BerryBushDE.webp@ \u2192 5 @resource/Aoe2de_gold.webp@",
+        "1 @resource/BerryBushDE.webp@ \u2192 1 Forward | Build @other/House_aoe2DE.webp@ & @stable/Stable_aoe2DE.webp@"
+      ],
+      "time": "13:35"
+    },
+    {
+      "villager_count": 24,
+      "age": 3,
+      "resources": {
+        "wood": 11,
+        "food": 4,
+        "gold": 8,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "In @age/CastleAgeIconDE_alpha.webp@ | Build @siege_workshop/Siege_workshop_aoe2DE.webp@ | Train 1 @siege_workshop/Battering_ram_aoe2DE.webp@, 1 @siege_workshop/Scorpion_aoe2DE.webp@ & 1 @siege_workshop/Mangonel_aoe2DE.webp@",
+        "Start Training @stable/Knight_aoe2DE.webp@ (+ other) | New @resource/MaleVillDE.webp@ mainly to @resource/Aoe2de_gold.webp@"
+      ],
+      "time": "13:36"
+    }
+  ]
+}

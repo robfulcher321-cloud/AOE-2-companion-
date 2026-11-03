@@ -1,0 +1,195 @@
+{
+  "name": "GOT Scouts Rush",
+  "civilization": "Goths",
+  "author": "Morley Games",
+  "source": "https://youtu.be/yIBOhQhA4Jk",
+  "build_order": [
+    {
+      "villager_count": 4,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 4,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 2 @other/House_aoe2DE.webp@ | First 4 @resource/MaleVillDE.webp@ to @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "0:25"
+    },
+    {
+      "villager_count": 5,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 5,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Lure 1st @animal/Boar_aoe2DE.webp@ | Research @town_center/LoomDE.webp@"
+      ],
+      "time": "0:50"
+    },
+    {
+      "villager_count": 8,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 8,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @animal/Boar_aoe2DE.webp@/@animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "2:05"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 2,
+        "food": 8,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ (build @lumber_camp/Lumber_camp_aoe2de.webp@)"
+      ],
+      "time": "2:55"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 2,
+        "food": 9,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ builds 1 @other/House_aoe2DE.webp@ and lures 2nd @animal/Boar_aoe2DE.webp@ | Start pushing @animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "3:20"
+    },
+    {
+      "villager_count": 14,
+      "age": 1,
+      "resources": {
+        "wood": 2,
+        "food": 12,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "4:35"
+    },
+    {
+      "villager_count": 15,
+      "age": 1,
+      "resources": {
+        "wood": 2,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ builds @mill/Mill_aoe2de.webp@ on @resource/BerryBushDE.webp@"
+      ],
+      "time": "5:00"
+    },
+    {
+      "villager_count": 16,
+      "age": 1,
+      "resources": {
+        "wood": 2,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ goes to @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "5:25"
+    },
+    {
+      "villager_count": 17,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ goes to @resource/Aoe2de_wood.webp@ | 18 pop @age/FeudalAgeIconDE.webp@"
+      ],
+      "time": "5:50"
+    },
+    {
+      "villager_count": 17,
+      "age": 2,
+      "resources": {
+        "wood": 10,
+        "food": 6,
+        "gold": 0,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE.webp@ | 8 from @animal/Sheep_aoe2DE.webp@ to @resource/Aoe2de_wood.webp@ (7, straggler) & @other/House_aoe2DE.webp@+@barracks/Barracks_aoe2DE.webp@ (1)"
+      ],
+      "time": "8:00"
+    },
+    {
+      "villager_count": 22,
+      "age": 2,
+      "resources": {
+        "wood": 6,
+        "food": 14,
+        "gold": 0,
+        "stone": 0,
+        "builder": 2
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE.webp@ | Next 5 @resource/MaleVillDE.webp@ on @resource/BerryBushDE.webp@ | Build @stable/Stable_aoe2DE.webp@ (@resource/Aoe2de_hammer.webp@ + straggler)",
+        "Move 6 from straggler to @resource/Aoe2de_wood.webp@ (3) & @animal/Sheep_aoe2DE.webp@ (3) | Research @lumber_camp/DoubleBitAxe_aoe2DE.webp@"
+      ],
+      "time": "10:05"
+    },
+    {
+      "villager_count": 25,
+      "age": 2,
+      "resources": {
+        "wood": 7,
+        "food": 17,
+        "gold": 0,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "Builders to @resource/Aoe2de_wood.webp@/@defensive_structures/Palisade_wall_aoe2de.webp@ | Next 3 @resource/MaleVillDE.webp@ to @mill/FarmDE.webp@"
+      ],
+      "time": "11:20"
+    },
+    {
+      "villager_count": 28,
+      "age": 2,
+      "resources": {
+        "wood": 10,
+        "food": 17,
+        "gold": 0,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ (2nd @lumber_camp/Lumber_camp_aoe2de.webp@)"
+      ],
+      "time": "12:35"
+    }
+  ]
+}

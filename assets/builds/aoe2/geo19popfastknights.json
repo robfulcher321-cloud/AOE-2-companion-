@@ -1,0 +1,137 @@
+{
+  "name": "GEO 19 Pop Fast Knights",
+  "civilization": "Georgians",
+  "author": "Poop Lord",
+  "source": "https://youtu.be/r7wdhFAptZE",
+  "build_order": [
+    {
+      "villager_count": 4,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 4,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 2 @other/House_aoe2DE.webp@ | Scout with @stable/Scoutcavalry_aoe2DE.webp@ & @other/MuleCart.webp@ | 4 @resource/MaleVillDE.webp@ to @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "0:25"
+    },
+    {
+      "villager_count": 5,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 5,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Lure 1st @animal/Boar_aoe2DE.webp@ | Start pushing @animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "0:50"
+    },
+    {
+      "villager_count": 7,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/MaleVillDE.webp@ to @animal/Boar_aoe2DE.webp@/@animal/Deer_aoe2DE.webp@ | Grab 2nd @animal/Boar_aoe2DE.webp@ when needed"
+      ],
+      "time": "1:40"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 10,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build @mill/Mill_aoe2de.webp@ on @resource/BerryBushDE.webp@ | 2 extra @resource/MaleVillDE.webp@ on @resource/BerryBushDE.webp@"
+      ],
+      "time": "2:55"
+    },
+    {
+      "villager_count": 15,
+      "age": 1,
+      "resources": {
+        "wood": 5,
+        "food": 10,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 1 @other/House_aoe2DE.webp@ | 5 to @resource/Aoe2de_wood.webp@ (with @other/MuleCart.webp@ close to @resource/Aoe2de_gold.webp@)"
+      ],
+      "time": "5:00"
+    },
+    {
+      "villager_count": 18,
+      "age": 1,
+      "resources": {
+        "wood": 5,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @animal/Boar_aoe2DE.webp@/@animal/Deer_aoe2DE.webp@/@animal/Sheep_aoe2DE.webp@ | Research @town_center/LoomDE.webp@ | 19 pop @age/FeudalAgeIconDE.webp@"
+      ],
+      "time": "6:40"
+    },
+    {
+      "villager_count": 18,
+      "age": 2,
+      "resources": {
+        "wood": 8,
+        "food": 10,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE.webp@ | 1 @resource/MaleVillDE.webp@ from @town_center/Towncenter_aoe2DE.webp@ to @barracks/Barracks_aoe2DE.webp@, then back to @resource/Aoe2de_food.webp@",
+        "Move 3 @resource/MaleVillDE.webp@ from @town_center/Towncenter_aoe2DE.webp@ to straggler, back to @resource/Aoe2de_food.webp@ when 350 @resource/Aoe2de_wood.webp@"
+      ],
+      "time": "8:50"
+    },
+    {
+      "villager_count": 18,
+      "age": 2,
+      "resources": {
+        "wood": 0,
+        "food": 13,
+        "gold": 5,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE.webp@ | 5 from @lumber_camp/Lumber_camp_aoe2de.webp@ to @stable/Stable_aoe2DE.webp@ (1), @market/Market_aoe2DE.webp@ (3) & @resource/Aoe2de_gold.webp@ (1 with @other/MuleCart.webp@)",
+        "Sell 200 @resource/Aoe2de_stone.webp@ | Builders to @resource/Aoe2de_gold.webp@ | No new @resource/MaleVillDE.webp@ | Research @age/CastleAgeIconDE.webp@"
+      ],
+      "time": "10:34"
+    },
+    {
+      "villager_count": 18,
+      "age": 3,
+      "resources": {
+        "wood": 0,
+        "food": 9,
+        "gold": 9,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE.webp@ | Build 1 @other/House_aoe2DE.webp@ | Research @stable/BloodlinesDE.webp@ | 4 from @resource/Aoe2de_food.webp@ to @resource/Aoe2de_gold.webp@",
+        "All @resource/Aoe2de_food.webp@ @resource/MaleVillDE.webp@ to @resource/BerryBushDE.webp@ (no @mill/FarmDE.webp@) | In @age/CastleAgeIconDE.webp@ | Harass with @stable/Knight_aoe2DE.webp@ & adapt"
+      ],
+      "time": "13:13"
+    }
+  ]
+}

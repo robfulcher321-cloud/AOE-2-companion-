@@ -1,0 +1,165 @@
+{
+  "name": "PER FC Knights + Monks",
+  "civilization": "Persians",
+  "author": "Morley Games",
+  "source": "https://youtu.be/dd9m-hPtJB8?si=uQ3kIHkbQZDUhPYI",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 2 @other/House_aoe2DE.webp@ | Send the first 6 @resource/MaleVillDE.webp@ to @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "1:11"
+    },
+    {
+      "villager_count": 7,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ goes to @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "1:35"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 4 @resource/MaleVillDE.webp@ go to @resource/Aoe2de_wood.webp@ (build @lumber_camp/Lumber_camp_aoe2de.webp@)",
+        "Build 1 @other/House_aoe2DE.webp@ | Start pushing 3 @animal/Deer_aoe2DE.webp@ with @stable/Scoutcavalry_aoe2DE.webp@"
+      ],
+      "time": "3:10"
+    },
+    {
+      "villager_count": 13,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 9,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/MaleVillDE.webp@ to @animal/Boar_aoe2DE.webp@ (lure the 2nd)"
+      ],
+      "time": "3:58"
+    },
+    {
+      "villager_count": 19,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 15,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 6 @resource/MaleVillDE.webp@ go to @resource/BerryBushDE.webp@ (build @mill/Mill_aoe2de.webp@) | Build a @other/House_aoe2DE.webp@."
+      ],
+      "time": "6:21"
+    },
+    {
+      "villager_count": 21,
+      "age": 1,
+      "resources": {
+        "wood": 6,
+        "food": 15,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 2 @resource/MaleVillDE.webp@ go to @resource/Aoe2de_wood.webp@ | Research @town_center/LoomDE.webp@ | Click up to @age/FeudalAgeIconDE.webp@"
+      ],
+      "time": "7:32"
+    },
+    {
+      "villager_count": 21,
+      "age": 2,
+      "resources": {
+        "wood": 6,
+        "food": 15,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE.webp@ | Build @barracks/Barracks_aoe2DE.webp@"
+      ],
+      "time": "9:36"
+    },
+    {
+      "villager_count": 23,
+      "age": 2,
+      "resources": {
+        "wood": 6,
+        "food": 15,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE.webp@ | Build @stable/Stable_aoe2DE.webp@ (2 @resource/MaleVillDE.webp@) & @market/Market_aoe2DE.webp@ (3 @resource/MaleVillDE.webp@), all from @lumber_camp/Lumber_camp_aoe2de.webp@",
+        "Next 2 @resource/MaleVillDE.webp@ go to @resource/Aoe2de_gold.webp@ | Sell 200 @resource/Aoe2de_stone.webp@ | Click up to @age/CastleAgeIconDE.webp@."
+      ],
+      "time": "10:22"
+    },
+    {
+      "villager_count": 23,
+      "age": 3,
+      "resources": {
+        "wood": 6,
+        "food": 12,
+        "gold": 5,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE.webp@ | Move 3 @resource/MaleVillDE.webp@ from @animal/Sheep_aoe2DE.webp@ to @mining_camp/GoldMiningDE.webp@ | Build @other/House_aoe2DE.webp@",
+        "All other @resource/MaleVillDE.webp@ from @animal/Sheep_aoe2DE.webp@ to @mill/FarmDE.webp@ | Research @stable/BloodlinesDE.webp@"
+      ],
+      "time": "12:47"
+    },
+    {
+      "villager_count": 25,
+      "age": 3,
+      "resources": {
+        "wood": 6,
+        "food": 12,
+        "gold": 7,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/CastleAgeIconDE.webp@ | Next 2 @resource/MaleVillDE.webp@ to @resource/Aoe2de_gold.webp@ | Make 2-3 @stable/Knight_aoe2DE.webp@"
+      ],
+      "time": "13:31"
+    },
+    {
+      "villager_count": -1,
+      "age": 1,
+      "resources": {
+        "wood": -1,
+        "food": -1,
+        "gold": -1,
+        "stone": -1
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ forward to build @monastery/MonasteryAoe2DE.webp@ | Make @stable/Knight_aoe2DE.webp@ & @monastery/Monk_aoe2DE.webp@"
+      ],
+      "time": "13:32"
+    }
+  ]
+}

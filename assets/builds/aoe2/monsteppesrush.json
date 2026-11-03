@@ -1,0 +1,180 @@
+{
+  "name": "MON Steppes Rush",
+  "civilization": "Mongols",
+  "author": "Morley Games",
+  "source": "https://www.youtube.com/watch?v=TEpbKqK_h3M",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 2 @other/House_aoe2DE.webp@. | Send the first 6 @resource/MaleVillDE.webp@ to @animal/Sheep_aoe2DE.webp@."
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Send the next 4 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ (build @lumber_camp/Lumber_camp_aoe2de.webp@)."
+      ],
+      "time": "2:55"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Lure the first @animal/Boar_aoe2DE.webp@ with next @resource/MaleVillDE.webp@."
+      ],
+      "time": "3:20"
+    },
+    {
+      "villager_count": 15,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 11,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ builds 2 @other/House_aoe2DE.webp@ and 1 @mill/Mill_aoe2de.webp@, then @resource/BerryBushDE.webp@.",
+        "Send next 3 @resource/MaleVillDE.webp@ to @resource/BerryBushDE.webp@. | Push @animal/Deer_aoe2DE.webp@ with @stable/Scoutcavalry_aoe2DE.webp@."
+      ],
+      "time": "5:00"
+    },
+    {
+      "villager_count": 16,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 12,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Lure the second @animal/Boar_aoe2DE.webp@ with next @resource/MaleVillDE.webp@."
+      ],
+      "time": "5:25"
+    },
+    {
+      "villager_count": 17,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Send next @resource/MaleVillDE.webp@ to @animal/Boar_aoe2DE.webp@. | Build 2 @mill/FarmDE.webp@ with @resource/MaleVillDE.webp@ from @resource/Aoe2de_food.webp@."
+      ],
+      "time": "5:50"
+    },
+    {
+      "villager_count": 19,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 13,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "Send next 2 @resource/MaleVillDE.webp@ to @resource/Aoe2de_gold.webp@."
+      ],
+      "time": "6:40"
+    },
+    {
+      "villager_count": 22,
+      "age": 1,
+      "resources": {
+        "wood": 7,
+        "food": 13,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "Send 3 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@. | Research @town_center/LoomDE.webp@. | Click up to @age/FeudalAgeIconDE.webp@."
+      ],
+      "time": "8:20"
+    },
+    {
+      "villager_count": 22,
+      "age": 2,
+      "resources": {
+        "wood": 7,
+        "food": 13,
+        "gold": 2,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE.webp@. | Build @barracks/Barracks_aoe2DE.webp@ at 60% up."
+      ],
+      "time": "10:30"
+    },
+    {
+      "villager_count": 24,
+      "age": 2,
+      "resources": {
+        "wood": 7,
+        "food": 13,
+        "gold": 4,
+        "stone": 0
+      },
+      "notes": [
+        "Send 2 new @resource/MaleVillDE.webp@ to @resource/Aoe2de_gold.webp@.",
+        "Build @stable/Stable_aoe2DE.webp@ and @blacksmith/Blacksmith_aoe2de.webp@. Click up to @age/CastleAgeIconDE.webp@."
+      ],
+      "time": "11:20"
+    },
+    {
+      "villager_count": 24,
+      "age": 3,
+      "resources": {
+        "wood": 7,
+        "food": 12,
+        "gold": 5,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE.webp@ | Send 1 @resource/MaleVillDE.webp@ from @animal/Sheep_aoe2DE.webp@ to @resource/Aoe2de_gold.webp@.",
+        "Send all other @resource/MaleVillDE.webp@ from @animal/Sheep_aoe2DE.webp@ to @mill/FarmDE.webp@.",
+        "Build 2 @other/House_aoe2DE.webp@. | Research @stable/BloodlinesDE.webp@ and @lumber_camp/DoubleBitAxe_aoe2DE.webp@."
+      ],
+      "time": "14:00"
+    },
+    {
+      "villager_count": -1,
+      "age": 3,
+      "resources": {
+        "wood": -1,
+        "food": -1,
+        "gold": -1,
+        "stone": -1
+      },
+      "notes": [
+        "In @age/CastleAgeIconDE.webp@ | Send new @resource/MaleVillDE.webp@ to @mill/FarmDE.webp@. Make @stable/Steppelancericon.webp@."
+      ],
+      "time": "14:01"
+    }
+  ]
+}

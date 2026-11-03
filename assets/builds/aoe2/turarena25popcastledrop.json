@@ -1,0 +1,151 @@
+{
+  "name": "TUR Arena 25 Pop Castle Drop",
+  "civilization": "Turks",
+  "author": "My opponent while playing ranked",
+  "source": "Replay",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 2 @other/House_aoe2DE.webp@ | First 6 @resource/MaleVillDE.webp@ to @animal/Sheep_aoe2DE.webp@ | Lure @animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 4 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ (build @lumber_camp/Lumber_camp_aoe2de.webp@) | Build 1 @other/House_aoe2DE.webp@"
+      ],
+      "time": "2:55"
+    },
+    {
+      "villager_count": 14,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 10,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Lure 1st @animal/Boar_aoe2DE.webp@ | 3 more @resource/MaleVillDE.webp@ to @animal/Boar_aoe2DE.webp@/@animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "4:35"
+    },
+    {
+      "villager_count": 18,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 4 to @resource/BerryBushDE.webp@ | Build @mill/Mill_aoe2de.webp@ & 1 @other/House_aoe2DE.webp@ | Lure 2nd @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "6:15"
+    },
+    {
+      "villager_count": 19,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 15,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Add 1 to @animal/Boar_aoe2DE.webp@/@animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "6:40"
+    },
+    {
+      "villager_count": 22,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 15,
+        "gold": 3,
+        "stone": 0
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @resource/Aoe2de_gold.webp@ (build @mining_camp/Mining_camp_aoe2de.webp@) | 23 Pop @age/FeudalAgeIconDE.webp@"
+      ],
+      "time": "7:55"
+    },
+    {
+      "villager_count": 22,
+      "age": 2,
+      "resources": {
+        "wood": 3,
+        "food": 17,
+        "gold": 1,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE.webp@ | 1 @resource/Aoe2de_wood.webp@@resource/MaleVillDE.webp@  builds 1 @other/House_aoe2DE.webp@ | At 200 @resource/Aoe2de_gold.webp@, 2 @resource/Aoe2de_gold.webp@ to @resource/Aoe2de_food.webp@"
+      ],
+      "time": "10:05"
+    },
+    {
+      "villager_count": 24,
+      "age": 2,
+      "resources": {
+        "wood": 3,
+        "food": 8,
+        "gold": 1,
+        "stone": 12
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE.webp@ | Build @market/Market_aoe2DE.webp@ (2) & @blacksmith/Forging_aoe2de.webp@ (1) | 1 new to @mill/FarmDE.webp@ | 25 Pop @age/CastleAgeIconDE.webp@",
+        "When no @resource/Aoe2de_food.webp@ under @town_center/Towncenter_aoe2DE.webp@, all @resource/MaleVillDE.webp@ from @town_center/Towncenter_aoe2DE.webp@ (+1 new) to @resource/Aoe2de_stone.webp@ (@mining_camp/Mining_camp_aoe2de.webp@)"
+      ],
+      "time": "10:55"
+    },
+    {
+      "villager_count": 24,
+      "age": 3,
+      "resources": {
+        "wood": 6,
+        "food": 4,
+        "gold": 2,
+        "stone": 12
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE.webp@ | Build 1 @other/House_aoe2DE.webp@ & 1 @mill/FarmDE.webp@ | At 650 @resource/Aoe2de_stone.webp@, 8+ @resource/MaleVillDE.webp@ forward",
+        "4 from @resource/BerryBushDE.webp@ to @resource/Aoe2de_gold.webp@ (1) & @resource/Aoe2de_wood.webp@ (3)"
+      ],
+      "time": "13:35"
+    },
+    {
+      "villager_count": 24,
+      "age": 3,
+      "resources": {
+        "wood": 6,
+        "food": 4,
+        "gold": 2,
+        "stone": 12
+      },
+      "notes": [
+        "In @age/CastleAgeIconDE.webp@ | Research @town_center/LoomDE.webp@, @lumber_camp/DoubleBitAxe_aoe2DE.webp@ & @mill/HorseCollarDE.webp@ | Build @castle/Castle_aoe2DE.webp@"
+      ],
+      "time": "14:00"
+    }
+  ]
+}

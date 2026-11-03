@@ -1,0 +1,150 @@
+{
+  "name": "KHM 23 pop Knights Rush",
+  "civilization": "Khmer",
+  "author": "Morley Games",
+  "source": "https://www.youtube.com/watch?v=4nArj2Pz4L8",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Build 2 @other/House_aoe2DE.webp@ | First 6 @resource/MaleVillDE.webp@ to @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 9,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ (@lumber_camp/Lumber_camp_aoe2de.webp@) | Lure 1st @animal/Boar_aoe2DE.webp@ with a @animal/Sheep_aoe2DE.webp@@resource/MaleVillDE.webp@"
+      ],
+      "time": "2:30"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 8,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Send 2 more @resource/MaleVillDE.webp@ on @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "3:20"
+    },
+    {
+      "villager_count": 12,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 8,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ builds a @other/House_aoe2DE.webp@, then @mill/Mill_aoe2de.webp@ (@resource/BerryBushDE.webp@) | Start pushing @animal/Deer_aoe2DE.webp@"
+      ],
+      "time": "3:45"
+    },
+    {
+      "villager_count": 16,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 4 @resource/MaleVillDE.webp@ to @resource/BerryBushDE.webp@ | Lure 2nd @animal/Boar_aoe2DE.webp@ with a @resource/Aoe2de_food.webp@@resource/MaleVillDE.webp@"
+      ],
+      "time": "5:25"
+    },
+    {
+      "villager_count": 19,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 16,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @animal/Boar_aoe2DE.webp@ | Build a @other/House_aoe2DE.webp@ with a @resource/Aoe2de_wood.webp@@resource/MaleVillDE.webp@"
+      ],
+      "time": "6:40"
+    },
+    {
+      "villager_count": 22,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 16,
+        "gold": 3,
+        "stone": 0
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @resource/Aoe2de_gold.webp@ | Research @town_center/LoomDE.webp@ | 23 pop @age/FeudalAgeIconDE.webp@"
+      ],
+      "time": "8:20"
+    },
+    {
+      "villager_count": 22,
+      "age": 2,
+      "resources": {
+        "wood": 5,
+        "food": 14,
+        "gold": 3,
+        "stone": 0
+      },
+      "notes": [
+        "Send 4 @resource/MaleVillDE.webp@ from @animal/Sheep_aoe2DE.webp@ to @resource/Aoe2de_wood.webp@ (2) & @mill/FarmDE.webp@ (2) | 23 pop @age/CastleAgeIconDE.webp@"
+      ],
+      "time": "10:30"
+    },
+    {
+      "villager_count": 22,
+      "age": 3,
+      "resources": {
+        "wood": 5,
+        "food": 12,
+        "gold": 5,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE.webp@ | 7 @animal/Sheep_aoe2DE.webp@@resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ straggler/@mill/FarmDE.webp@ (5) & @resource/Aoe2de_gold.webp@ (2)",
+        "Build @stable/Stable_aoe2DE.webp@ & @other/House_aoe2DE.webp@ with a @animal/Sheep_aoe2DE.webp@@resource/MaleVillDE.webp@, then @mill/FarmDE.webp@ | @lumber_camp/DoubleBitAxe_aoe2DE.webp@ & @stable/BloodlinesDE.webp@"
+      ],
+      "time": "13:10"
+    },
+    {
+      "villager_count": 26,
+      "age": 3,
+      "resources": {
+        "wood": 7,
+        "food": 11,
+        "gold": 8,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/CastleAgeIconDE.webp@ | Spam @stable/Knight_aoe2DE.webp@ | 2 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ | 2 @resource/MaleVillDE.webp@ to @resource/Aoe2de_gold.webp@",
+        "Send 5 @resource/MaleVillDE.webp@ from @resource/BerryBushDE.webp@ to @resource/Aoe2de_gold.webp@ (1) and @mill/FarmDE.webp@ (4)"
+      ],
+      "time": "14:50"
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "name": "Archers 20 Pop - 1 Range",
+  "civilization": "Generic",
+  "author": "Hera",
+  "source": "https://www.youtube.com/watch?v=KTUB-rASV7o",
+  "description": "Hera 2023 BO Demo",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "2 @other/House_aoe2DE.webp@ + 6 on @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 9,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "3 on @resource/Aoe2de_wood.webp@"
+      ],
+      "time": "2:30"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "1 Lures @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "2:55"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 8,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "1 Builds @other/House_aoe2DE.webp@ + @mill/Mill_aoe2de.webp@, then @resource/BerryBushDE.webp@",
+        "Lure @animal/Deer_aoe2DE.webp@ with @stable/Scoutcavalry_aoe2DE.webp@, once all @animal/Sheep_aoe2DE.webp@ are found"
+      ],
+      "time": "3:20"
+    },
+    {
+      "villager_count": 17,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 6 on @animal/Boar_aoe2DE.webp@ (lure 2nd)"
+      ],
+      "time": "5:50"
+    },
+    {
+      "villager_count": 19,
+      "age": 1,
+      "time": "7:05",
+      "resources": {
+        "wood": 5,
+        "food": 14,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "2 on @resource/Aoe2de_wood.webp@ | Research @town_center/LoomDE.webp@ | Research 20 Pop @age/FeudalAgeIconDE_alpha.webp@"
+      ]
+    },
+    {
+      "villager_count": 19,
+      "age": 2,
+      "resources": {
+        "wood": 12,
+        "food": 4,
+        "gold": 2,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE_alpha.webp@",
+        "7 from @town_center/Towncenter_aoe2DE.webp@ \u2192 @resource/Aoe2de_wood.webp@ (5 on 2nd @lumber_camp/Lumber_camp_aoe2de.webp@; 2 on straggler)",
+        "1 from @town_center/Towncenter_aoe2DE.webp@ \u2192 @other/House_aoe2DE.webp@ + @barracks/Barracks_aoe2DE.webp@ | 2 from @town_center/Towncenter_aoe2DE.webp@ \u2192 @resource/Aoe2de_gold.webp@ (@mining_camp/Mining_camp_aoe2de.webp@)"
+      ],
+      "time": "9:15"
+    },
+    {
+      "villager_count": 21,
+      "age": 2,
+      "resources": {
+        "wood": 12,
+        "food": 4,
+        "gold": 4,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE_alpha.webp@ | Research @lumber_camp/DoubleBitAxe_aoe2DE.webp@",
+        "Build @archery_range/Archery_range_aoe2DE.webp@, produce @archery_range/Archer_aoe2DE.webp@ | 2 on @resource/Aoe2de_gold.webp@"
+      ],
+      "time": "10:05"
+    },
+    {
+      "villager_count": 21,
+      "age": 2,
+      "resources": {
+        "wood": 12,
+        "food": 4,
+        "gold": 4,
+        "stone": 0
+      },
+      "notes": [
+        "@blacksmith/Blacksmith_aoe2de.webp@ and @blacksmith/FletchingDE.webp@ (when possible) | [Opt] 1-4 @barracks/Spearman_aoe2DE.webp@ (against @stable/Scoutcavalry_aoe2DE.webp@)",
+        "4 from @town_center/Towncenter_aoe2DE.webp@ \u2192 @resource/BerryBushDE.webp@ (5 in total) | Start @mill/FarmDE.webp@ & @defensive_structures/Palisade_wall_aoe2de.webp@"
+      ],
+      "time": "10:06"
+    }
+  ]
+}

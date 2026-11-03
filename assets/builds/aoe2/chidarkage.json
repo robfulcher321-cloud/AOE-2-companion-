@@ -1,0 +1,109 @@
+{
+  "name": "CHI Dark Age",
+  "civilization": "Chinese",
+  "author": "Hera",
+  "source": "https://youtu.be/EKZThgQulOg",
+  "build_order": [
+    {
+      "villager_count": 7,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Send all @resource/MaleVillDE.webp@ (+1) to @animal/Sheep_aoe2DE.webp@ (no @other/House_aoe2DE.webp@).",
+        "Research @town_center/LoomDE.webp@."
+      ],
+      "time": "1:12"
+    },
+    {
+      "villager_count": 10,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 3 @resource/MaleVillDE.webp@ to @resource/Aoe2de_wood.webp@ (build @lumber_camp/Lumber_camp_aoe2de.webp@)."
+      ],
+      "time": "2:27"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 8,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ lures @animal/Boar_aoe2DE.webp@."
+      ],
+      "time": "2:52"
+    },
+    {
+      "villager_count": 12,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 9,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next @resource/MaleVillDE.webp@ builds 2 @other/House_aoe2DE.webp@, then @mill/Mill_aoe2de.webp@ on @resource/BerryBushDE.webp@.",
+        "Start luring @animal/Deer_aoe2DE.webp@ with @stable/Scoutcavalry_aoe2DE.webp@."
+      ],
+      "time": "3:17"
+    },
+    {
+      "villager_count": 16,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 4 @resource/MaleVillDE.webp@ to @animal/Boar_aoe2DE.webp@ (lure 2nd one)."
+      ],
+      "time": "4:57"
+    },
+    {
+      "villager_count": 20,
+      "age": 1,
+      "resources": {
+        "wood": 3,
+        "food": 17,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Next 4 @resource/MaleVillDE.webp@ to @resource/BerryBushDE.webp@. | Research @age/FeudalAgeIconDE.webp@."
+      ],
+      "time": "6:37"
+    },
+    {
+      "villager_count": 20,
+      "age": 2,
+      "resources": {
+        "wood": 10,
+        "food": 10,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE.webp@ | Build @barracks/Barracks_aoe2DE.webp@ when possible.",
+        "Move 7 @resource/MaleVillDE.webp@ from @town_center/Towncenter_aoe2DE.webp@ to @resource/Aoe2de_wood.webp@ (5 on 2nd @lumber_camp/Lumber_camp_aoe2de.webp@)."
+      ],
+      "time": "8:47"
+    }
+  ]
+}

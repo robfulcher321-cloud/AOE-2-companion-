@@ -1,0 +1,154 @@
+{
+  "name": "ETH 2 Range",
+  "civilization": "Ethiopians",
+  "author": "HERA",
+  "source": "https://buildorderguide.com",
+  "description": "Reach feudal extremely quickly and produce out of 2 ranges. Slighty modified from HERA's aggressive Arabia build.",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "2 @other/House_aoe2DE.webp@ + 6 on @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 8,
+      "age": 1,
+      "resources": {
+        "wood": 2,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "2 on @resource/Aoe2de_wood.webp@"
+      ],
+      "time": "2:05"
+    },
+    {
+      "villager_count": 15,
+      "age": 1,
+      "resources": {
+        "wood": 2,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "7 on @resource/Aoe2de_food.webp@ under @town_center/Towncenter_aoe2DE.webp@. Build @other/House_aoe2DE.webp@.",
+        "Get 2 @animal/Boar_aoe2DE.webp@, push @animal/Deer_aoe2DE.webp@ if you have time."
+      ],
+      "time": "5:00"
+    },
+    {
+      "villager_count": 16,
+      "age": 1,
+      "resources": {
+        "wood": 2,
+        "food": 13,
+        "gold": 1,
+        "stone": 0
+      },
+      "notes": [
+        "1 on @resource/Aoe2de_gold.webp@"
+      ],
+      "time": "5:25"
+    },
+    {
+      "villager_count": 18,
+      "age": 1,
+      "resources": {
+        "wood": 2,
+        "food": 15,
+        "gold": 1,
+        "stone": 0
+      },
+      "notes": [
+        "2 on @resource/Aoe2de_food.webp@ under @town_center/Towncenter_aoe2DE.webp@ | Research @town_center/LoomDE.webp@",
+        "Research 19 Pop @age/FeudalAgeIconDE_alpha.webp@"
+      ],
+      "time": "6:40"
+    },
+    {
+      "villager_count": 18,
+      "age": 2,
+      "resources": {
+        "wood": 14,
+        "food": 1,
+        "gold": 2,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE_alpha.webp@ | 12 @resource/Aoe2de_food.webp@ from @town_center/Towncenter_aoe2DE.webp@ \u2192 9 @resource/Aoe2de_wood.webp@ (3 straggler)",
+        "2 @resource/Aoe2de_food.webp@ from @town_center/Towncenter_aoe2DE.webp@ \u2192  @barracks/Barracks_aoe2DE.webp@ & @other/House_aoe2DE.webp@. Then, to @defensive_structures/Palisade_wall_aoe2de.webp@/@resource/Aoe2de_gold.webp@"
+      ],
+      "time": "8:50"
+    },
+    {
+      "villager_count": 20,
+      "age": 2,
+      "resources": {
+        "wood": 14,
+        "food": 1,
+        "gold": 4,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE_alpha.webp@ | Build 2 @archery_range/Archery_range_aoe2DE.webp@. Research @lumber_camp/DoubleBitAxe_aoe2DE.webp@. | 2 on @resource/Aoe2de_gold.webp@"
+      ],
+      "time": "9:40"
+    },
+    {
+      "villager_count": 25,
+      "age": 2,
+      "resources": {
+        "wood": 14,
+        "food": 6,
+        "gold": 4,
+        "stone": 0
+      },
+      "notes": [
+        "5 on Straggler | Build @blacksmith/Blacksmith_aoe2de.webp@ | Research @blacksmith/FletchingDE.webp@",
+        "@mill/Mill_aoe2de.webp@ on @resource/BerryBushDE.webp@ | Seed @mill/FarmDE.webp@ with straggler @resource/MaleVillDE_alpha.webp@ | Build @other/House_aoe2DE.webp@"
+      ],
+      "time": "11:45"
+    },
+    {
+      "villager_count": 28,
+      "age": 2,
+      "resources": {
+        "wood": 14,
+        "food": 6,
+        "gold": 7,
+        "stone": 0
+      },
+      "notes": [
+        "3 on @resource/Aoe2de_gold.webp@"
+      ],
+      "time": "13:00"
+    },
+    {
+      "villager_count": 37,
+      "age": 2,
+      "resources": {
+        "wood": 14,
+        "food": 15,
+        "gold": 7,
+        "stone": 0
+      },
+      "notes": [
+        "9 on @mill/FarmDE.webp@ | Research @town_center/WheelbarrowDE.webp@ | Research @age/CastleAgeIconDE_alpha.webp@"
+      ],
+      "time": "18:00"
+    }
+  ]
+}

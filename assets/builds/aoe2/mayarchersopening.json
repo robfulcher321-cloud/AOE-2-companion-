@@ -1,0 +1,184 @@
+{
+  "name": "MAY Archers Opening",
+  "civilization": "Mayans",
+  "author": "Morley Games",
+  "source": "https://youtu.be/9n7qta-gW4A",
+  "description": "Effectively a 21 pop Archer build adjusted for Mayans starting with +1 Vil and -50 food and abusing the civilizations longer lasting resources. The work for this adjustment was done by Morley Games Youtube. I have further changed this into a team game opening where moving out and attack your opponent as soon as you have 6 archer might instead be adopted to attacking whenever your ally is ready (or even used to defend yourself or your ally). The change here is that once you have sustained archer production you take the horse collar upgrade before seeding farms, while you make a decision between continued Feudal aggression and when you should go to castle.",
+  "build_order": [
+    {
+      "villager_count": 6,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 6,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "Research @town_center/LoomDE.webp@ | Build 2 @other/House_aoe2DE.webp@ | 6 on @animal/Sheep_aoe2DE.webp@"
+      ],
+      "time": "1:15"
+    },
+    {
+      "villager_count": 7,
+      "age": 1,
+      "resources": {
+        "wood": 0,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "1 Lures @animal/Boar_aoe2DE.webp@"
+      ],
+      "time": "1:40"
+    },
+    {
+      "villager_count": 11,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 7,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "@lumber_camp/Lumber_camp_aoe2de.webp@ + 4 on @resource/Aoe2de_wood.webp@"
+      ],
+      "time": "3:20"
+    },
+    {
+      "villager_count": 13,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 9,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "1 Lures @animal/Boar_aoe2DE.webp@ + 1 More on @animal/Boar_aoe2DE.webp@ | Build @other/House_aoe2DE.webp@"
+      ],
+      "time": "4:10"
+    },
+    {
+      "villager_count": 17,
+      "age": 1,
+      "resources": {
+        "wood": 4,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "@mill/Mill_aoe2de.webp@ + 4 on @resource/BerryBushDE.webp@"
+      ],
+      "time": "5:50"
+    },
+    {
+      "villager_count": 20,
+      "age": 1,
+      "resources": {
+        "wood": 7,
+        "food": 13,
+        "gold": 0,
+        "stone": 0
+      },
+      "notes": [
+        "@other/House_aoe2DE.webp@ (immediately) + 3 on @resource/Aoe2de_wood.webp@ | Research 21 Pop @age/FeudalAgeIconDE_alpha.webp@"
+      ],
+      "time": "7:05"
+    },
+    {
+      "villager_count": 20,
+      "age": 2,
+      "resources": {
+        "wood": 12,
+        "food": 5,
+        "gold": 2,
+        "stone": 0,
+        "builder": 1
+      },
+      "notes": [
+        "Before @age/FeudalAgeIconDE_alpha.webp@ | 5 @animal/Sheep_aoe2DE.webp@ \u2192 5 Straggler",
+        "2 @animal/Sheep_aoe2DE.webp@ \u2192 2 @resource/Aoe2de_gold.webp@ + @mining_camp/Mining_camp_aoe2de.webp@ | 1 @animal/Sheep_aoe2DE.webp@ \u2192 @other/House_aoe2DE.webp@ + @barracks/Barracks_aoe2DE.webp@"
+      ],
+      "time": "9:15"
+    },
+    {
+      "villager_count": 26,
+      "age": 2,
+      "resources": {
+        "wood": 11,
+        "food": 5,
+        "gold": 9,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/FeudalAgeIconDE_alpha.webp@ | Research @lumber_camp/DoubleBitAxe_aoe2DE.webp@ | 6 on @resource/Aoe2de_gold.webp@",
+        "1 Straggler \u2192 Build 2 @archery_range/Archery_range_aoe2DE.webp@ + @blacksmith/Blacksmith_aoe2de.webp@ + @defensive_structures/Palisade_wall_aoe2de.webp@ + @other/House_aoe2DE.webp@",
+        "Research @blacksmith/FletchingDE.webp@ + @mill/HorseCollarDE.webp@ | Start Training @archery_range/Archer_aoe2DE.webp@",
+        "1 Builder \u2192 1 @resource/Aoe2de_gold.webp@ | @market/Market_aoe2DE.webp@"
+      ],
+      "time": "11:45"
+    },
+    {
+      "villager_count": 33,
+      "age": 2,
+      "resources": {
+        "wood": 14,
+        "food": 9,
+        "gold": 9,
+        "stone": 0
+      },
+      "notes": [
+        "7 on @resource/Aoe2de_wood.webp@",
+        "Seed 8 @mill/FarmDE.webp@ with @resource/MaleVillDE.webp@ on Straggler and @resource/BerryBushDE.webp@"
+      ],
+      "time": "14:40"
+    },
+    {
+      "villager_count": 33,
+      "age": 2,
+      "resources": {
+        "wood": 11,
+        "food": 12,
+        "gold": 9,
+        "stone": 0
+      },
+      "notes": [
+        "Seed 3 @mill/FarmDE.webp@ with @resource/MaleVillDE.webp@ on @resource/Aoe2de_wood.webp@ | Research @town_center/WheelbarrowDE.webp@ | Research @age/CastleAgeIconDE_alpha.webp@"
+      ],
+      "time": "15:55"
+    },
+    {
+      "villager_count": 33,
+      "age": 3,
+      "resources": {
+        "wood": 11,
+        "food": 12,
+        "gold": 9,
+        "stone": 0
+      },
+      "notes": [
+        "Before @age/CastleAgeIconDE_alpha.webp@ | Research @mining_camp/GoldMiningDE.webp@"
+      ],
+      "time": "18:35"
+    },
+    {
+      "villager_count": 33,
+      "age": 3,
+      "resources": {
+        "wood": 11,
+        "food": 12,
+        "gold": 9,
+        "stone": 0
+      },
+      "notes": [
+        "In @age/CastleAgeIconDE_alpha.webp@ | @university/University_AoE2_DE.webp@ + @monastery/MonasteryAoe2DE.webp@ | Research @blacksmith/BodkinArrowDE.webp@ + @archery_range/Crossbowman_aoe2DE.webp@ + @town_center/HandcartDE.webp@",
+        "Research @university/BallisticsDE.webp@ + @archery_range/ThumbRingDE.webp@ + @lumber_camp/BowSawDE.webp@ | Train 2 @monastery/Monk_aoe2DE.webp@"
+      ],
+      "time": "19:30"
+    }
+  ]
+}
